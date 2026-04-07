@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ADH Audit">
-<meta name="theme-color" content="#16181d">
+<meta name="theme-color" content="#f1f5f9">
 <meta name="description" content="ADH Field Audit Tool — field conditions audit for construction and installation teams">
 <meta name="mobile-web-app-capable" content="yes">
 
@@ -22,28 +22,47 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
 <style>
 :root {
-  --bg: #16181d;
-  --surface: #1f2229;
-  --surface2: #272b34;
-  --surface3: #2e323d;
-  --border: #363b48;
-  --border2: #424857;
-  --accent: #3db8f5;
-  --accent-dim: rgba(61,184,245,0.11);
-  --green: #34d399;
-  --green-dim: rgba(52,211,153,0.11);
-  --yellow: #fbbf24;
-  --yellow-dim: rgba(251,191,36,0.11);
-  --red: #f87171;
-  --red-dim: rgba(248,113,113,0.11);
+  --bg: #f1f5f9;              /* app background (Daylight) */
+  --surface: #ffffff;         /* main cards */
+  --surface2: #f8fafc;        /* inputs */
+  --surface3: #e5e7eb;
+  --border: #d1d5db;
+  --border2: #cbd5e1;
+  --accent: #2563eb;          /* blue 600 */
+  --accent-dim: rgba(37,99,235,0.12);
+  --green: #16a34a;
+  --green-dim: rgba(22, 163, 74, 0.11);
+  --yellow: #d97706;
+  --yellow-dim: rgba(217, 119, 6, 0.11);
+  --red: #dc2626;
+  --red-dim: rgba(220, 38, 38, 0.11);
   --folder: #f59e0b;
   --folder-dim: rgba(245,158,11,0.11);
-  --text: #e4e7ef;
-  --text2: #8b95a8;
-  --text3: #4e5669;
+  --text: #0f172a;
+  --text2: #475569;
+  --text3: #94a3b8;
   --mono: 'IBM Plex Mono', monospace;
   --sans: 'IBM Plex Sans', sans-serif;
 }
+
+/* ── THEME OVERRIDES ── */
+body.theme-dark {
+  --bg: #0b0f14;
+  --surface: #121826;
+  --surface2: #182033;
+  --surface3: #1f2937;
+  --border: #293241;
+  --border2: #374151;
+  --accent: #f97316;          /* safety orange */
+  --accent-dim: rgba(249,115,22,0.15);
+  --text: #e5e7eb;
+  --text2: #9ca3af;
+  --text3: #6b7280;
+  --green: #22c55e;
+  --red: #ef4444;
+  --yellow: #fbbf24;
+}
+
 * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
 
 /* iOS Safe Areas */
@@ -75,6 +94,12 @@ body {
   padding:0 14px; height:50px;
   background:var(--surface); border-bottom:1px solid var(--border);
   flex-shrink:0; gap:6px; overflow:hidden;
+}
+.nav-logo {
+  height: 100px;
+  width: auto;
+  display: block;
+  object-fit: contain;
 }
 .nav-back-btn {
   display:flex; align-items:center; justify-content:center;
@@ -203,7 +228,7 @@ body {
 }
 .si-thumb img { width:100%; height:100%; object-fit:cover; }
 .si-info { flex:1; min-width:0; }
-.si-num { font-family:var(--mono); font-size:9px; color:var(--text3); margin-bottom:1px; }
+.si-num { font-family:var(--mono); font-size:12px; font-weight:700; color:var(--accent); margin-bottom:1px; cursor:pointer; }
 .si-title { font-size:12px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .si-status { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
 .si-status.completed   { background:#22c55e; box-shadow:0 0 4px #22c55e; }
@@ -833,15 +858,23 @@ canvas.env-canvas { display:block; width:100%; height:100%; }
 .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
 .toast.green { border-color:var(--green); color:var(--green); }
 
-.toast {
-  position:fixed; bottom:calc(68px + var(--sab)); left:50%; transform:translateX(-50%) translateY(14px);
-  background:var(--surface2); border:1px solid var(--border);
-  border-radius:8px; padding:8px 14px; font-size:11px; font-family:var(--mono);
-  color:var(--text); opacity:0; transition:all 0.22s; z-index:999;
-  white-space:nowrap; pointer-events:none;
+input[type="radio"] {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
 }
-.toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
-.toast.green { border-color:var(--green); color:var(--green); }
+
+@keyframes fieldShake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+.field-error {
+  border-color: var(--red) !important;
+  box-shadow: 0 0 0 2px var(--red-dim) !important;
+  animation: fieldShake 0.3s ease-in-out 2;
+}
 
 ::-webkit-scrollbar { width:4px; }
 ::-webkit-scrollbar-track { background:transparent; }
@@ -1190,9 +1223,10 @@ canvas.env-canvas { display:block; width:100%; height:100%; }
 <div class="nav-bar">
   <div class="nav-back-btn disabled" id="back-btn" onclick="goBack()">‹</div>
   <div class="breadcrumb" id="breadcrumb">
-    <span class="crumb active" onclick="navToRoot()">🏗 ADH Field Audit</span>
+    <span class="crumb active" onclick="navToRoot()"><img src="logo.png" alt="ADH Audit" class="nav-logo" id="main-logo"></span>
   </div>
   <div class="nav-actions">
+    <div class="btn-icon" onclick="showThemeModal()" title="Themes">🎨</div>
     <div class="btn-icon" onclick="showShareModal()" title="Share">📤</div>
     <div class="btn-icon" onclick="handleAdd()" title="Add">＋</div>
     <div class="btn-icon" onclick="showLoginModal()" id="admin-lock-btn" title="Admin Login">🔓</div>
@@ -1237,6 +1271,9 @@ canvas.env-canvas { display:block; width:100%; height:100%; }
 <input type="file" id="file-input" accept="image/*" multiple onchange="handleFileImport(event)" style="display:none">
 <input type="file" id="env-file-input" onchange="handleEnvFile(event)" style="display:none">
 <input type="file" id="xls-file-input" accept=".xls,.xlsx" onchange="handleXLSImport(event)" style="display:none">
+<input type="file" id="pdf-logo-input" accept="image/*" onchange="handleBrandingUpload(event, 'logo')" style="display:none">
+<input type="file" id="pdf-auditor-input" accept="image/*" onchange="handleBrandingUpload(event, 'auditorSig')" style="display:none">
+<input type="file" id="pdf-client-input" accept="image/*" onchange="handleBrandingUpload(event, 'clientSig')" style="display:none">
 <input type="file" id="contact-csv-input" accept=".csv,text/csv" onchange="handleContactCSV(event)" style="display:none">
 
 <!-- Mobile bottom nav (phones only) -->
@@ -1260,7 +1297,7 @@ canvas.env-canvas { display:block; width:100%; height:100%; }
 // DATA
 // ══════════════════════════════════════════
 const SEED = {
-  settings: { isAdmin: false },
+  settings: { isAdmin: false, theme: 'light' },
   folders:[
     {id:'fld_ast',name:'A.S.S.T',icon:'🏗',projects:[],parentId:null},
     {id:'fld_ami',name:'AMI',icon:'🏢',projects:[],parentId:null},
@@ -1302,13 +1339,15 @@ try { store = JSON.parse(localStorage.getItem('fap_v3')||'null') || JSON.parse(J
 catch(e) { store = JSON.parse(JSON.stringify(SEED)); }
 
 // Ensure new fields exist in migrated data
-if(!store.settings) store.settings = { isAdmin: false };
+if(!store.settings) store.settings = { isAdmin: false, theme: 'light' };
+if(store.settings.theme === undefined || store.settings.theme === 'default') store.settings.theme = 'light';
 store.folders.forEach(f => { if(f.parentId === undefined) f.parentId = null; });
 if(!store.contacts) store.contacts = [];
 
 window.contactCategoryFilter = 'All';
 window.selectedContacts = new Set();
 let isAdmin = store.settings.isAdmin;
+applyTheme(store.settings.theme);
 
 function save() { 
   try { 
@@ -1369,6 +1408,46 @@ function showLoginModal() {
   });
 }
 
+function showThemeModal() {
+  const current = store.settings.theme || 'light';
+  const themes = [
+    { id: 'light', name: 'Light (Daylight)', icon: '☀️' },
+    { id: 'dark', name: 'Dark (Industrial)', icon: '🌙' }
+  ];
+
+  const bodyHTML = `
+    <div class="action-list">
+      ${themes.map(t => `
+        <div class="action-row" onclick="setTheme('${t.id}')" 
+             style="${current === t.id ? 'border-color:var(--accent); background:var(--accent-dim)' : ''}">
+          <div class="action-icon" style="background:var(--surface2)">${t.icon}</div>
+          <div class="action-body">
+            <div class="action-title">${t.name} ${current === t.id ? '✓' : ''}</div>
+          </div>
+          <div class="action-arrow">›</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+  makeModal('Select Theme', bodyHTML, null, true);
+}
+
+function setTheme(id) {
+  store.settings.theme = id;
+  save();
+  applyTheme(id);
+  render(); // Re-render to update the logo in the breadcrumbs
+  closeModal();
+  showToast('Theme updated', 'green');
+}
+
+function applyTheme(id) {
+  document.body.classList.remove('theme-dark');
+  const colors = { 'light': '#f1f5f9', 'dark': '#0b0f14' };
+  if (id === 'dark') document.body.classList.add('theme-dark');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', colors[id] || colors['light']);
+}
+
 // ══════════════════════════════════════════
 // NAV STACK  { view, folderId, projectId, siId }
 // ══════════════════════════════════════════
@@ -1423,7 +1502,8 @@ function renderNavBar(r) {
   document.getElementById('admin-lock-btn').textContent = isAdmin ? '🔐' : '🔓';
   
   const bc = document.getElementById('breadcrumb');
-  let crumbs = [`<span class="crumb ${stack.length===0?'active':''}" onclick="navToRoot()">🏗 ADH Field Audit</span>`];
+  const logoSrc = store.settings.theme === 'dark' ? 'logo-white.png' : 'logo.png';
+  let crumbs = [`<span class="crumb ${stack.length===0?'active':''}" onclick="navToRoot()"><img src="${logoSrc}" alt="ADH Audit" class="nav-logo"></span>`];
   
   if (r.folderId) {
     const path = [];
@@ -1559,7 +1639,9 @@ function renderLeft(r) {
         html+=`<div class="si-row ${r.siId===item.id?'active':''}" onclick="navToSI('${proj.id}','${item.id}')">
           <div class="si-thumb">${thumb}</div>
           <div class="si-info">
-            <div class="si-num">${item.num}</div>
+            <div class="si-num" onclick="event.stopPropagation(); showRenameSINumModal('${proj.id}','${item.id}')" title="Click to rename SI#">
+              SI# ${item.num.replace(/^SI\s+/, '')}
+            </div>
             <div class="si-title">${item.title}</div>
           </div>
           <div class="si-status ${item.status}"></div>
@@ -2161,6 +2243,16 @@ function buildProjectView(pid) {
       <div class="stat-card"><div class="stat-num" style="color:#f97316">${changed}</div><div class="stat-label">On Hold</div></div>
     </div>
     <div class="action-list">
+      <div class="action-row" onclick="showImportLog(getProject('${pid}'))">
+        <div class="action-icon" style="background:var(--surface2)">🧾</div>
+        <div class="action-body"><div class="action-title">View Import History</div><div class="action-desc">Review previous spreadsheet synchronization logs</div></div>
+        <div class="action-arrow">›</div>
+      </div>
+      <div class="action-row" onclick="triggerReimportXLS('${pid}')">
+        <div class="action-icon" style="background:rgba(245,158,11,0.1)">🔄</div>
+        <div class="action-body"><div class="action-title">Sync Spreadsheet</div><div class="action-desc">Update SI items and delivery logistics from Excel</div></div>
+        <div class="action-arrow">›</div>
+      </div>
       <div class="action-row" onclick="navToSchedule('${pid}')">
         <div class="action-icon" style="background:rgba(96,165,250,0.1)">📅</div>
         <div class="action-body"><div class="action-title">6-Week Look Ahead</div><div class="action-desc">Schedule & export separately from audit</div></div>
@@ -2221,6 +2313,11 @@ function buildSIEditor(pid,sid) {
   if(!item||!proj) return;
   const sec=proj.sections.find(s=>s.id===item.sectionId);
 
+  const sectionItems = proj.items.filter(i => i.sectionId === item.sectionId);
+  const completedCount = sectionItems.filter(i => i.status === 'completed').length;
+  const totalCount = sectionItems.length;
+  const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
   const statusOpts=[
     {key:'completed',   label:'✓ Completed'},
     {key:'not-ready',   label:'✕ Not Ready'},
@@ -2258,7 +2355,12 @@ function buildSIEditor(pid,sid) {
             <span style="font-size:11px;color:var(--text3)">✏️</span>
           </div>
           <div class="edit-subtitle" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <span>${item.num}</span>
+            <span id="si-num-display" style="font-size:16px; font-weight:700; color:var(--accent); cursor:pointer;" 
+                  onclick="startRenameNum('${pid}','${sid}')" title="Click to rename SI#">
+              ${item.num.replace(/^SI\s+/, 'SI# ')}
+              <span style="font-size:10px;color:var(--text3);font-weight:normal">✏️</span>
+            </span>
+            ${item.delivery?.truck ? `<span style="color:var(--accent);font-weight:600">📦 ${item.delivery.truck} — ${item.delivery.deliveryDate}</span>` : ''}
             <select style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;
               padding:2px 6px;font-size:10px;color:var(--text2);font-family:var(--mono);cursor:pointer;outline:none;"
               onchange="moveSISection('${pid}','${sid}',this.value)">
@@ -2271,6 +2373,15 @@ function buildSIEditor(pid,sid) {
         ${statusOpts.map(s=>`
           <div class="status-pill ${s.key} ${item.status===s.key?'active-status':'inactive'}"
             onclick="setStatus('${pid}','${sid}','${s.key}')">${s.label}</div>`).join('')}
+      </div>
+      <div style="margin-top:14px">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px">
+          <div class="field-label" style="margin-bottom:0">Section Progress</div>
+          <div style="font-family:var(--mono); font-size:9px; color:var(--text3)">${completedCount}/${totalCount} (${progressPct}%)</div>
+        </div>
+        <div style="height:4px; background:var(--surface3); border-radius:2px; overflow:hidden">
+          <div style="height:100%; width:${progressPct}%; background:${progressPct < 50 ? 'var(--yellow)' : 'var(--green)'}; transition:width 0.4s ease"></div>
+        </div>
       </div>
     </div>
     <div class="edit-body" id="edit-body">
@@ -2289,6 +2400,27 @@ function buildSIEditor(pid,sid) {
             <div class="field-label">Field Notes / Observations</div>
             <textarea class="field-input" id="notes-input" placeholder="Describe current field conditions, what changed, what's blocking..." oninput="scheduleAutoSave('${pid}','${sid}')">${item.notes}</textarea>
           </div>
+      <div class="field-group">
+  <div class="field-label">Field Check</div>
+  <div style="display:flex; align-items:center; gap:10px; background:var(--surface2); padding:8px 12px; border-radius:8px; border:1px solid var(--border);">
+    <div style="display:flex; gap:8px; flex-shrink:0;">
+      ${['FC', 'UFC', 'NFC', 'HT'].map(code => `
+        <label style="display:flex; align-items:center; gap:4px; font-family:var(--mono); font-size:11px; cursor:pointer;">
+          <input type="radio" name="si-status-code" value="${code}" 
+            ${item.statusCode === code ? 'checked' : ''} 
+            onchange="updateSIField('${pid}','${sid}','statusCode',this.value)"
+            style="accent-color:var(--accent);">
+          ${code}
+        </label>
+      `).join('')}
+    </div>
+    <div style="width:1px; height:20px; background:var(--border); margin:0 4px;"></div>
+    <input type="text" class="field-input" style="flex:1; padding:4px 8px; font-size:11px; height:28px; border:none; background:transparent;" 
+      placeholder="Additional details..." 
+      value="${item.statusText || ''}" 
+      oninput="updateSIField('${pid}','${sid}','statusText',this.value)">
+  </div>
+</div>
       <div class="field-group">
         <div class="field-label">Condition Tags</div>
         <div class="condition-tags" id="cond-tags-wrap">
@@ -2322,6 +2454,78 @@ function buildSIEditor(pid,sid) {
     </div>`;
 }
 
+function startRenameNum(pid, sid) {
+  const item = getSI(pid, sid); if(!item) return;
+  const displayEl = document.getElementById('si-num-display');
+  if(!displayEl) return;
+  displayEl.onclick = null;
+  const currentNum = item.num.replace(/^SI\s+/, '');
+  displayEl.innerHTML = `
+    <div style="display:flex; align-items:center; gap:4px;">
+      <span style="font-size:16px; font-weight:700; color:var(--text3)">SI#</span>
+      <input id="rename-num-input" class="field-input"
+        style="font-size:16px;font-weight:700;padding:2px 6px;width:90px;"
+        value="${currentNum.replace(/"/g,'&quot;')}" />
+      <button onclick="confirmRenameNum('${pid}','${sid}')"
+        style="background:var(--accent);color:#000;border:none;border-radius:7px;
+        padding:4px 12px;font-size:11px;font-weight:700;font-family:var(--mono);cursor:pointer;">
+        ✓
+      </button>
+    </div>`;
+  const inp = document.getElementById('rename-num-input');
+  if(inp) {
+    inp.focus(); inp.select();
+    inp.addEventListener('keydown', e => {
+      if(e.key==='Enter') { e.preventDefault(); confirmRenameNum(pid, sid); }
+      if(e.key==='Escape') buildSIEditor(pid, sid);
+    });
+  }
+}
+
+function confirmRenameNum(pid, sid) {
+  const inp = document.getElementById('rename-num-input'); if(!inp) return;
+  let newNum = inp.value.trim();
+  if(!newNum) { showToast('Number cannot be empty'); return; }
+  const item = getSI(pid, sid); if(!item) return;
+  item.num = 'SI ' + newNum;
+  save();
+  buildSIEditor(pid, sid);
+  renderLeft(route());
+  showToast('✓ SI# Updated', 'green');
+}
+
+function showRenameSINumModal(pid, sid) {
+  const item = getSI(pid, sid);
+  if (!item) return;
+  const currentNum = item.num.replace(/^SI\s+/, '');
+
+  makeModal(
+    `Rename SI# ${currentNum}`,
+    `<div class="field-group">
+      <div class="field-label">New SI Number</div>
+      <input id="rename-si-modal-input" class="field-input" value="${currentNum.replace(/"/g,'&quot;')}" />
+    </div>`,
+    () => {
+      const newNum = document.getElementById('rename-si-modal-input')?.value.trim();
+      if (!newNum) {
+        showToast('Number cannot be empty');
+        return;
+      }
+      item.num = 'SI ' + newNum;
+      save();
+      closeModal();
+      // If the SI editor is open for this item, refresh it
+      const currentRoute = route();
+      if (currentRoute.view === 'si' && currentRoute.projectId === pid && currentRoute.siId === sid) {
+        buildSIEditor(pid, sid);
+      }
+      renderLeft(route()); // Always refresh the left panel
+      showToast('✓ SI# Updated', 'green');
+    }
+  );
+  document.getElementById('rename-si-modal-input')?.focus();
+  document.getElementById('rename-si-modal-input')?.select();
+}
 // ══════════════════════════════════════════
 // 6-WEEK LOOK AHEAD SCHEDULE
 // ══════════════════════════════════════════
@@ -2434,7 +2638,7 @@ async function exportSchedulePDF(pid) {
   // Header
   doc.setFillColor(...h2r(BG)); doc.rect(0,0,PW,22,'F');
   doc.setFontSize(14); doc.setFont('helvetica','bold'); doc.setTextColor(...h2r(FG));
-  doc.text('ADH FIELD AUDIT TOOL — 6-WEEK LOOK AHEAD',14,10);
+  doc.text('6-WEEK LOOK AHEAD',14,10);
   doc.setFontSize(9); doc.setFont('helvetica','normal');
   doc.text(proj.name+'  ·  Auditor: '+(proj.auditor||'—')+'  ·  Generated: '+new Date().toLocaleDateString(),14,17);
 
@@ -3109,6 +3313,44 @@ function moveSISection(pid,sid,newSecId) {
   showToast('✓ Moved to section','green');
 }
 
+window.updateSIField = function(pid, sid, field, value) {
+  const item = getSI(pid, sid);
+  if (!item) return;
+  item[field] = value;
+  save();
+  scheduleAutoSave(pid, sid); 
+};
+
+window.showBatchApplyModal = function(pid, sectionId) {
+  const proj = getProject(pid);
+  const section = proj?.sections.find(s => s.id === sectionId);
+  if (!section) return;
+
+  const codes = ['FC', 'UFC', 'NFC', 'HT'];
+  const body = `
+    <div style="font-size:12px; color:var(--text2); margin-bottom:16px; line-height:1.5;">
+      Select a status code to apply to all <b>${proj.items.filter(i => i.sectionId === sectionId).length}</b> items 
+      within the <b>"${section.name}"</b> section. 
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+      ${codes.map(c => `
+        <button class="btn-nav" style="padding:12px; font-weight:700; color:var(--accent); border-color:var(--accent-dim);" 
+                onclick="batchApplyFieldCheck('${pid}','${sectionId}','${c}'); closeModal();">
+          Apply ${c}
+        </button>`).join('')}
+    </div>`;
+  makeModal('Batch Field Check', body, null, true);
+};
+
+window.batchApplyFieldCheck = function(pid, sectionId, code) {
+  const proj = getProject(pid);
+  if (!proj) return;
+  proj.items.filter(it => it.sectionId === sectionId).forEach(it => it.statusCode = code);
+  save();
+  render();
+  showToast(`✓ Applied ${code} to section`, 'green');
+};
+
 // AI INTEGRATION (GEMINI EXAMPLE)
 async function runAIAssistant(pid, sid) {
   const item = getSI(pid, sid);
@@ -3365,6 +3607,20 @@ function handleFileImport(e) {
   });
   e.target.value='';
 }
+
+window._pdfBranding = { logo: null, auditorSig: null, clientSig: null };
+window.handleBrandingUpload = function(e, type) {
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    window._pdfBranding[type] = ev.target.result;
+    showToast(type.charAt(0).toUpperCase() + type.slice(1) + ' uploaded', 'green');
+    if(type === 'logo') refreshPreview();
+  };
+  reader.readAsDataURL(file);
+};
+
 function deletePhoto(pid,sid,idx) {
   const item=getSI(pid,sid); if(!item) return;
   item.photos.splice(idx,1); save();
@@ -3533,10 +3789,16 @@ function showShareModal() {
   const tsExample = '03/09/2026 14:32'; // example — real stamp comes from photo EXIF
 
   function previewHTML(tpl, showTS) {
+    const title = document.getElementById('pdf-report-title')?.value || 'Site Conditions Report';
+    const logoH = parseInt(document.getElementById('pdf-logo-height')?.value || 18);
+    const isWhiteLabel = document.getElementById('chk-white-label')?.classList.contains('checked') ?? false;
     const ts = showTS ? `<div class="ts-stamp">${tsExample}</div>` : '';
+    const logoHTML = (window._pdfBranding.logo && !isWhiteLabel) ? `<img src="${window._pdfBranding.logo}" style="height:${logoH * 1.8}%; width:auto; max-width:40%; object-fit:contain; margin-right:10px;">` : '';
+    const phStyle = `display:flex; flex-direction:row; align-items:center; justify-content:flex-start;`;
+
     const themes = {
       classic:`<div class="prev-classic">
-        <div class="ph"><div class="ph-title">ADH FIELD AUDIT</div><div class="ph-sub">Site Conditions Report</div></div>
+        <div class="ph" style="${phStyle}">${logoHTML}<div><div class="ph-title" style="margin-bottom:0">${title.toUpperCase()}</div></div></div>
         <div class="pb">
           <div class="proj-name">${proj.name}</div>
           <div class="item-card">
@@ -3553,7 +3815,7 @@ function showShareModal() {
         <div class="pf"><div class="pf-txt">${proj.name}</div><div class="pf-txt">Page 1 of ${Math.ceil(proj.items.length/3)||1}</div></div>
       </div>`,
       dark:`<div class="prev-dark">
-        <div class="ph"><div class="ph-title">ADH FIELD AUDIT</div><div class="ph-sub">Site Conditions Report</div></div>
+        <div class="ph" style="${phStyle}">${logoHTML}<div><div class="ph-title" style="margin-bottom:0">${title.toUpperCase()}</div></div></div>
         <div class="pb">
           <div class="proj-name">${proj.name}</div>
           <div class="item-card">
@@ -3570,7 +3832,7 @@ function showShareModal() {
         <div class="pf"><div class="pf-txt">${proj.name}</div><div class="pf-txt">Page 1 of ${Math.ceil(proj.items.length/3)||1}</div></div>
       </div>`,
       minimal:`<div class="prev-minimal">
-        <div class="ph"><div class="ph-title">ADH FIELD AUDIT</div><div class="ph-sub">Site Conditions Report</div></div>
+        <div class="ph" style="${phStyle}">${logoHTML}<div><div class="ph-title" style="margin-bottom:0">${title.toUpperCase()}</div></div></div>
         <div class="pb">
           <div class="proj-name">${proj.name}</div>
           <div class="item-card">
@@ -3602,6 +3864,31 @@ function showShareModal() {
   <div class="share-layout">
     <!-- LEFT: Controls -->
     <div class="share-controls">
+
+      <div style="margin-bottom:14px">
+        <div class="share-section-label">Report Customization</div>
+        <div class="field-group">
+          <div class="field-label">Report Title</div>
+          <input class="field-input" id="pdf-report-title" value="Site Conditions Report" style="padding:6px 9px; font-size:12px" oninput="refreshPreview()" />
+        </div>
+        <div class="field-group">
+          <div class="field-label">Logo Height (mm)</div>
+          <input type="range" class="quality-slider" id="pdf-logo-height" min="8" max="45" value="18" step="1" oninput="refreshPreview()" />
+        </div>
+        <div class="field-group">
+          <div class="field-label">Custom Footer Text</div>
+          <input class="field-input" id="pdf-footer-text" placeholder="e.g. Confidential" style="padding:6px 9px; font-size:12px" />
+        </div>
+        <div style="display:flex; gap:8px; margin-top:8px">
+          <button class="btn-add" onclick="document.getElementById('pdf-logo-input').click()" style="flex:1; font-size:9px">📸 Report Logo</button>
+          <button class="btn-add" onclick="document.getElementById('pdf-auditor-input').click()" style="flex:1; font-size:9px">✍️ Auditor Sig</button>
+          <button class="btn-add" onclick="document.getElementById('pdf-client-input').click()" style="flex:1; font-size:9px">✍️ Client Sig</button>
+        </div>
+        <div class="export-opt-row" style="margin-top:12px">
+          <span class="export-opt-label">White-label (No App Branding)</span>
+          <div class="export-check" id="chk-white-label" onclick="toggleCheck('chk-white-label');refreshPreview()"></div>
+        </div>
+      </div>
 
       <div style="margin-bottom:14px">
         <div class="share-section-label">PDF Template</div>
@@ -3838,6 +4125,20 @@ function exportCSV(pid) {
 async function exportPDF(pid) {
   const proj=getProject(pid); if(!proj) return;
 
+  // MANDATORY FIELD CHECK
+  const incomplete = proj.items.filter(it => {
+    const hasStatus = !!it.statusCode;
+    const hasNotes = it.notes && it.notes.trim().length > 0;
+    const hasPhoto = it.photos && it.photos.length > 0;
+    return !hasStatus || !hasNotes || !hasPhoto;
+  });
+
+  if (incomplete.length > 0) {
+    const list = incomplete.map(it => it.num).join(', ');
+    showToast(`Cannot export: Items [${list}] are missing Field Check, Notes, or Photos.`, 'red');
+    return; // Stops export
+  }
+
   const quality   = parseInt(document.getElementById('img-quality')?.value||72)/100;
   const inclPhotos= document.getElementById('chk-photos')?.classList.contains('checked')??true;
   const inclTS    = document.getElementById('chk-timestamp')?.classList.contains('checked')??true;
@@ -3845,6 +4146,9 @@ async function exportPDF(pid) {
   const inclTags  = document.getElementById('chk-tags')?.classList.contains('checked')??true;
   const inclCover = document.getElementById('chk-cover')?.classList.contains('checked')??true;
   const inclEnv   = document.getElementById('chk-env')?.classList.contains('checked')??true;
+  const reportTitle = document.getElementById('pdf-report-title')?.value || 'Site Conditions Report';
+  const footerText  = document.getElementById('pdf-footer-text')?.value || '';
+  const whiteLabel  = document.getElementById('chk-white-label')?.classList.contains('checked') ?? false;
   const tpl       = _selectedTpl;
 
   closeModal();
@@ -3969,14 +4273,20 @@ async function exportPDF(pid) {
     if(tpl==='minimal') {
       setStroke(T.cAccent); doc.setLineWidth(1.5); doc.line(15,58,195,58);
     }
-    // Logo area
+    // Logo / Title area (Dynamic aspect ratio + horizontal positioning)
+    let textX = 15;
+    if (window._pdfBranding.logo && !whiteLabel) {
+      const props = doc.getImageProperties(window._pdfBranding.logo);
+      const h = parseInt(document.getElementById('pdf-logo-height')?.value || 18);
+      const w = (props.width * h) / props.height;
+      doc.addImage(window._pdfBranding.logo, 'PNG', 15, 7, w, h);
+      textX = 15 + w + 6; // Padding after logo
+    }
+
     doc.setFont(T.font,'bold');
-    doc.setFontSize(22);
+    doc.setFontSize(24);
     setTextC(T.cHeader);
-    doc.text('ADH FIELD AUDIT TOOL',15,28);
-    doc.setFontSize(10);
-    doc.setFont(T.font,'normal');
-    doc.text('Site Conditions Report',15,38);
+    doc.text(reportTitle.toUpperCase(), textX, 18);
 
     // Project name
     doc.setFontSize(18);
@@ -4017,7 +4327,7 @@ async function exportPDF(pid) {
 
     // Footer
     setTextC(T.cSub); doc.setFontSize(8);
-    doc.text('Generated by ADH Field Audit Tool · '+new Date().toLocaleDateString(),15,PH-10);
+    doc.text('Report Date: '+new Date().toLocaleDateString(),15,PH-10);
   }
 
   // ── SECTION PAGES ───────────────────
@@ -4076,6 +4386,14 @@ async function exportPDF(pid) {
       doc.text(slbl,PW-16,cy+6,{align:'right'});
 
       let iy=cy+16;
+      
+      // Drawing the Field Check and Details on the PDF
+      doc.setFont(T.font, 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(40, 40, 40); 
+      const fieldCheckLine = `Field Check: [${item.statusCode}] ${item.statusText || ''}`;
+      doc.text(fieldCheckLine, 15, iy);
+      iy += 6; // Move cursor down for the next line (Notes/Tags)
 
       if(inclNotes && item.notes) {
         doc.setFontSize(8.5); doc.setFont(T.font,'normal'); setTextC(T.cText);
@@ -4241,7 +4559,7 @@ async function exportPDF(pid) {
         doc.addImage(imgData,'JPEG',x,y,w,h,'','FAST');
       }
 
-      for(const [si,s] of env.sensors.entries()) {
+      for(const [si,s] of (env.sensors || []).entries()) {
         const flt = getEnvFilter(proj.id, si);
         const tempData = filterData(s.temperature||[], flt.startPct, flt.endPct);
         const humData  = filterData(s.humidity||[],    flt.startPct, flt.endPct);
@@ -4323,13 +4641,45 @@ async function exportPDF(pid) {
     }
   }
 
+  // ── SIGNATURE PAGE ───────────────────
+  if (window._pdfBranding.auditorSig || window._pdfBranding.clientSig) {
+    addPage();
+    setFill(T.bgHeader); doc.rect(0,0,PW,20,'F');
+    doc.setFontSize(11); doc.setFont(T.font,'bold'); setTextC(T.cHeader);
+    doc.text('REPORT SIGN-OFF', 15, 13);
+    
+    let sy = 40;
+    doc.setFontSize(12); doc.setFont(T.font,'bold'); setTextC(T.cTitle);
+    doc.text('Auditor / Inspector', 15, sy);
+    if (window._pdfBranding.auditorSig) {
+      doc.addImage(window._pdfBranding.auditorSig, 'PNG', 15, sy + 5, 60, 20);
+    }
+    doc.setFontSize(9); doc.setFont(T.font,'normal'); setTextC(T.cSub);
+    doc.line(15, sy + 26, 85, sy + 26);
+    doc.text('Signature', 15, sy + 30);
+    doc.text('Date: ' + new Date().toLocaleDateString(), 60, sy + 30);
+
+    sy = 100;
+    doc.setFontSize(12); doc.setFont(T.font,'bold'); setTextC(T.cTitle);
+    doc.text('Client / General Contractor', 15, sy);
+    if (window._pdfBranding.clientSig) {
+      doc.addImage(window._pdfBranding.clientSig, 'PNG', 15, sy + 5, 60, 20);
+    }
+    doc.setFontSize(9); doc.setFont(T.font,'normal'); setTextC(T.cSub);
+    doc.line(15, sy + 26, 85, sy + 26);
+    doc.text('Signature', 15, sy + 30);
+    doc.text('Date: ________________', 60, sy + 30);
+  }
+
   // Footer on all pages
   const pageCount=doc.getNumberOfPages();
   for(let p=1;p<=pageCount;p++){
     doc.setPage(p);
     setFill(T.bgHeader); doc.rect(0,PH-8,PW,8,'F');
     doc.setFontSize(7); setTextC(T.cHeader); doc.setFont(T.font,'normal');
-    doc.text(proj.name,15,PH-3);
+    const leftText = proj.name;
+    doc.text(leftText, 15, PH-3);
+    if (footerText) { doc.text(footerText, PW/2, PH-3, {align: 'center'}); }
     doc.text(`Page ${p} of ${pageCount}`,PW-15,PH-3,{align:'right'});
   }
 
@@ -4746,372 +5096,621 @@ function triggerXLSImport(fid) {
   inp.click();
 }
 
+/* =========================================
+   XLS IMPORT — NORMALIZATION & FILTERING
+   ========================================= */
+
+function normalizeSI(raw) {
+  if (!raw) return null;
+  const m = String(raw).match(/\d{2,4}/);
+  if (!m) return null;
+  return m[0].padStart(4, '0');
+}
+
+function isJunkRow(values) {
+  const blacklist = [
+    'job name','truck','delivery','arrival','notes',
+    'address','vendor','mail out','gc info','installer',
+    'scope','logo','load date','delivery date'
+  ];
+  const text = values.join(' ').toLowerCase();
+  return blacklist.some(k => text.includes(k));
+}
+
+/* =========================================
+   V1.5-B — SECTION MAPPING RULES
+   ========================================= */
+let SECTION_RULES;
+try {
+  SECTION_RULES = JSON.parse(
+    localStorage.getItem('section_rules') ||
+    JSON.stringify({
+      'center bar': 'Center Bar',
+      'casino bar': 'Casino Bar',
+      'steak': 'Steakhouse Restaurant'
+    })
+  );
+} catch(e) {
+  SECTION_RULES = { 'center bar': 'Center Bar', 'casino bar': 'Casino Bar', 'steak': 'Steakhouse Restaurant' };
+}
+
+function mapSection(desc) {
+  const d = desc.toLowerCase();
+  for (const k in SECTION_RULES) {
+    if (d.includes(k)) return SECTION_RULES[k];
+  }
+  return 'General';
+}
+
+/* =========================================
+   V2-A — DELIVERY METADATA EXTRACTION
+   ========================================= */
+function extractDelivery(row) {
+  const date = row.find(c => typeof c === 'string' && /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(c));
+  const truck = row.find(c => typeof c === 'string' && /truck/i.test(c));
+  return { deliveryDate: date || '', truck: truck || '' };
+}
+
+function flagImportDuplicates(items) {
+  const seen = new Set();
+  items.forEach(i => {
+    if (seen.has(i.si)) i._duplicate = true;
+    seen.add(i.si);
+  });
+}
+
+/* =========================================
+   V2-B — AUTO STATUS RULES
+   ========================================= */
+function applyDeliveryRules(si) {
+  if (!si.delivery?.deliveryDate) return;
+  const dDate = new Date(si.delivery.deliveryDate);
+  const iDate = si.dueDate ? new Date(si.dueDate) : null; // Mapping installDate to existing dueDate
+
+  if (iDate && !isNaN(dDate) && !isNaN(iDate) && dDate > iDate) {
+    si.status = 'not-ready';
+    if (!si.notes.includes('Delivery scheduled after install window')) {
+      si.notes = (si.notes ? si.notes + '\n' : '') + '⚠️ Delivery scheduled after install window.';
+    }
+  }
+}
+
+/* =========================================
+   V2-C/D — RE-IMPORT DIFF ENGINE
+   ========================================= */
+function diffSI(existing, incoming) {
+  const map = new Map(existing.map(s => [s.num, s]));
+  const diffs = [];
+
+  incoming.forEach(n => {
+    const old = map.get('SI ' + n.si);
+    if (!old) {
+      diffs.push({ type: 'new', next: n });
+      return;
+    }
+
+    const changes = {};
+    if (old.title !== n.title) changes.title = [old.title, n.title];
+    if (JSON.stringify(old.delivery) !== JSON.stringify(n.delivery))
+      changes.delivery = [old.delivery, n.delivery];
+
+    if (Object.keys(changes).length)
+      diffs.push({ type: 'modified', si: old, changes, next: n });
+  });
+
+  existing.forEach(o => {
+    if (!incoming.find(n => 'SI ' + n.si === o.num))
+      diffs.push({ type: 'removed', si: o });
+  });
+
+  return diffs;
+}
+
+function extractSIFromSheet(sheet) {
+  const rows = XLSX.utils.sheet_to_json(sheet, {
+    header: 1,
+    raw: false,
+    defval: ''
+  });
+
+  const items = [];
+  const skipped = [];
+
+  rows.forEach((row, idx) => {
+    if (!row || row.length < 2) return;
+    if (isJunkRow(row)) return;
+
+    let si = null;
+    row.forEach(c => { if (!si) si = normalizeSI(c); });
+
+    if (!si) return;
+
+    const desc = row.find(c =>
+      typeof c === 'string' &&
+      c.length > 6 &&
+      !normalizeSI(c) &&
+      !/tbd|xxxx|vendor/i.test(c)
+    );
+
+    if (!desc) {
+      skipped.push({ row: idx + 1, reason: 'Missing description' });
+      return;
+    }
+
+    const section = mapSection(desc);
+    const delivery = extractDelivery(row);
+    
+    items.push({
+      si,
+      title: desc.trim(),
+      section,
+      delivery,
+      _checked: true
+    });
+  });
+
+  return { items, skipped };
+}
+
+/* =========================================
+   RE-IMPORT DIFF — LOGIC & WARNINGS
+   ========================================= */
+
+function assessDeliveryImpact(si, newDelivery) {
+  if (!si.dueDate || !newDelivery?.deliveryDate) return null;
+  const install = new Date(si.dueDate);
+  const delivery = new Date(newDelivery.deliveryDate);
+  if (delivery > install) {
+    return { status: 'not-ready', note: 'Delivery scheduled after install window.' };
+  }
+  return null;
+}
+
+function detectConflicts(diffs) {
+  diffs.forEach(d => {
+    if (d.type !== 'modified') return;
+    const si = d.si;
+    const hasFieldData = (si.photos && si.photos.length) || (si.notes && si.notes.trim()) || (si.tags && si.tags.length);
+    const criticalChange = d.changes.delivery || d.changes.title;
+    if (hasFieldData && criticalChange) {
+      d.type = 'conflict';
+      d.apply = false;
+    }
+  });
+}
+
+function logImport(project, summary) {
+  if (!project.importLog) project.importLog = [];
+  project.importLog.push({ date: new Date().toISOString(), summary });
+}
+
+function showImportLog(project) {
+  const html = `
+    <div class="list-scroll" style="max-height:300px">
+      ${(project.importLog || []).length === 0 ? '<div style="padding:20px;text-align:center;color:var(--text3)">No history found</div>' : 
+        project.importLog.map(e => `
+        <div style="padding:10px;border-bottom:1px solid var(--border);font-size:11px;font-family:var(--mono)">
+          <div style="font-weight:600;margin-bottom:4px;color:var(--text)">${new Date(e.date).toLocaleString()}</div>
+          <div style="display:flex;gap:10px;color:var(--text2)">
+            <span style="color:var(--green)">+${e.summary.added}</span>
+            <span style="color:var(--accent)">~${e.summary.modified}</span>
+            <span style="color:var(--red)">-${e.summary.removed}</span>
+            <span style="color:var(--yellow)">⚠${e.summary.conflicts}</span>
+          </div>
+        </div>`).join('')}
+    </div>`;
+  makeModal('Import History', html, null, true);
+}
+
+/* =========================================
+   RE-IMPORT DIFF — CLASSIFICATION
+   ========================================= */
+
+function classifyDiffs(projectItems, incomingItems) {
+  const existingMap = new Map(
+    projectItems.map(i => [i.num.replace(/\D/g, ''), i])
+  );
+
+  const diffs = [];
+
+  incomingItems.forEach(n => {
+    const old = existingMap.get(n.si);
+
+    if (!old) {
+      diffs.push({ type: 'new', next: n, apply: true });
+      return;
+    }
+
+    const changes = {};
+    let impact = null;
+
+    if (old.title !== n.title) {
+      changes.title = { before: old.title, after: n.title };
+    }
+
+    if (JSON.stringify(old.delivery) !== JSON.stringify(n.delivery)) {
+      changes.delivery = { before: old.delivery, after: n.delivery };
+      impact = assessDeliveryImpact(old, n.delivery);
+    }
+
+    if (Object.keys(changes).length) {
+      diffs.push({
+        type: 'modified',
+        si: old,
+        changes,
+        impact,
+        apply: true
+      });
+    }
+
+    existingMap.delete(n.si);
+  });
+
+  // Remaining SIs were removed from new file
+  existingMap.forEach(si => {
+    diffs.push({
+      type: 'removed',
+      si,
+      apply: false   // safe default
+    });
+  });
+
+  return diffs;
+}
+
+function buildImportWarnings(parsed) {
+  const warnings = [];
+  if (parsed.skipped?.length) {
+    warnings.push(`⚠ ${parsed.skipped.length} rows skipped (no description)`);
+  }
+  const general = parsed.items.filter(i => i.section === 'General');
+  if (general.length) {
+    warnings.push(`⚠ ${general.length} items defaulted to General section`);
+  }
+  return warnings;
+}
+
+function showXLSPreviewModal(fileName, data, onConfirm) {
+  let html = `
+    <div class="xls-preview-wrap">
+      <div class="xls-preview-meta">
+        <div><strong>File:</strong> ${fileName}</div>
+        <div style="color:var(--text3);font-size:11px;margin-top:4px">
+          ${data.items.length} SI detected
+        </div>
+      </div>
+  `;
+
+  const warnings = buildImportWarnings(data);
+  if (warnings.length) {
+    html += `
+      <div style="background:var(--yellow-dim);
+                  border:1px solid rgba(217,119,6,0.4);
+                  border-radius:8px;
+                  padding:10px;
+                  margin-bottom:12px;
+                  font-size:11px">
+        ${warnings.map(w => `<div>${w}</div>`).join('')}
+      </div>
+    `;
+  }
+
+  const groups = {};
+  data.items.forEach(i => {
+    if (!groups[i.section]) groups[i.section] = [];
+    groups[i.section].push(i);
+  });
+
+  Object.keys(groups).forEach(sec => {
+    html += `
+      <div class="xls-section-group">
+        <div class="xls-section-hdr" onclick="toggleXLSSection('${sec}')">
+          <div class="xls-section-check on" data-sec="${sec}">✓</div>
+          ${sec}
+          <span class="xls-section-count">${groups[sec].length}</span>
+        </div>
+        <div class="xls-si-list">
+    `;
+
+    groups[sec].forEach((i, idx) => {
+      html += `
+        <div class="xls-si-row">
+          <div class="xls-row-check on" 
+               data-index="${data.items.indexOf(i)}">✓</div>
+          <div class="xls-si-num">SI ${i.si}</div>
+          <div class="xls-si-desc">
+            ${i.title} 
+            ${i._duplicate ? `<span style="color:#f97316;font-size:10px;margin-left:8px">⚠️ Duplicate SI</span>` : ''}
+            ${i.delivery?.truck ? `<div style="font-size:9px;color:var(--text3);font-family:var(--mono)">📦 ${i.delivery.truck} — ${i.delivery.deliveryDate}</div>` : ''}
+          </div>
+        </div>
+      `;
+    });
+
+    html += `</div></div>`;
+  });
+
+  html += `
+    <div class="xls-footer">
+      <span class="xls-count-badge">
+        Importing <span id="xls-import-count">${data.items.length}</span> SI
+      </span>
+    </div>
+  </div>`;
+
+  makeModal(
+    'Preview Excel Import',
+    html,
+    () => {
+      const selected = data.items.filter(i => i._checked);
+      if (!selected.length) {
+        showToast('No SI selected', 'red');
+        return;
+      }
+      onConfirm(selected);
+    }
+  );
+
+  // Toggle hooks
+  document.querySelectorAll('.xls-row-check').forEach(el => {
+    el.onclick = () => {
+      const idx = +el.dataset.index;
+      data.items[idx]._checked = !data.items[idx]._checked;
+      el.classList.toggle('on');
+      el.textContent = data.items[idx]._checked ? '✓' : '';
+      document.getElementById('xls-import-count').textContent =
+        data.items.filter(i => i._checked).length;
+    };
+  });
+}
+
+function showReimportDiffModal(project, diffs, onApply) {
+  const renderUI = () => {
+    let html = `
+      <div class="xls-preview-wrap">
+        <div class="xls-preview-meta">
+          <strong>Re‑Import Review</strong>
+          <div style="font-size:11px;color:var(--text3)">
+            ${diffs.length} detected changes
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <button class="xls-select-all" onclick="window._reimportBulk('safe')">✅ Accept Safe</button>
+          <button class="xls-select-all" onclick="window._reimportBulk('skip')">🚫 Skip Removals</button>
+          <button class="xls-select-all" onclick="window._reimportBulk('clear')">❌ Clear All</button>
+        </div>
+    `;
+
+    diffs.forEach((d, idx) => {
+      const isApp = d.apply;
+      if (d.type === 'new') {
+        html += `
+          <div class="xls-si-row">
+            <div class="xls-row-check ${isApp?'on':''}" data-i="${idx}">${isApp?'✓':''}</div>
+            <div class="xls-si-num">🟢 SI ${d.next.si}</div>
+            <div class="xls-si-desc">${d.next.title}</div>
+          </div>`;
+      }
+      if (d.type === 'modified') {
+        html += `
+          <div class="xls-si-row">
+            <div class="xls-row-check ${isApp?'on':''}" data-i="${idx}">${isApp?'✓':''}</div>
+            <div class="xls-si-num">🔄 ${d.si.num}</div>
+            <div class="xls-si-desc">
+              ${Object.keys(d.changes).map(k => `
+                <div style="font-size:11px">
+                  <strong>${k}</strong><br>
+                  <span style="color:var(--text3)">
+                    ${d.changes[k].before} →
+                    <span style="color:var(--accent)">
+                      ${JSON.stringify(d.changes[k].after)}
+                    </span>
+                  </span>
+                </div>`).join('')}
+              ${d.impact ? `<div style="margin-top:6px;color:var(--red);font-size:10px">⚠ Install Impact: SI will become <strong>Not Ready</strong></div>` : ''}
+            </div>
+          </div>`;
+      }
+      if (d.type === 'conflict') {
+        html += `
+          <div class="xls-si-row" style="border-left:4px solid #f97316">
+            <div class="xls-row-check ${isApp?'on':''}" data-i="${idx}">${isApp?'✓':''}</div>
+            <div class="xls-si-num">⚠️ ${d.si.num}</div>
+            <div class="xls-si-desc">
+              <strong>Conflict detected</strong><br>
+              This SI has field data. Changes attempted: ${Object.keys(d.changes).join(', ')}
+              ${d.impact ? `<div style="margin-top:6px;color:var(--red);font-size:10px">⚠ Install Impact: Not Ready</div>` : ''}
+            </div>
+          </div>`;
+      }
+      if (d.type === 'removed') {
+        html += `
+          <div class="xls-si-row" style="opacity:0.7">
+            <div class="xls-row-check ${isApp?'on':''}" data-i="${idx}">${isApp?'✓':''}</div>
+            <div class="xls-si-num">🔴 ${d.si.num}</div>
+            <div class="xls-si-desc">Removed from file — keep as Out of Scope</div>
+          </div>`;
+      }
+    });
+
+    html += `
+      <div class="xls-footer">
+        <span class="xls-count-badge">
+          Applying <span id="reimport-count">${diffs.filter(d => d.apply).length}</span> changes
+        </span>
+      </div></div>`;
+    return html;
+  };
+
+  window._reimportBulk = (action) => {
+    if(action==='safe') diffs.forEach(d => d.apply = d.type !== 'conflict' && d.type !== 'removed');
+    if(action==='skip') diffs.forEach(d => { if(d.type==='removed') d.apply = false; });
+    if(action==='clear') diffs.forEach(d => d.apply = false);
+    const body = document.querySelector('#modal-overlay .modal-body');
+    if(body) { body.innerHTML = renderUI(); attachToggles(); }
+  };
+
+  const attachToggles = () => {
+    document.querySelectorAll('.xls-row-check').forEach(el => {
+      el.onclick = () => {
+        const i = +el.dataset.i;
+        diffs[i].apply = !diffs[i].apply;
+        el.classList.toggle('on');
+        el.textContent = diffs[i].apply ? '✓' : '';
+        document.getElementById('reimport-count').textContent = diffs.filter(d => d.apply).length;
+      };
+    });
+  };
+
+  makeModal('Re‑Import Delivery Sequence', renderUI(), () => {
+    onApply(diffs.filter(d => d.apply));
+  });
+  attachToggles();
+}
+
+let _reimportTargetPid = null;
+function triggerReimportXLS(pid) {
+  _reimportTargetPid = pid;
+  _xlsTargetFid = null;
+  const inp = document.getElementById('xls-file-input');
+  inp.value = '';
+  inp.click();
+}
+
 function handleXLSImport(e) {
+  const folderId = _xlsTargetFid;
+  const reimportPid = _reimportTargetPid;
   const file = e.target.files[0];
   if (!file) return;
-  e.target.value = '';
-
-  // Check SheetJS is loaded
-  if (typeof XLSX === 'undefined') {
-    showToast('Excel library loading — try again in a moment');
-    return;
-  }
 
   const reader = new FileReader();
   reader.onload = ev => {
-    try {
-      const data = new Uint8Array(ev.target.result);
-      const wb = XLSX.read(data, { type: 'array', cellDates: true });
-      showXLSPreviewModal(wb, file.name, _xlsTargetFid);
-    } catch(err) {
-      showToast('Could not read file — try saving as .xlsx from Excel');
+    const wb = XLSX.read(ev.target.result, { type: 'binary' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const parsed = extractSIFromSheet(sheet);
+    flagImportDuplicates(parsed.items);
+
+    if (!parsed.items.length) {
+      showToast('No SI found in file', 'red');
+      return;
     }
+
+    if (reimportPid) {
+      const project = getProject(reimportPid);
+      if (!project) return showToast('Project not found', 'red');
+      
+      const diffs = classifyDiffs(project.items, parsed.items);
+      detectConflicts(diffs);
+      showReimportDiffModal(project, diffs, selectedDiffs => {
+        applyReimportDiff(project, selectedDiffs, diffs);
+        closeModal();
+        render();
+        showToast(`Applied ${selectedDiffs.length} changes`, 'green');
+      });
+    } else {
+      showXLSPreviewModal(file.name, parsed, selectedSI => {
+        createProjectFromImport(selectedSI, folderId);
+        closeModal();
+        showToast(`Imported ${selectedSI.length} SI`, 'green');
+      });
+    }
+    _reimportTargetPid = null;
   };
-  reader.readAsArrayBuffer(file);
+
+  reader.readAsBinaryString(file);
+  e.target.value = '';
 }
 
-// ── PARSE ONE SHEET ──────────────────────
-function parseXLSSheet(wb, sheetName) {
-  const ws = wb.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
+function createProjectFromImport(items, folderId) {
+  const pid = 'proj_' + Date.now();
+  const sections = {};
+  const siItems = [];
 
-  // Extract job metadata from header rows
-  let jobName='', auditor='', client='', jobAddr='';
-  rows.slice(0, 15).forEach(row => {
-    const r = row.map(c => String(c||'').trim());
-    const line = r.join(' ');
-    if (/job.?name/i.test(r[0]||'')) jobName = r.find((v,i)=>i>0&&v&&!/job.?name/i.test(v)) || jobName;
-    if (/ami.?super/i.test(line)) {
-      // Name is usually in next meaningful cell
-      const idx = r.findIndex(v=>/ami.?super/i.test(v));
-      auditor = r[idx+1] || auditor;
+  items.forEach(i => {
+    if (!sections[i.section]) {
+      sections[i.section] = { id: 'sec_' + i.section.replace(/\s+/g, '_') };
     }
-    if (/golden.?state|madera|casino/i.test(line) && !jobAddr) jobAddr = r.filter(Boolean).join(', ');
-  });
 
-  // Find the header row — contains "SI" or "DESCRIPTION"
-  let headerIdx = -1;
-  rows.forEach((row, i) => {
-    const r = row.map(c => String(c||'').toLowerCase());
-    if (r.some(c => c === 'si' || c === 'description' || c === 'ph')) headerIdx = i;
-  });
-
-  // Find column indices
-  let siCol = -1, descCol = -1;
-  if (headerIdx >= 0) {
-    const hrow = rows[headerIdx].map(c => String(c||'').toLowerCase().trim());
-    hrow.forEach((h, i) => {
-      if ((h === 'si' || h === 'ph') && siCol === -1) siCol = i;
-      if (h === 'description' && descCol === -1) descCol = i;
+    siItems.push({
+      id: 'si_' + i.si,
+      sectionId: sections[i.section].id,
+      num: 'SI ' + i.si,
+      title: i.title,
+      status: 'pending',
+      delivery: i.delivery || { deliveryDate: '', truck: '' },
+      notes: '',
+      tags: [],
+      photos: []
     });
+    applyDeliveryRules(siItems[siItems.length - 1]);
+  });
+
+  const project = {
+    id: pid,
+    name: 'Imported Project ' + new Date().toLocaleDateString(),
+    client: '',
+    company: '',
+    auditor: '',
+    date: new Date().toLocaleDateString(),
+    sections: Object.entries(sections).map(([name, s]) => ({
+      id: s.id,
+      name
+    })),
+    items: siItems
+  };
+
+  store.projects.push(project);
+  if (folderId) {
+    const f = getFolder(folderId);
+    if (f && !f.projects.includes(pid)) f.projects.push(pid);
   }
 
-  // Fallback: scan all rows for description-like cells if header not found
-  const dataRows = headerIdx >= 0 ? rows.slice(headerIdx + 1) : rows;
+  save();
+  navToProject(pid, folderId);
+}
 
-  // SI number pattern: 4-digit number optionally prefixed with 0
-  // Must start with 0 and be in range 0100–0499 (typical SI numbering)
-  const SI_PATTERN = /^0[1-4]\d{2}$/;
-
-  // Words that indicate a row is NOT a real SI item
-  const SKIP_PATTERNS = [
-    /rabbit.?cleat/i, /story.?pole/i, /template/i, /vendor.?truck/i,
-    /moisture.?letter/i, /soffet|soffit/i, /mock.?up/i, /sub.?top/i,
-    /hootie/i, /acrylic.?len/i, /primed.?trim/i, /metal.?shelv/i,
-    /wood.?template/i, /shelving.?sub/i, /site.?material/i,
-    /^0$/, /^tbd$/i, /^xxxx$/i
-  ];
-
-  const siItems = [];
-  const seen = new Set(); // deduplicate by "num|desc"
-
-  dataRows.forEach(row => {
-    const cells = row.map(c => String(c||'').trim());
-    if (cells.every(c => !c)) return; // empty row
-
-    let siNum = '', desc = '';
-
-    // Try using detected columns first
-    if (siCol >= 0 && descCol >= 0) {
-      siNum = cells[siCol] || '';
-      desc  = cells[descCol] || '';
+function applyReimportDiff(project, appliedDiffs, allDiffs) {
+  appliedDiffs.forEach(d => {
+    if (d.type === 'new') {
+      project.items.push({
+        id: 'si_' + d.next.si,
+        num: 'SI ' + d.next.si,
+        title: d.next.title,
+        sectionId: project.sections.find(s => s.name === d.next.section)?.id || project.sections[0].id,
+        status: 'pending',
+        notes: '',
+        tags: [],
+        delivery: d.next.delivery,
+        photos: []
+      });
     }
 
-    // If that didn't work, scan all cells for the pattern
-    if (!SI_PATTERN.test(siNum)) {
-      for (let i = 0; i < cells.length; i++) {
-        if (SI_PATTERN.test(cells[i])) {
-          siNum = cells[i];
-          // Description is usually the next non-empty cell, or the one matching 0XXX pattern
-          for (let j = i + 1; j < cells.length; j++) {
-            const c = cells[j];
-            if (c && c.length > 4 && !/^(XXXX|TBD|Vendor|VENDOR)/i.test(c)) {
-              desc = c;
-              break;
-            }
-          }
-          break;
-        }
+    if (d.type === 'modified') {
+      if (d.changes.title) {
+        d.si.title = d.changes.title.after;
+      }
+      if (d.changes.delivery) {
+        d.si.delivery = d.changes.delivery.after;
       }
     }
 
-    // Also look for full "0XXX Description @ Location" format in any cell
-    if (!desc) {
-      cells.forEach(c => {
-        const m = c.match(/^(0[1-4]\d{2})\s+(.+)$/);
-        if (m) { siNum = m[1]; desc = m[2]; }
-      });
+    if (d.type === 'removed') {
+      d.si.status = 'out-of-scope';
     }
-
-    if (!siNum || !SI_PATTERN.test(siNum)) return;
-    if (!desc || desc.length < 4) return;
-    if (SKIP_PATTERNS.some(p => p.test(desc))) return;
-
-    // Clean description — extract location if in "Description @ Location" format
-    let title = desc, location = '';
-    const atIdx = desc.indexOf(' @ ');
-    if (atIdx > 0) {
-      title    = desc.slice(0, atIdx).trim();
-      location = desc.slice(atIdx + 3).trim();
-    }
-    // Remove leading SI number from title if present (e.g. "0101 Front Bar" -> "Front Bar")
-    title = title.replace(/^0[1-4]\d{2}\s+/, '').trim();
-
-    const key = siNum + '|' + title.toLowerCase();
-    if (seen.has(key)) return;
-    seen.add(key);
-
-    siItems.push({ num: siNum, title, location, desc });
+    
+    // Re-check logistics rules after update
+    const updatedItem = d.type === 'new' ? project.items[project.items.length - 1] : d.si;
+    applyDeliveryRules(updatedItem);
   });
 
-  // Group by section prefix (01xx, 02xx, etc.)
-  const SECTION_NAMES = {
-    '01': 'Center Bar',
-    '02': 'Casino Bar',
-    '03': 'Steakhouse Restaurant',
-    '04': 'Casino',
-  };
-
-  const groups = {};
-  siItems.forEach(item => {
-    const prefix = item.num.slice(0, 2);
-    const secName = SECTION_NAMES[prefix] || ('Section ' + prefix);
-    if (!groups[secName]) groups[secName] = [];
-    groups[secName].push(item);
+  logImport(project, {
+    added: allDiffs.filter(d => d.type === 'new').length,
+    modified: allDiffs.filter(d => d.type === 'modified').length,
+    removed: allDiffs.filter(d => d.type === 'removed').length,
+    conflicts: allDiffs.filter(d => d.type === 'conflict').length
   });
 
-  // Sort items within each section
-  Object.values(groups).forEach(arr => arr.sort((a,b) => a.num.localeCompare(b.num)));
-
-  return { jobName, auditor, client, groups, totalItems: siItems.length };
-}
-
-// ── PREVIEW MODAL ────────────────────────
-function showXLSPreviewModal(wb, filename, fid) {
-  // Start with the most recent sheet (first one)
-  let activeSheet = wb.SheetNames[0];
-  let parsed = parseXLSSheet(wb, activeSheet);
-
-  // Track checked state: Map of "num|title" -> bool
-  const checkedState = {};
-  function initChecked(p) {
-    Object.values(p.groups).forEach(items =>
-      items.forEach(item => {
-        const k = item.num+'|'+item.title;
-        if (!(k in checkedState)) checkedState[k] = true;
-      })
-    );
-  }
-  initChecked(parsed);
-
-  function countChecked() {
-    return Object.values(checkedState).filter(Boolean).length;
-  }
-
-  function buildPreviewHTML(p) {
-    const sheetTabs = wb.SheetNames.map(name => `
-      <div class="xls-sheet-tab ${name===activeSheet?'active':''}"
-        onclick="window._xlsSwitchSheet('${name.replace(/'/g,"\\'")}')">
-        ${name}
-      </div>`).join('');
-
-    const sectionsHTML = Object.entries(p.groups).map(([secName, items]) => {
-      const allOn = items.every(it => checkedState[it.num+'|'+it.title]);
-      const rowsHTML = items.map(item => {
-        const k = item.num+'|'+item.title;
-        const on = checkedState[k] !== false;
-        return `
-          <div class="xls-si-row ${on?'':'excluded'}" onclick="window._xlsToggleRow('${k.replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">
-            <div class="xls-row-check ${on?'on':''}">✓</div>
-            <div class="xls-si-num">${item.num}</div>
-            <div class="xls-si-desc">${item.title}</div>
-            ${item.location?`<div class="xls-si-loc">@ ${item.location}</div>`:''}
-          </div>`;
-      }).join('');
-
-      return `
-        <div class="xls-section-group">
-          <div class="xls-section-hdr" onclick="window._xlsToggleSec('${secName.replace(/'/g,"\\'")}')">
-            <div class="xls-section-check ${allOn?'on':''}">✓</div>
-            <span>${secName}</span>
-            <span class="xls-section-count">${items.length} items</span>
-          </div>
-          <div class="xls-si-list">${rowsHTML}</div>
-        </div>`;
-    }).join('');
-
-    const checked = countChecked();
-    const total   = Object.values(p.groups).reduce((n,a)=>n+a.length,0);
-
-    return `
-      <div class="xls-preview-wrap">
-        <div class="xls-preview-meta">
-          <div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-bottom:6px">📂 ${filename}</div>
-          <div class="xls-preview-meta-row">
-            ${p.jobName?`<div class="xls-meta-field"><div class="xls-meta-label">Job</div><div class="xls-meta-val">${p.jobName}</div></div>`:''}
-            ${p.auditor?`<div class="xls-meta-field"><div class="xls-meta-label">Superintendent</div><div class="xls-meta-val">${p.auditor}</div></div>`:''}
-          </div>
-        </div>
-        <div style="font-size:10px;color:var(--text3);font-family:var(--mono);margin-bottom:6px">SELECT SHEET VERSION:</div>
-        <div class="xls-sheet-tabs">${sheetTabs}</div>
-        <div style="font-size:10px;color:var(--text3);font-family:var(--mono);margin-bottom:8px">
-          CHECK EACH SI ITEM TO INCLUDE → UNCHECK TO SKIP:
-        </div>
-        <div class="xls-scroll">${sectionsHTML}</div>
-        <div class="xls-footer">
-          <div class="xls-count-badge"><span>${checked}</span> of ${total} items selected</div>
-          <div style="display:flex;gap:8px">
-            <button class="xls-select-all" onclick="window._xlsSelectAll(true)">Select All</button>
-            <button class="xls-select-all" onclick="window._xlsSelectAll(false)">Deselect All</button>
-          </div>
-        </div>
-      </div>`;
-  }
-
-  // Helpers bound to window so inline onclick can reach them
-  window._xlsParsed = parsed;
-  window._xlsWb = wb;
-  window._xlsFid = fid;
-
-  window._xlsSwitchSheet = function(name) {
-    activeSheet = name;
-    parsed = parseXLSSheet(wb, name);
-    window._xlsParsed = parsed;
-    initChecked(parsed);
-    const body = document.querySelector('#modal-overlay .modal-body');
-    if (body) body.innerHTML = buildPreviewHTML(parsed);
-  };
-
-  window._xlsToggleRow = function(key) {
-    checkedState[key] = !checkedState[key];
-    const body = document.querySelector('#modal-overlay .modal-body');
-    if (body) body.innerHTML = buildPreviewHTML(parsed);
-  };
-
-  window._xlsToggleSec = function(secName) {
-    const items = parsed.groups[secName] || [];
-    const allOn = items.every(it => checkedState[it.num+'|'+it.title]);
-    items.forEach(it => checkedState[it.num+'|'+it.title] = !allOn);
-    const body = document.querySelector('#modal-overlay .modal-body');
-    if (body) body.innerHTML = buildPreviewHTML(parsed);
-  };
-
-  window._xlsSelectAll = function(on) {
-    Object.keys(checkedState).forEach(k => checkedState[k] = on);
-    const body = document.querySelector('#modal-overlay .modal-body');
-    if (body) body.innerHTML = buildPreviewHTML(parsed);
-  };
-
-  // Show the modal — confirm button creates the project
-  closeModal();
-  const ov = document.createElement('div');
-  ov.className = 'modal-overlay'; ov.id = 'modal-overlay';
-  ov.onclick = e => { if (e.target === ov) closeModal(); };
-  ov.innerHTML = `
-    <div class="modal wide">
-      <div class="modal-header">
-        <span class="modal-title">📥 Import from Excel</span>
-        <div class="btn-icon" onclick="closeModal()">✕</div>
-      </div>
-      <div class="modal-body">${buildPreviewHTML(parsed)}</div>
-      <div class="modal-footer">
-        <button class="btn-nav" style="flex:1;text-align:center" onclick="closeModal()">Cancel</button>
-        <button class="btn-save" style="flex:2" onclick="window._xlsCreateProject()">✓ Create Project</button>
-      </div>
-    </div>`;
-  document.body.appendChild(ov);
-
-  // ── CREATE PROJECT FROM SELECTION ────────
-  window._xlsCreateProject = function() {
-    const p = window._xlsParsed;
-    const selectedItems = [];
-    Object.entries(p.groups).forEach(([secName, items]) => {
-      items.forEach(item => {
-        const k = item.num+'|'+item.title;
-        if (checkedState[k]) selectedItems.push({ ...item, secName });
-      });
-    });
-
-    if (!selectedItems.length) {
-      showToast('Select at least one SI item'); return;
-    }
-
-    // Show loading state
-    const body = document.querySelector('#modal-overlay .modal-body');
-    if (body) body.innerHTML = `
-      <div class="xls-import-progress">
-        <span class="spin">⚙️</span>
-        Creating project with ${selectedItems.length} SI items…
-      </div>`;
-
-    setTimeout(() => {
-      const ts = Date.now();
-      const jobName = p.jobName || filename.replace(/\.[^.]+$/, '');
-
-      // Build unique sections in order
-      const secOrder = [];
-      const secMap = {};
-      selectedItems.forEach(item => {
-        if (!secMap[item.secName]) {
-          const sid = 'sec_' + (ts + secOrder.length);
-          secMap[item.secName] = sid;
-          secOrder.push({ id: sid, name: item.secName });
-        }
-      });
-
-      // Build SI items
-      const items = selectedItems.map((item, i) => ({
-        id: 'si_' + (ts + i),
-        sectionId: secMap[item.secName],
-        num: item.num,
-        title: item.title + (item.location ? ' @ ' + item.location : ''),
-        status: 'pending',
-        assignedTo: '', dueDate: '', notes: '',
-        tags: [], customTags: [], photos: []
-      }));
-
-      const proj = {
-        id: 'proj_' + ts,
-        name: jobName,
-        client: '—',
-        company: 'Allegheny Millwork',
-        auditor: p.auditor || '—',
-        date: new Date().toLocaleDateString(),
-        projectType: '',
-        coverPhoto: null,
-        sections: secOrder,
-        items
-      };
-
-      store.projects.push(proj);
-      const f = getFolder(window._xlsFid);
-      if (f && !f.projects.includes(proj.id)) f.projects.push(proj.id);
-      save();
-      closeModal();
-      showToast(`✓ Imported ${items.length} SI items`, 'green');
-      setTimeout(() => navToProject(proj.id, window._xlsFid), 60);
-    }, 80);
-  };
+  save();
 }
 
 function closeModal() { document.getElementById('modal-overlay')?.remove(); }
