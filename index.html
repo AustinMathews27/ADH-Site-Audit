@@ -231,13 +231,14 @@ body {
 .si-num { font-family:var(--mono); font-size:12px; font-weight:700; color:var(--accent); margin-bottom:1px; cursor:pointer; }
 .si-title { font-size:12px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .si-status { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
-.si-status.completed   { background:#22c55e; box-shadow:0 0 4px #22c55e; }
-.si-status.not-ready   { background:var(--red);    box-shadow:0 0 4px var(--red); }
-.si-status.in-progress { background:var(--yellow);  box-shadow:0 0 4px var(--yellow); }
-.si-status.changed     { background:#f97316;         box-shadow:0 0 4px #f97316; }
-.si-status.pending     { background:var(--text3); }
+.si-status.completed     { background:#22c55e; box-shadow:0 0 4px #22c55e; }
+.si-status.not-ready     { background:var(--red);    box-shadow:0 0 4px var(--red); }
+.si-status.in-progress   { background:var(--yellow);  box-shadow:0 0 4px var(--yellow); }
+.si-status.changed       { background:#f97316;         box-shadow:0 0 4px #f97316; }
+.si-status.pending       { background:var(--text3); }
+.si-status.punch-ongoing { background:#a855f7; box-shadow:0 0 4px #a855f7; }
 
-.si-status.on-hold     { background:#f97316;         box-shadow:0 0 4px #f97316; }
+.si-status.on-hold       { background:#f97316;         box-shadow:0 0 4px #f97316; }
 
 /* ── RIGHT PANEL ── */
 .right-panel { flex:1; display:flex; flex-direction:column; overflow:hidden; }
@@ -290,8 +291,10 @@ body {
 .pc-photo {
   height:100px; background:var(--surface3);
   display:flex; align-items:center; justify-content:center;
-  font-size:32px; opacity:0.25;
+  font-size:32px; overflow:hidden;
 }
+.pc-photo .pc-placeholder { opacity:0.25; }
+.pc-photo img { width:100%; height:100%; object-fit:cover; }
 .pc-body { padding:11px 13px; }
 .pc-name { font-size:13px; font-weight:600; margin-bottom:4px; }
 .pc-meta { font-size:10px; color:var(--text2); font-family:var(--mono); }
@@ -305,6 +308,7 @@ body {
 .stat-pill.yellow   { background:var(--yellow-dim);             border-color:rgba(251,191,36,0.2);  color:var(--yellow); }
 .stat-pill.orange   { background:rgba(249,115,22,0.12);         border-color:rgba(249,115,22,0.25); color:#f97316; }
 .stat-pill.completed{ background:rgba(34,197,94,0.12);          border-color:rgba(34,197,94,0.22);  color:#22c55e; }
+.stat-pill.purple   { background:rgba(168,85,247,0.12);         border-color:rgba(168,85,247,0.22); color:#a855f7; }
 
 /* ── PROJECT SUMMARY ── */
 .summary-wrap { flex:1; overflow-y:auto; padding:20px; }
@@ -313,10 +317,26 @@ body {
   border-radius:13px; overflow:hidden; margin-bottom:16px;
 }
 .proj-summary-photo {
-  height:130px; background:var(--surface3);
+  height:160px; background:var(--surface3);
   display:flex; align-items:center; justify-content:center;
-  font-size:44px; opacity:0.18;
+  font-size:44px; overflow:hidden; position:relative;
+  cursor:pointer;
 }
+.proj-summary-photo img { width:100%; height:100%; object-fit:cover; }
+.proj-summary-photo-placeholder { opacity:0.18; }
+.proj-summary-photo-overlay {
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  background:rgba(0,0,0,0); transition:background 0.2s; gap:14px;
+}
+.proj-summary-photo:hover .proj-summary-photo-overlay { background:rgba(0,0,0,0.5); }
+.proj-summary-photo-overlay .overlay-btn {
+  color:#fff; font-size:11px; font-family:var(--mono); font-weight:600;
+  opacity:0; transition:opacity 0.2s; letter-spacing:0.5px;
+  background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.35);
+  border-radius:8px; padding:6px 12px; cursor:pointer; white-space:nowrap;
+}
+.proj-summary-photo:hover .overlay-btn { opacity:1; }
+.overlay-btn.danger:hover { background:rgba(220,38,38,0.5); border-color:rgba(255,100,100,0.5); }
 .proj-summary-info { padding:14px 16px; }
 .proj-summary-name { font-size:17px; font-weight:600; margin-bottom:8px; }
 .proj-meta-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px 16px; }
@@ -358,15 +378,16 @@ body {
   font-size:10px; font-weight:600; font-family:var(--mono);
   cursor:pointer; border:1px solid transparent; transition:all 0.15s;
 }
-.status-pill.completed   { background:rgba(34,197,94,0.12);  color:#22c55e; border-color:rgba(34,197,94,0.28); }
-.status-pill.not-ready   { background:var(--red-dim);         color:var(--red);    border-color:rgba(248,113,113,0.25); }
-.status-pill.in-progress { background:var(--yellow-dim);      color:var(--yellow); border-color:rgba(251,191,36,0.25); }
-.status-pill.changed     { background:rgba(249,115,22,0.12);  color:#f97316; border-color:rgba(249,115,22,0.28); }
-.status-pill.pending     { background:var(--surface2);        color:var(--text3);  border-color:var(--border); }
-.status-pill.inactive    { background:var(--surface2);        color:var(--text3);  border-color:var(--border); }
+.status-pill.completed     { background:rgba(34,197,94,0.12);   color:#22c55e; border-color:rgba(34,197,94,0.28); }
+.status-pill.not-ready     { background:var(--red-dim);          color:var(--red);    border-color:rgba(248,113,113,0.25); }
+.status-pill.in-progress   { background:var(--yellow-dim);       color:var(--yellow); border-color:rgba(251,191,36,0.25); }
+.status-pill.changed       { background:rgba(249,115,22,0.12);   color:#f97316; border-color:rgba(249,115,22,0.28); }
+.status-pill.pending       { background:var(--surface2);         color:var(--text3);  border-color:var(--border); }
+.status-pill.inactive      { background:var(--surface2);         color:var(--text3);  border-color:var(--border); }
 .status-pill.active-status { box-shadow:0 0 0 2px currentColor; }
+.status-pill.punch-ongoing { background:rgba(168,85,247,0.12);  color:#a855f7; border-color:rgba(168,85,247,0.28); }
 
-.status-pill.on-hold     { background:rgba(249,115,22,0.12);  color:#f97316; border-color:rgba(249,115,22,0.28); }
+.status-pill.on-hold       { background:rgba(249,115,22,0.12);   color:#f97316; border-color:rgba(249,115,22,0.28); }
 .edit-body { flex:1; overflow-y:auto; padding:16px; }
 .field-group { margin-bottom:16px; }
 .field-label {
@@ -838,6 +859,15 @@ canvas.env-canvas { display:block; width:100%; height:100%; }
 }
 .env-threshold-field.temp-field { border-color:rgba(249,115,22,0.3); }
 .env-threshold-field.hum-field  { border-color:rgba(248,113,113,0.3); }
+.env-zone-presets { display:flex; gap:5px; align-items:center; }
+.env-zone-btn {
+  font-family:var(--mono); font-size:10px; font-weight:700; letter-spacing:0.5px;
+  padding:4px 9px; border-radius:7px; border:1px solid var(--border);
+  background:var(--surface2); color:var(--text2); cursor:pointer; transition:all 0.15s;
+  white-space:nowrap;
+}
+.env-zone-btn:hover { border-color:var(--accent); color:var(--accent); background:var(--accent-dim); }
+.env-zone-btn.active { border-color:var(--accent); color:var(--accent); background:var(--accent-dim); }
 .env-warnings-list { display:flex; flex-direction:column; gap:6px; margin:0 16px 10px; }
 .env-warn-item {
   display:flex; align-items:center; gap:8px; padding:8px 12px;
@@ -1263,18 +1293,23 @@ input[type="radio"] {
     <div id="v-env" style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
     <div id="v-contacts" style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
     <div id="v-schedule" style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
+    <div id="v-toolbox"  style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
+    <div id="v-awi"      style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
   </div>
 </div>
 
 <div class="toast" id="toast"></div>
 <!-- Hidden file inputs — no visible UI -->
 <input type="file" id="file-input" accept="image/*" multiple onchange="handleFileImport(event)" style="display:none">
+<input type="file" id="cover-photo-input" accept="image/*" onchange="handleCoverPhotoUpload(event)" style="display:none">
 <input type="file" id="env-file-input" onchange="handleEnvFile(event)" style="display:none">
 <input type="file" id="xls-file-input" accept=".xls,.xlsx" onchange="handleXLSImport(event)" style="display:none">
 <input type="file" id="pdf-logo-input" accept="image/*" onchange="handleBrandingUpload(event, 'logo')" style="display:none">
 <input type="file" id="pdf-auditor-input" accept="image/*" onchange="handleBrandingUpload(event, 'auditorSig')" style="display:none">
 <input type="file" id="pdf-client-input" accept="image/*" onchange="handleBrandingUpload(event, 'clientSig')" style="display:none">
-<input type="file" id="contact-csv-input" accept=".csv,text/csv" onchange="handleContactCSV(event)" style="display:none">
+<input type="file" id="contact-csv-input"  accept=".csv,text/csv"          onchange="handleContactCSV(event)"  style="display:none">
+<input type="file" id="contact-vcf-input"  accept=".vcf,text/vcard"         onchange="handleContactVCF(event)"  style="display:none">
+<input type="file" id="contact-xlsx-input" accept=".xlsx,.xls"              onchange="handleContactXLSX(event)" style="display:none">
 
 <!-- Mobile bottom nav (phones only) -->
 <div class="mobile-bottom-nav" id="mobile-bottom-nav">
@@ -1334,33 +1369,124 @@ const SEED = {
   ]
 };
 
-let store;
-try { store = JSON.parse(localStorage.getItem('fap_v3')||'null') || JSON.parse(JSON.stringify(SEED)); }
-catch(e) { store = JSON.parse(JSON.stringify(SEED)); }
+// ══════════════════════════════════════════
+// INDEXEDDB STORAGE ENGINE
+// Replaces localStorage — no 5 MB cap, reliable on iOS PWA
+// ══════════════════════════════════════════
+const DB_NAME    = 'adh_audit_db';
+const DB_VERSION = 1;
+const STORE_NAME = 'kv';          // generic key-value object store
 
-// Ensure new fields exist in migrated data
-if(!store.settings) store.settings = { isAdmin: false, theme: 'light' };
-if(store.settings.theme === undefined || store.settings.theme === 'default') store.settings.theme = 'light';
-store.folders.forEach(f => { if(f.parentId === undefined) f.parentId = null; });
-if(!store.contacts) store.contacts = [];
+let _db = null;
 
-window.contactCategoryFilter = 'All';
-window.selectedContacts = new Set();
-let isAdmin = store.settings.isAdmin;
-applyTheme(store.settings.theme);
-
-function save() { 
-  try { 
-    localStorage.setItem('fap_v3', JSON.stringify(store)); 
-  } catch(e) {
-    console.error('Storage failed:', e);
-    if (e.name === 'QuotaExceededError') {
-      showToast('⚠️ Storage Full! Clear old projects.', 'red');
-    } else {
-      showToast('⚠️ Error saving data', 'red');
-    }
-  } 
+function _openDB() {
+  if (_db) return Promise.resolve(_db);
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = e => {
+      e.target.result.createObjectStore(STORE_NAME);
+    };
+    req.onsuccess = e => { _db = e.target.result; resolve(_db); };
+    req.onerror   = e => reject(e.target.error);
+  });
 }
+
+function _idbGet(key) {
+  return _openDB().then(db => new Promise((resolve, reject) => {
+    const tx  = db.transaction(STORE_NAME, 'readonly');
+    const req = tx.objectStore(STORE_NAME).get(key);
+    req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror   = e => reject(e.target.error);
+  }));
+}
+
+function _idbSet(key, value) {
+  return _openDB().then(db => new Promise((resolve, reject) => {
+    const tx  = db.transaction(STORE_NAME, 'readwrite');
+    const req = tx.objectStore(STORE_NAME).put(value, key);
+    req.onsuccess = () => resolve();
+    req.onerror   = e => reject(e.target.error);
+  }));
+}
+
+// ── In-memory store (populated during async init) ──
+let store = JSON.parse(JSON.stringify(SEED));
+
+// Debounced async save — fire-and-forget, never blocks the UI
+let _saveTimer = null;
+function save() {
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    _idbSet('fap_v3', store).catch(err => {
+      console.error('[ADH] IndexedDB save failed:', err);
+      showToast('⚠️ Error saving data', 'red');
+    });
+    // Also persist section_rules if it has been modified
+    _idbSet('section_rules', SECTION_RULES).catch(() => {});
+  }, 80);   // 80 ms debounce keeps UI snappy
+}
+
+// ── Migrate any existing localStorage data once, then delete it ──
+async function _migrateFromLocalStorage() {
+  try {
+    const raw = localStorage.getItem('fap_v3');
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    await _idbSet('fap_v3', data);
+    localStorage.removeItem('fap_v3');
+    console.log('[ADH] Migrated data from localStorage → IndexedDB');
+    return data;
+  } catch(e) {
+    return null;
+  }
+}
+
+// ── Bootstrap: load from IDB (or migrate from LS), then start the app ──
+async function _initStore() {
+  try {
+    // Try migration first (runs only once — LS key is deleted afterward)
+    let data = await _migrateFromLocalStorage();
+    if (!data) data = await _idbGet('fap_v3');
+    if (data) store = data;
+  } catch(e) {
+    console.warn('[ADH] Storage load error, using seed:', e);
+    store = JSON.parse(JSON.stringify(SEED));
+  }
+
+  // Ensure new fields exist in migrated / old data
+  if(!store.settings) store.settings = { isAdmin: false, theme: 'light' };
+  if(store.settings.theme === undefined || store.settings.theme === 'default') store.settings.theme = 'light';
+  store.folders.forEach(f => { if(f.parentId === undefined) f.parentId = null; });
+  if(!store.contacts) store.contacts = [];
+  store.contacts.forEach(c => { if(!c.project) c.project = 'Office'; });
+
+  window.contactCategoryFilter = 'All';
+  window.contactProjectFilter  = 'All';
+  window.importMenuOpen        = false;
+  window.exportMenuOpen        = false;
+  window.selectedContacts      = new Set();
+  isAdmin = store.settings.isAdmin;
+  applyTheme(store.settings.theme);
+
+  // Load section_rules from IDB (migrate from LS if present)
+  try {
+    const srLS = localStorage.getItem('section_rules');
+    if (srLS) {
+      const parsed = JSON.parse(srLS);
+      await _idbSet('section_rules', parsed);
+      localStorage.removeItem('section_rules');
+      SECTION_RULES = parsed;
+    } else {
+      const srIDB = await _idbGet('section_rules');
+      if (srIDB) SECTION_RULES = srIDB;
+    }
+  } catch(e) { /* keep default SECTION_RULES */ }
+
+  render();
+}
+
+// isAdmin declared here so _initStore can set it before render()
+let isAdmin = false;
 
 function resetToSeed() {
   if(confirm('Are you sure? This will delete all your audit data and reset to the default template.')) {
@@ -1485,6 +1611,15 @@ function navToContacts() {
   render();
 }
 
+function navToToolbox() {
+  stack = [{view:'toolbox'}];
+  render();
+}
+
+function navToAWI() {
+  stack = [{view:'awi'}];
+  render();
+}
 
 // ══════════════════════════════════════════
 // RENDER COORDINATOR
@@ -1544,6 +1679,14 @@ function renderNavBar(r) {
     crumbs.push(`<span class="crumb-sep">›</span>`);
     crumbs.push(`<span class="crumb active">📇 Contact Book</span>`);
   }
+  if (r.view==='toolbox') {
+    crumbs.push(`<span class="crumb-sep">›</span>`);
+    crumbs.push(`<span class="crumb active">🦺 Toolbox Talk / Safety</span>`);
+  }
+  if (r.view==='awi') {
+    crumbs.push(`<span class="crumb-sep">›</span>`);
+    crumbs.push(`<span class="crumb active">📐 AWI Standards</span>`);
+  }
   bc.innerHTML = crumbs.join('');
 }
 
@@ -1566,7 +1709,7 @@ function renderLeft(r) {
       const comp = (c.company || '').toLowerCase();
       const role = (c.role || '').toLowerCase();
       return !q || name.includes(q) || comp.includes(q) || role.includes(q);
-  }).sort((a,b) => a.name.localeCompare(b.name)); // Sort contacts alphabetically
+    }).sort((a,b) => a.name.localeCompare(b.name));
     scroll.innerHTML = list.map(c => `
       <div class="si-row" onclick="buildContactBookView('${c.id}')">
         <div class="si-thumb" style="font-size:16px">👤</div>
@@ -1576,6 +1719,18 @@ function renderLeft(r) {
         </div>
         <div class="folder-arrow">›</div>
       </div>`).join('') || emptyMsg('No contacts found');
+    return;
+  }
+
+  if (r.view === 'toolbox') {
+    title.textContent = 'TOOLBOX TALK';
+    scroll.innerHTML = emptyMsg('Content coming soon');
+    return;
+  }
+
+  if (r.view === 'awi') {
+    title.textContent = 'AWI STANDARDS';
+    scroll.innerHTML = emptyMsg('Content coming soon');
     return;
   }
 
@@ -1639,7 +1794,7 @@ function renderLeft(r) {
         html+=`<div class="si-row ${r.siId===item.id?'active':''}" onclick="navToSI('${proj.id}','${item.id}')">
           <div class="si-thumb">${thumb}</div>
           <div class="si-info">
-            <div class="si-num" onclick="event.stopPropagation(); showRenameSINumModal('${proj.id}','${item.id}')" title="Click to rename SI#">
+            <div class="si-num">
               SI# ${item.num.replace(/^SI\s+/, '')}
             </div>
             <div class="si-title">${item.title}</div>
@@ -1656,10 +1811,12 @@ function emptyMsg(t) { return `<div style="padding:20px;text-align:center;color:
 
 // ── RIGHT PANEL ──────────────────────────
 function renderRight(r) {
-  const views=['v-empty','v-root','v-folder','v-project','v-si','v-env','v-contacts','v-schedule'];
+  const views=['v-empty','v-root','v-folder','v-project','v-si','v-env','v-contacts','v-schedule','v-toolbox','v-awi'];
   views.forEach(id=>{ const el=document.getElementById(id); el.style.display='none'; });
 
   if (r.view==='contacts') { buildContactBookView(); show('v-contacts'); }
+  else if (r.view==='toolbox') { buildToolboxView(); show('v-toolbox'); }
+  else if (r.view==='awi')     { buildAWIView();     show('v-awi'); }
   else if (r.view==='env') { buildEnvView(r.projectId); show('v-env'); }
   else if (r.view==='schedule') { buildScheduleView(r.projectId); show('v-schedule'); }
   else if (r.view==='si') { buildSIEditor(r.projectId,r.siId); show('v-si'); }
@@ -1686,6 +1843,16 @@ function buildRootView() {
         <div class="fc-icon">📇</div>
         <div class="fc-name">Contact Book</div>
         <div class="fc-count">${store.contacts.length} entries</div>
+      </div>
+      <div class="folder-card" onclick="navToToolbox()" style="border-color:rgba(239,68,68,0.25)">
+        <div class="fc-icon">🦺</div>
+        <div class="fc-name">Toolbox Talk</div>
+        <div class="fc-count">Safety Checklist</div>
+      </div>
+      <div class="folder-card" onclick="navToAWI()" style="border-color:rgba(245,158,11,0.3)">
+        <div class="fc-icon">📐</div>
+        <div class="fc-name">AWI Standards</div>
+        <div class="fc-count">Reference Guide</div>
       </div>
     </div>
 
@@ -1716,37 +1883,116 @@ function folderCardHTML(f) {
   </div>`;
 }
 
+// TOOLBOX TALK / SAFETY CHECKLIST VIEW
+function buildToolboxView() {
+  document.getElementById('v-toolbox').innerHTML = `
+    <div class="grid-wrap">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <div class="env-header-title">🦺 Toolbox Talk / Safety Checklist</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 24px;text-align:center;color:var(--text3)">
+        <div style="font-size:64px;margin-bottom:20px;opacity:0.4">🦺</div>
+        <div style="font-size:16px;font-weight:600;color:var(--text2);margin-bottom:8px">Content Coming Soon</div>
+        <div style="font-size:13px;line-height:1.6;max-width:340px">
+          Toolbox talks, job-site safety checklists, and pre-task planning templates will be added here.
+        </div>
+      </div>
+    </div>`;
+}
+
+// AWI STANDARDS VIEW
+function buildAWIView() {
+  document.getElementById('v-awi').innerHTML = `
+    <div class="grid-wrap">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <div class="env-header-title">📐 AWI Standards</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 24px;text-align:center;color:var(--text3)">
+        <div style="font-size:64px;margin-bottom:20px;opacity:0.4">📐</div>
+        <div style="font-size:16px;font-weight:600;color:var(--text2);margin-bottom:8px">Content Coming Soon</div>
+        <div style="font-size:13px;line-height:1.6;max-width:340px">
+          AWI (Architectural Woodwork Institute) quality standards, grades, and compliance references will be added here.
+        </div>
+      </div>
+    </div>`;
+}
+
 // CONTACT BOOK VIEW
 function buildContactBookView(highlightId = null) {
   const el = document.getElementById('v-contacts');
-  const q = (document.getElementById('search-input')?.value || '').toLowerCase();
-  const cat = window.contactCategoryFilter || 'All';
+  const q    = (document.getElementById('search-input')?.value || '').toLowerCase();
+  const cat  = window.contactCategoryFilter || 'All';
+  const proj = window.contactProjectFilter  || 'All';
 
   const contacts = store.contacts.filter(c => {
-    const name = (c.name || '').toLowerCase(); // Use c.name directly
+    const name = (c.name    || '').toLowerCase();
     const comp = (c.company || '').toLowerCase();
-    const matchesSearch = !q || name.includes(q) || comp.includes(q);
-    const matchesCat = cat === 'All' || c.category === cat;
-    return matchesSearch && matchesCat;
+    const matchesSearch = !q    || name.includes(q) || comp.includes(q);
+    const matchesCat    = cat  === 'All' || c.category === cat;
+    const matchesProj   = proj === 'All' || c.project  === proj;
+    return matchesSearch && matchesCat && matchesProj;
   });
+
+  // Build project options for filter bar
+  const folderNames = [...new Set(store.folders.map(f => f.name).filter(Boolean))];
+  const projOptions = ['All', 'Office', ...folderNames].map(p =>
+    `<option value="${p}" ${proj===p?'selected':''}>${p === 'All' ? 'All Projects' : p}</option>`
+  ).join('');
+
+  const allVisible = contacts.length > 0 && contacts.every(c => window.selectedContacts.has(c.id));
 
   el.innerHTML = `
     <div class="grid-wrap">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
         <div class="env-header-title">📇 Contact Book</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:center">
-          <select class="filter-input" style="flex:0; min-width:130px; height:32px" onchange="window.contactCategoryFilter=this.value; buildContactBookView()">
+          <select class="filter-input" style="flex:0;min-width:130px;height:32px"
+                  onchange="window.contactCategoryFilter=this.value;buildContactBookView()">
             <option value="All">All Categories</option>
-            <option value="GC" ${cat==='GC'?'selected':''}>GC (Contractor)</option>
-            <option value="Sub" ${cat==='Sub'?'selected':''}>Sub (Trade)</option>
+            <option value="GC"     ${cat==='GC'    ?'selected':''}>GC (Contractor)</option>
+            <option value="Sub"    ${cat==='Sub'   ?'selected':''}>Sub (Trade)</option>
             <option value="Client" ${cat==='Client'?'selected':''}>Client / Owner</option>
             <option value="Vendor" ${cat==='Vendor'?'selected':''}>Vendor</option>
-            <option value="Other" ${cat==='Other'?'selected':''}>Other</option>
+            <option value="Other"  ${cat==='Other' ?'selected':''}>Other</option>
           </select>
-          <button class="xls-select-all" onclick="toggleSelectAllContacts()">${store.contacts.length > 0 && Array.from(contacts).every(c=>window.selectedContacts.has(c.id)) ? 'Deselect All' : 'Select All'}</button>
-          <button class="import-xls-btn" onclick="triggerContactCSV()" style="background:var(--accent-dim);color:var(--accent);border-color:rgba(61,184,245,0.25)">📥 Import CSV</button>
-          <button class="btn-add" onclick="exportContactsVCF()" style="background:var(--green-dim);color:var(--green);border-color:rgba(52,211,153,0.25);display:${window.selectedContacts.size > 0 ? 'flex' : 'none'}">
-            📤 Export (${window.selectedContacts.size})</button>
+          <select class="filter-input" style="flex:0;min-width:130px;height:32px"
+                  onchange="window.contactProjectFilter=this.value;buildContactBookView()">
+            ${projOptions}
+          </select>
+          <button class="xls-select-all" onclick="toggleSelectAllContacts()">${allVisible ? 'Deselect All' : 'Select All'}</button>
+
+          <!-- Import dropdown -->
+          <div style="position:relative">
+            <button class="import-xls-btn" style="background:var(--accent-dim);color:var(--accent);border-color:rgba(61,184,245,0.25)"
+                    onclick="window.importMenuOpen=!window.importMenuOpen;window.exportMenuOpen=false;buildContactBookView()">
+              📥 Import ▾
+            </button>
+            ${window.importMenuOpen ? `
+            <div style="position:absolute;top:calc(100% + 4px);right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;z-index:300;min-width:180px;box-shadow:0 4px 16px rgba(0,0,0,0.18)">
+              <div style="padding:9px 14px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--border)"
+                   onclick="window.importMenuOpen=false;triggerContactCSV()">📄 Import CSV</div>
+              <div style="padding:9px 14px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--border)"
+                   onclick="window.importMenuOpen=false;triggerContactVCF()">👤 Import vCard (.vcf)</div>
+              <div style="padding:9px 14px;cursor:pointer;font-size:12px"
+                   onclick="window.importMenuOpen=false;triggerContactXLSX()">📊 Import Excel (.xlsx)</div>
+            </div>` : ''}
+          </div>
+
+          <!-- Export dropdown -->
+          <div style="position:relative;${window.selectedContacts.size > 0 ? '' : 'display:none'}">
+            <button class="btn-add" style="background:var(--green-dim);color:var(--green);border-color:rgba(52,211,153,0.25)"
+                    onclick="window.exportMenuOpen=!window.exportMenuOpen;window.importMenuOpen=false;buildContactBookView()">
+              📤 Export (${window.selectedContacts.size}) ▾
+            </button>
+            ${window.exportMenuOpen ? `
+            <div style="position:absolute;top:calc(100% + 4px);right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;z-index:300;min-width:180px;box-shadow:0 4px 16px rgba(0,0,0,0.18)">
+              <div style="padding:9px 14px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--border)"
+                   onclick="window.exportMenuOpen=false;exportContactsVCF()">👤 Export as VCF</div>
+              <div style="padding:9px 14px;cursor:pointer;font-size:12px"
+                   onclick="window.exportMenuOpen=false;exportContactsXLSX()">📊 Export as Excel</div>
+            </div>` : ''}
+          </div>
+
           <button class="btn-add" onclick="showNewContactModal()">＋ Add Contact</button>
         </div>
       </div>
@@ -1757,18 +2003,23 @@ function buildContactBookView(highlightId = null) {
             <div class="pc-body">
               <div style="display:flex;justify-content:space-between;align-items:flex-start">
                 <div style="display:flex;gap:8px;align-items:center;min-width:0">
-                  <div class="export-check ${window.selectedContacts.has(c.id)?'checked':''}" 
+                  <div class="export-check ${window.selectedContacts.has(c.id)?'checked':''}"
                        onclick="event.stopPropagation();toggleContactSelection('${c.id}')">
                     ${window.selectedContacts.has(c.id)?'✓':''}
                   </div>
                   <div class="pc-name" style="font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name}</div>
                 </div>
-                <div class="proj-type-badge" style="font-size:8px; opacity:0.8; margin:0">${c.category || 'Other'}</div>
-                <button class="si-status pending" style="border:none;background:none;cursor:pointer;opacity:0.5;margin-left:4px" onclick="deleteContact('${c.id}')">✕</button>
+                <button class="si-status pending" style="border:none;background:none;cursor:pointer;opacity:0.5;margin-left:4px;flex-shrink:0" onclick="event.stopPropagation();deleteContact('${c.id}')">✕</button>
+              </div>
+              <div style="display:flex;gap:4px;flex-wrap:wrap;margin:4px 0 2px">
+                <div class="proj-type-badge" style="font-size:8px;opacity:0.8;margin:0">${c.category || 'Other'}</div>
+                <div class="proj-type-badge" style="font-size:8px;margin:0;background:var(--folder-dim);color:var(--folder);border-color:rgba(245,158,11,0.3)">
+                  ${c.project && c.project !== 'Office' ? '📁 ' + c.project : '🏢 Office'}
+                </div>
               </div>
               <div class="pc-meta">${c.role}</div>
               <div class="proj-type-badge" style="margin-bottom:12px">${c.company}</div>
-              
+
               <div style="display:flex;gap:8px;margin-top:12px">
                 ${c.phone ? `<a href="tel:${c.phone}" class="btn-add" style="flex:1;justify-content:center;text-decoration:none" onclick="event.stopPropagation()">📞 Call</a>` : ''}
                 ${c.email ? `<a href="mailto:${c.email}" class="btn-add" style="flex:1;justify-content:center;text-decoration:none;background:var(--green-dim);color:var(--green);border-color:rgba(52,211,153,0.2)" onclick="event.stopPropagation()">✉ Email</a>` : ''}
@@ -1786,21 +2037,34 @@ function buildContactBookView(highlightId = null) {
   `;
 }
 
+function _contactProjectSelectHTML(selected = 'Office') {
+  const names = ['Office', ...[...new Set(store.folders.map(f => f.name).filter(Boolean))]];
+  return names.map(n => `<option value="${n}" ${selected===n?'selected':''}>${n === 'Office' ? '🏢 Office (General)' : '📁 ' + n}</option>`).join('');
+}
+
 function showNewContactModal() {
   makeModal('New Contact', `
     <div class="field-group">
       <div class="field-label">Full Name</div>
       <input class="field-input" id="c-name" placeholder="e.g. John Doe" />
     </div>
-    <div class="field-group">
-      <div class="field-label">Category</div>
-      <select class="field-input" id="c-category">
-        <option value="GC">GC (General Contractor)</option>
-        <option value="Sub">Sub (Subcontractor / Trade)</option>
-        <option value="Client">Client / Owner</option>
-        <option value="Vendor">Vendor / Supplier</option>
-        <option value="Other" selected>Other</option>
-      </select>
+    <div class="field-row">
+      <div class="field-group">
+        <div class="field-label">Category</div>
+        <select class="field-input" id="c-category">
+          <option value="GC">GC (General Contractor)</option>
+          <option value="Sub">Sub (Subcontractor / Trade)</option>
+          <option value="Client">Client / Owner</option>
+          <option value="Vendor">Vendor / Supplier</option>
+          <option value="Other" selected>Other</option>
+        </select>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Project / Assignment</div>
+        <select class="field-input" id="c-project">
+          ${_contactProjectSelectHTML('Office')}
+        </select>
+      </div>
     </div>
     <div class="field-row">
       <div class="field-group">
@@ -1827,18 +2091,19 @@ function showNewContactModal() {
   `, () => {
     const name = document.getElementById('c-name').value.trim();
     if(!name) return showToast('Name is required');
-    
+
     const contact = {
       id: 'cnt_' + Date.now(),
       name,
       category: document.getElementById('c-category').value,
-      role: document.getElementById('c-role').value.trim() || 'Contact',
-      company: document.getElementById('c-company').value.trim() || 'External',
-      phone: document.getElementById('c-phone').value.trim(),
-      email: document.getElementById('c-email').value.trim(),
-      notes: document.getElementById('c-notes').value.trim()
+      project:  document.getElementById('c-project').value  || 'Office',
+      role:     document.getElementById('c-role').value.trim()    || 'Contact',
+      company:  document.getElementById('c-company').value.trim() || 'External',
+      phone:    document.getElementById('c-phone').value.trim(),
+      email:    document.getElementById('c-email').value.trim(),
+      notes:    document.getElementById('c-notes').value.trim()
     };
-    
+
     store.contacts.push(contact);
     save(); closeModal(); buildContactBookView(); renderLeft(route());
     showToast('✓ Contact added', 'green');
@@ -1860,17 +2125,24 @@ function showContactDetailModal(id) {
   makeModal(contact.name, `
     <div style="text-align:center;margin-bottom:20px;">
       <div style="font-size:42px;margin-bottom:8px;">👤</div>
-      <div style="font-size:18px;font-weight:600;margin-bottom:4px;">${contact.name}</div>
-      <div class="proj-type-badge" style="font-size:10px; opacity:0.8; margin:0 auto;">${contact.category || 'Other'}</div>
+      <div style="font-size:18px;font-weight:600;margin-bottom:6px;">${contact.name}</div>
+      <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap">
+        <div class="proj-type-badge" style="font-size:10px;opacity:0.8;margin:0">${contact.category || 'Other'}</div>
+        <div class="proj-type-badge" style="font-size:10px;margin:0;background:var(--folder-dim);color:var(--folder);border-color:rgba(245,158,11,0.3)">
+          ${contact.project && contact.project !== 'Office' ? '📁 ' + contact.project : '🏢 Office'}
+        </div>
+      </div>
     </div>
 
-    <div class="field-group">
-      <div class="field-label">Role</div>
-      <div class="field-input" style="background:var(--surface3);">${contact.role || '—'}</div>
-    </div>
-    <div class="field-group">
-      <div class="field-label">Company</div>
-      <div class="field-input" style="background:var(--surface3);">${contact.company || '—'}</div>
+    <div class="field-row">
+      <div class="field-group">
+        <div class="field-label">Role</div>
+        <div class="field-input" style="background:var(--surface3);">${contact.role || '—'}</div>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Company</div>
+        <div class="field-input" style="background:var(--surface3);">${contact.company || '—'}</div>
+      </div>
     </div>
     <div class="field-group">
       <div class="field-label">Phone Number</div>
@@ -1903,15 +2175,23 @@ window.showEditContactModal = function(id) {
       <div class="field-label">Full Name</div>
       <input class="field-input" id="c-name" value="${contact.name || ''}" placeholder="e.g. John Doe" />
     </div>
-    <div class="field-group">
-      <div class="field-label">Category</div>
-      <select class="field-input" id="c-category">
-        <option value="GC" ${contact.category==='GC'?'selected':''}>GC (General Contractor)</option>
-        <option value="Sub" ${contact.category==='Sub'?'selected':''}>Sub (Subcontractor / Trade)</option>
-        <option value="Client" ${contact.category==='Client'?'selected':''}>Client / Owner</option>
-        <option value="Vendor" ${contact.category==='Vendor'?'selected':''}>Vendor / Supplier</option>
-        <option value="Other" ${contact.category==='Other'?'selected':''}>Other</option>
-      </select>
+    <div class="field-row">
+      <div class="field-group">
+        <div class="field-label">Category</div>
+        <select class="field-input" id="c-category">
+          <option value="GC"     ${contact.category==='GC'    ?'selected':''}>GC (General Contractor)</option>
+          <option value="Sub"    ${contact.category==='Sub'   ?'selected':''}>Sub (Subcontractor / Trade)</option>
+          <option value="Client" ${contact.category==='Client'?'selected':''}>Client / Owner</option>
+          <option value="Vendor" ${contact.category==='Vendor'?'selected':''}>Vendor / Supplier</option>
+          <option value="Other"  ${contact.category==='Other' ?'selected':''}>Other</option>
+        </select>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Project / Assignment</div>
+        <select class="field-input" id="c-project">
+          ${_contactProjectSelectHTML(contact.project || 'Office')}
+        </select>
+      </div>
     </div>
     <div class="field-row">
       <div class="field-group">
@@ -1939,13 +2219,14 @@ window.showEditContactModal = function(id) {
     const name = document.getElementById('c-name').value.trim();
     if(!name) return showToast('Name is required');
 
-    contact.name = name;
+    contact.name     = name;
     contact.category = document.getElementById('c-category').value;
-    contact.role = document.getElementById('c-role').value.trim();
-    contact.company = document.getElementById('c-company').value.trim();
-    contact.phone = document.getElementById('c-phone').value.trim();
-    contact.email = document.getElementById('c-email').value.trim();
-    contact.notes = document.getElementById('c-notes').value.trim();
+    contact.project  = document.getElementById('c-project').value  || 'Office';
+    contact.role     = document.getElementById('c-role').value.trim();
+    contact.company  = document.getElementById('c-company').value.trim();
+    contact.phone    = document.getElementById('c-phone').value.trim();
+    contact.email    = document.getElementById('c-email').value.trim();
+    contact.notes    = document.getElementById('c-notes').value.trim();
 
     save();
     closeModal();
@@ -1979,16 +2260,18 @@ window.toggleContactSelection = function(id) {
 };
 
 window.toggleSelectAllContacts = function() {
-  const q = (document.getElementById('search-input')?.value || '').toLowerCase();
-  const cat = window.contactCategoryFilter || 'All';
+  const q    = (document.getElementById('search-input')?.value || '').toLowerCase();
+  const cat  = window.contactCategoryFilter || 'All';
+  const proj = window.contactProjectFilter  || 'All';
   const visible = store.contacts.filter(c => {
     const name = (c.name || '').toLowerCase();
     const comp = (c.company || '').toLowerCase();
-    const matchesSearch = !q || name.includes(q) || comp.includes(q);
-    const matchesCat = cat === 'All' || c.category === cat;
-    return matchesSearch && matchesCat;
+    const matchesSearch = !q    || name.includes(q) || comp.includes(q);
+    const matchesCat    = cat  === 'All' || c.category === cat;
+    const matchesProj   = proj === 'All' || c.project  === proj;
+    return matchesSearch && matchesCat && matchesProj;
   });
-  const allSelected = visible.every(c => window.selectedContacts.has(c.id));
+  const allSelected = visible.length > 0 && visible.every(c => window.selectedContacts.has(c.id));
   if (allSelected) {
     visible.forEach(c => window.selectedContacts.delete(c.id));
   } else {
@@ -2005,30 +2288,54 @@ window.exportContactsVCF = function() {
     if (!c) return;
     vcf += 'BEGIN:VCARD\r\nVERSION:3.0\r\n';
     vcf += `FN:${c.name}\r\nN:;${c.name};;;\r\n`;
-    if (c.company) vcf += `ORG:${c.company}\r\n`;
+    if (c.company)  vcf += `ORG:${c.company}\r\n`;
     if (c.category) vcf += `CATEGORIES:${c.category}\r\n`;
-    if (c.role) vcf += `TITLE:${c.role}\r\n`;
-    if (c.phone) vcf += `TEL;TYPE=CELL:${c.phone}\r\n`;
-    if (c.email) vcf += `EMAIL;TYPE=INTERNET:${c.email}\r\n`;
-    if (c.notes) vcf += `NOTE:${c.notes.replace(/\r?\n/g, '\\n')}\r\n`;
+    if (c.role)     vcf += `TITLE:${c.role}\r\n`;
+    if (c.phone)    vcf += `TEL;TYPE=CELL:${c.phone}\r\n`;
+    if (c.email)    vcf += `EMAIL;TYPE=INTERNET:${c.email}\r\n`;
+    if (c.notes)    vcf += `NOTE:${c.notes.replace(/\r?\n/g, '\\n')}\r\n`;
+    if (c.project)  vcf += `X-ADH-PROJECT:${c.project}\r\n`;
     vcf += 'END:VCARD\r\n';
   });
   const blob = new Blob([vcf], { type: 'text/vcard;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
-  a.download = `ADH_Contacts_${new Date().toISOString().slice(0,10)}.vcf`;
-  document.body.appendChild(a);
-  a.click();
+  a.href = url; a.download = `ADH_Contacts_${new Date().toISOString().slice(0,10)}.vcf`;
+  document.body.appendChild(a); a.click();
   setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
-  showToast(`✓ Exported ${window.selectedContacts.size} contacts`, 'green');
-  window.selectedContacts.clear();
-  buildContactBookView();
+  showToast(`✓ Exported ${window.selectedContacts.size} contacts as VCF`, 'green');
+  window.selectedContacts.clear(); buildContactBookView();
 };
 
-window.triggerContactCSV = function() {
-  document.getElementById('contact-csv-input').click();
+window.exportContactsXLSX = function() {
+  if (window.selectedContacts.size === 0) return showToast('Select contacts first');
+  if (typeof XLSX === 'undefined') return showToast('XLSX library not loaded', 'red');
+  const rows = [];
+  window.selectedContacts.forEach(id => {
+    const c = store.contacts.find(con => con.id === id);
+    if (!c) return;
+    rows.push({
+      Name:     c.name     || '',
+      Category: c.category || 'Other',
+      Project:  c.project  || 'Office',
+      Role:     c.role     || '',
+      Company:  c.company  || '',
+      Phone:    c.phone    || '',
+      Email:    c.email    || '',
+      Notes:    c.notes    || ''
+    });
+  });
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Contacts');
+  XLSX.writeFile(wb, `ADH_Contacts_${new Date().toISOString().slice(0,10)}.xlsx`);
+  showToast(`✓ Exported ${window.selectedContacts.size} contacts as XLSX`, 'green');
+  window.selectedContacts.clear(); buildContactBookView();
 };
+
+window.triggerContactCSV  = function() { document.getElementById('contact-csv-input').click();  };
+window.triggerContactVCF  = function() { document.getElementById('contact-vcf-input').click();   };
+window.triggerContactXLSX = function() { document.getElementById('contact-xlsx-input').click();  };
 
 window.handleContactCSV = function(e) {
   const file = e.target.files[0];
@@ -2052,19 +2359,20 @@ window.handleContactCSV = function(e) {
 function parseContactCSV(text) {
   const lines = text.trim().split(/\r?\n/).filter(l => l.trim());
   if (lines.length < 2) return [];
-  
+
   const sep = lines[0].includes('\t') ? '\t' : ',';
   const headers = lines[0].split(sep).map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
 
-  const map = { name: -1, role: -1, company: -1, phone: -1, email: -1, notes: -1, category: -1 };
+  const map = { name:-1, role:-1, company:-1, phone:-1, email:-1, notes:-1, category:-1, project:-1 };
   headers.forEach((h, i) => {
-    if (/name/.test(h)) map.name = i;
-    else if (/role|position|title/.test(h)) map.role = i;
-    else if (/company|org|firm/.test(h)) map.company = i;
-    else if (/phone|mobile|cell|tel/.test(h)) map.phone = i;
-    else if (/email|mail/.test(h)) map.email = i;
-    else if (/category|type|trade/.test(h)) map.category = i;
-    else if (/note|comment|info/.test(h)) map.notes = i;
+    if      (/name/.test(h))                   map.name     = i;
+    else if (/role|position|title/.test(h))    map.role     = i;
+    else if (/company|org|firm/.test(h))       map.company  = i;
+    else if (/phone|mobile|cell|tel/.test(h))  map.phone    = i;
+    else if (/email|mail/.test(h))             map.email    = i;
+    else if (/category|type|trade/.test(h))    map.category = i;
+    else if (/note|comment|info/.test(h))      map.notes    = i;
+    else if (/project|site/.test(h))           map.project  = i;
   });
 
   if (map.name === -1) return [];
@@ -2074,19 +2382,120 @@ function parseContactCSV(text) {
     const cols = line.split(sep).map(c => c.trim().replace(/^["']|["']$/g, ''));
     if (cols[map.name]) {
       result.push({
-        id: 'cnt_' + Date.now() + Math.random().toString(36).substr(2, 5),
-        name: cols[map.name],
-        category: map.category !== -1 ? cols[map.category] || 'Other' : 'Other',
-        role: map.role !== -1 ? cols[map.role] || 'Contact' : 'Contact',
-        company: map.company !== -1 ? cols[map.company] || 'External' : 'External',
-        phone: map.phone !== -1 ? cols[map.phone] || '' : '',
-        email: map.email !== -1 ? cols[map.email] || '' : '',
-        notes: map.notes !== -1 ? cols[map.notes] || '' : ''
+        id:       'cnt_' + Date.now() + Math.random().toString(36).substr(2, 5),
+        name:     cols[map.name],
+        category: map.category !== -1 ? cols[map.category] || 'Other'    : 'Other',
+        project:  map.project  !== -1 ? cols[map.project]  || 'Office'   : 'Office',
+        role:     map.role     !== -1 ? cols[map.role]     || 'Contact'  : 'Contact',
+        company:  map.company  !== -1 ? cols[map.company]  || 'External' : 'External',
+        phone:    map.phone    !== -1 ? cols[map.phone]    || ''         : '',
+        email:    map.email    !== -1 ? cols[map.email]    || ''         : '',
+        notes:    map.notes    !== -1 ? cols[map.notes]    || ''         : ''
       });
     }
   });
   return result;
 }
+
+// ── VCF (vCard) Import ──────────────────────────────────────────
+window.handleContactVCF = function(e) {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const list = parseContactVCF(ev.target.result);
+    if (list.length > 0) {
+      store.contacts = [...store.contacts, ...list];
+      save(); buildContactBookView();
+      showToast(`✓ Imported ${list.length} contacts`, 'green');
+    } else {
+      showToast('No valid vCards found in file', 'red');
+    }
+  };
+  reader.readAsText(file); e.target.value = '';
+};
+
+function parseContactVCF(text) {
+  // Unfold vCard folded lines (continuation lines start with space or tab)
+  const unfolded = text.replace(/\r?\n[ \t]/g, '');
+  const blocks = unfolded.split(/BEGIN:VCARD/i).slice(1);
+  const results = [];
+
+  blocks.forEach(block => {
+    const endIdx = block.search(/END:VCARD/i);
+    if (endIdx === -1) return;
+    const lines = block.slice(0, endIdx).split(/\r?\n/).filter(l => l.trim());
+
+    // Parse all key:value pairs; key may have type params (KEY;PARAM=val:value)
+    const fields = {};
+    lines.forEach(line => {
+      const colon = line.indexOf(':');
+      if (colon === -1) return;
+      const rawKey = line.slice(0, colon).split(';')[0].toLowerCase().trim();
+      const value  = line.slice(colon + 1).trim();
+      if (!fields[rawKey]) fields[rawKey] = value; // keep first occurrence
+    });
+
+    const name = fields['fn'] || '';
+    if (!name) return;
+
+    results.push({
+      id:       'cnt_' + Date.now() + Math.random().toString(36).substr(2, 5),
+      name,
+      category: fields['categories'] || 'Other',
+      project:  fields['x-adh-project'] || 'Office',
+      role:     fields['title'] || 'Contact',
+      company:  (fields['org'] || '').split(';')[0] || 'External',
+      phone:    fields['tel'] || '',
+      email:    fields['email'] || '',
+      notes:    (fields['note'] || '').replace(/\\n/g, '\n')
+    });
+  });
+  return results;
+}
+
+// ── XLSX Import ─────────────────────────────────────────────────
+window.handleContactXLSX = function(e) {
+  const file = e.target.files[0]; if (!file) return;
+  if (typeof XLSX === 'undefined') return showToast('XLSX library not loaded', 'red');
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const wb   = XLSX.read(ev.target.result, { type: 'array' });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+      const list = rows.map(row => {
+        // Normalize keys to lowercase for flexible matching
+        const r = {};
+        Object.keys(row).forEach(k => { r[k.toLowerCase().trim()] = String(row[k]).trim(); });
+        const name = r['name'] || r['full name'] || r['contact name'] || '';
+        if (!name) return null;
+        return {
+          id:       'cnt_' + Date.now() + Math.random().toString(36).substr(2, 5),
+          name,
+          category: r['category'] || r['type']         || 'Other',
+          project:  r['project']  || r['site']         || 'Office',
+          role:     r['role']     || r['title']        || r['position'] || 'Contact',
+          company:  r['company']  || r['org']          || r['organization'] || 'External',
+          phone:    r['phone']    || r['mobile']       || r['tel'] || '',
+          email:    r['email']    || r['e-mail']       || '',
+          notes:    r['notes']    || r['note']         || r['comments'] || ''
+        };
+      }).filter(Boolean);
+
+      if (list.length > 0) {
+        store.contacts = [...store.contacts, ...list];
+        save(); buildContactBookView();
+        showToast(`✓ Imported ${list.length} contacts`, 'green');
+      } else {
+        showToast('No valid contacts found in file', 'red');
+      }
+    } catch(err) {
+      showToast('Error reading Excel file', 'red');
+    }
+  };
+  reader.readAsArrayBuffer(file); e.target.value = '';
+};
 
 // FOLDER VIEW
 // Sort/filter state keyed by folderId
@@ -2188,12 +2597,14 @@ function buildFolderView(fid) {
 }
 
 function projCardHTML(p,fid) {
-  const completed =p.items.filter(i=>i.status==='completed').length;
-  const notReady  =p.items.filter(i=>i.status==='not-ready').length;
-  const inProgress=p.items.filter(i=>i.status==='in-progress').length;
-  const changed   =p.items.filter(i=>i.status==='on-hold').length;
+  const completed    =p.items.filter(i=>i.status==='completed').length;
+  const punchOngoing =p.items.filter(i=>i.status==='punch-ongoing').length;
+  const notReady     =p.items.filter(i=>i.status==='not-ready').length;
+  const inProgress   =p.items.filter(i=>i.status==='in-progress').length;
+  const changed      =p.items.filter(i=>i.status==='on-hold').length;
+  const hasActivity  = completed||punchOngoing||notReady||inProgress||changed;
   return `<div class="proj-card" style="position:relative" onclick="navToProject('${p.id}','${fid}')">
-    <div class="pc-photo">🏗</div>
+    <div class="pc-photo">${p.coverPhoto ? `<img src="${p.coverPhoto}" alt="">` : '<span class="pc-placeholder">🏗</span>'}</div>
     <button class="proj-card-menu-btn" title="Options"
       onclick="event.stopPropagation();showProjMenu(event,'${p.id}','${fid}')">⋯</button>
     <div class="pc-body">
@@ -2202,10 +2613,11 @@ function projCardHTML(p,fid) {
       ${p.projectType?`<div class="proj-type-badge ${p.projectType.toLowerCase().replace(/\s+/g, '-')}">🏷 ${p.projectType}</div>`:''}
       <div class="pc-stats" style="margin-top:6px">
         ${completed?`<span class="stat-pill completed">${completed} done</span>`:''}
+        ${punchOngoing?`<span class="stat-pill purple">${punchOngoing} punch</span>`:''}
         ${notReady?`<span class="stat-pill red">${notReady} not ready</span>`:''}
         ${inProgress?`<span class="stat-pill yellow">${inProgress} in progress</span>`:''}
         ${changed?`<span class="stat-pill orange">${changed} on hold</span>`:''}
-        ${!completed&&!notReady&&!inProgress&&!changed?`<span class="stat-pill">${p.items.length} pending</span>`:''}
+        ${!hasActivity?`<span class="stat-pill">${p.items.length} pending</span>`:''}
       </div>
     </div>
   </div>`;
@@ -2223,7 +2635,13 @@ function buildProjectView(pid) {
   const r=route();
   document.getElementById('v-project').innerHTML=`<div class="summary-wrap">
     <div class="proj-summary-card">
-      <div class="proj-summary-photo">🏗</div>
+      <div class="proj-summary-photo">
+        ${proj.coverPhoto ? `<img src="${proj.coverPhoto}" alt="Project photo">` : '<span class="proj-summary-photo-placeholder">🏗</span>'}
+        <div class="proj-summary-photo-overlay">
+          <button class="overlay-btn" onclick="triggerCoverPhotoUpload('${pid}')">📷 ${proj.coverPhoto ? 'Change' : 'Add Photo'}</button>
+          ${proj.coverPhoto ? `<button class="overlay-btn danger" onclick="removeCoverPhoto('${pid}')">🗑 Remove</button>` : ''}
+        </div>
+      </div>
       <div class="proj-summary-info">
         <div class="proj-summary-name">${proj.name}</div>
         <div class="proj-meta-grid">
@@ -2314,16 +2732,17 @@ function buildSIEditor(pid,sid) {
   const sec=proj.sections.find(s=>s.id===item.sectionId);
 
   const sectionItems = proj.items.filter(i => i.sectionId === item.sectionId);
-  const completedCount = sectionItems.filter(i => i.status === 'completed').length;
+  const completedCount = sectionItems.filter(i => i.status === 'completed' || i.status === 'punch-ongoing').length;
   const totalCount = sectionItems.length;
   const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
   const statusOpts=[
-    {key:'completed',   label:'✓ Completed'},
-    {key:'not-ready',   label:'✕ Not Ready'},
-    {key:'in-progress', label:'◑ In Progress'},
-    {key:'on-hold',     label:'⏸ On Hold'},
-    {key:'pending',     label:'◌ Pending'},
+    {key:'completed',     label:'✓ Completed'},
+    {key:'punch-ongoing', label:'◈ Punch Ongoing'},
+    {key:'not-ready',     label:'✕ Not Ready'},
+    {key:'in-progress',   label:'◑ In Progress'},
+    {key:'on-hold',       label:'⏸ On Hold'},
+    {key:'pending',       label:'◌ Pending'},
   ];
 
   const builtinTags=['Not Ready for Install','Layout Change','Plumbing Issue','Electrical Pending','Structural Pending','Awaiting GC','Design Change','Field Verified','Ready to Proceed','Demo Required'];
@@ -2399,6 +2818,16 @@ function buildSIEditor(pid,sid) {
           <div class="field-group">
             <div class="field-label">Field Notes / Observations</div>
             <textarea class="field-input" id="notes-input" placeholder="Describe current field conditions, what changed, what's blocking..." oninput="scheduleAutoSave('${pid}','${sid}')">${item.notes}</textarea>
+          </div>
+          <div class="field-row">
+            <div class="field-group">
+              <div class="field-label">Delivery Date</div>
+              <input class="field-input" id="si-delivery-date" type="date" value="${item.deliveryDate||''}" onchange="scheduleAutoSave('${pid}','${sid}')" />
+            </div>
+            <div class="field-group">
+              <div class="field-label">Punch Date</div>
+              <input class="field-input" id="si-punch-date" type="date" value="${item.punchDate||''}" onchange="scheduleAutoSave('${pid}','${sid}')" />
+            </div>
           </div>
       <div class="field-group">
   <div class="field-label">Field Check</div>
@@ -2487,6 +2916,7 @@ function confirmRenameNum(pid, sid) {
   let newNum = inp.value.trim();
   if(!newNum) { showToast('Number cannot be empty'); return; }
   const item = getSI(pid, sid); if(!item) return;
+  syncEditorToStore(pid, sid);
   item.num = 'SI ' + newNum;
   save();
   buildSIEditor(pid, sid);
@@ -2553,7 +2983,7 @@ function buildScheduleView(pid) {
   });
 
   function statusDot(s) {
-    const c={completed:'#22c55e','not-ready':'#ef4444','in-progress':'#fbbf24','on-hold':'#f97316',pending:'#4e5669'};
+    const c={completed:'#22c55e','punch-ongoing':'#a855f7','not-ready':'#ef4444','in-progress':'#fbbf24','on-hold':'#f97316',pending:'#4e5669'};
     return `<span class="sched-status-dot" style="background:${c[s]||c.pending}"></span>`;
   }
 
@@ -2832,6 +3262,16 @@ function buildEnvView(pid) {
       <!-- Threshold settings -->
       <div class="env-threshold-bar">
         <span style="font-size:9px;font-family:var(--mono);color:var(--text3);letter-spacing:0.8px;text-transform:uppercase;flex-shrink:0">Thresholds</span>
+        <div class="env-zone-presets">
+          ${[
+            {id:'Z1', minH:25, maxH:45},
+            {id:'Z2', minH:30, maxH:55},
+            {id:'Z3', minH:43, maxH:65},
+          ].map(z => {
+            const active = thr.minTemp===60&&thr.maxTemp===90&&thr.minHum===z.minH&&thr.maxHum===z.maxH;
+            return `<button class="env-zone-btn${active?' active':''}" onclick="applyZonePreset('${pid}','${z.id}')" title="${z.id}: 60–90°F · ${z.minH}–${z.maxH}%">${z.id}</button>`;
+          }).join('')}
+        </div>
         <div class="env-threshold-inputs">
           <div class="env-threshold-field temp-field">
             <label>🌡️ MIN</label>
@@ -3049,6 +3489,20 @@ window.updateThreshold = function(pid, metric, val) {
   else if(metric==='maxHum')  thr.maxHum  = isNaN(num)?60:num;
   save();
   buildEnvView(pid);
+};
+
+const ZONE_PRESETS = {
+  Z1: { minTemp:60, maxTemp:90, minHum:25, maxHum:45 },
+  Z2: { minTemp:60, maxTemp:90, minHum:30, maxHum:55 },
+  Z3: { minTemp:60, maxTemp:90, minHum:43, maxHum:65 },
+};
+window.applyZonePreset = function(pid, zone) {
+  const proj = getProject(pid); if(!proj) return;
+  if(!proj.envData) proj.envData = { sensors:[], screenshots:[] };
+  proj.envData.thresholds = { ...ZONE_PRESETS[zone] };
+  save();
+  buildEnvView(pid);
+  showToast(`✓ ${zone} thresholds applied`, 'green');
 };
 
 // ── CHART DRAWING ─────────────────────
@@ -3301,6 +3755,7 @@ function deleteEnvScreenshot(pid, idx) {
 // ══════════════════════════════════════════
 function setStatus(pid,sid,status) {
   const item=getSI(pid,sid); if(!item) return;
+  syncEditorToStore(pid,sid);
   item.status=status; save();
   buildSIEditor(pid,sid);
   renderLeft(route());
@@ -3308,6 +3763,7 @@ function setStatus(pid,sid,status) {
 
 function moveSISection(pid,sid,newSecId) {
   const item=getSI(pid,sid); if(!item) return;
+  syncEditorToStore(pid,sid);
   item.sectionId=newSecId; save();
   renderLeft(route());
   showToast('✓ Moved to section','green');
@@ -3345,6 +3801,8 @@ window.showBatchApplyModal = function(pid, sectionId) {
 window.batchApplyFieldCheck = function(pid, sectionId, code) {
   const proj = getProject(pid);
   if (!proj) return;
+  const r = route();
+  if (r.view === 'si') syncEditorToStore(r.projectId, r.siId);
   proj.items.filter(it => it.sectionId === sectionId).forEach(it => it.statusCode = code);
   save();
   render();
@@ -3407,6 +3865,7 @@ async function runAIAssistant(pid, sid) {
 
 function toggleTag(pid,sid,tag) {
   const item=getSI(pid,sid); if(!item) return;
+  syncEditorToStore(pid,sid);
   const idx=item.tags.indexOf(tag);
   if(idx>=0) item.tags.splice(idx,1); else item.tags.push(tag);
   save(); buildSIEditor(pid,sid);
@@ -3421,6 +3880,7 @@ window.addCustomTag=function(pid,sid){
   if(item.customTags.includes(tag)||['Not Ready for Install','Layout Change','Plumbing Issue','Electrical Pending','Structural Pending','Awaiting GC','Design Change','Field Verified','Ready to Proceed','Demo Required'].includes(tag)) {
     showToast('Tag already exists'); return;
   }
+  syncEditorToStore(pid,sid);
   item.customTags.push(tag);
   if(!item.tags.includes(tag)) item.tags.push(tag); // auto-select it
   save(); buildSIEditor(pid,sid);
@@ -3429,19 +3889,31 @@ window.addCustomTag=function(pid,sid){
 window.removeCustomTag=function(pid,sid,tag){
   const item=getSI(pid,sid); if(!item) return;
   if(!item.customTags) return;
+  syncEditorToStore(pid,sid);
   item.customTags=item.customTags.filter(t=>t!==tag);
   item.tags=item.tags.filter(t=>t!==tag);
   save(); buildSIEditor(pid,sid);
 };
 
+// Flush the SI editor DOM fields into the store without saving.
+// Must be called before save() whenever the editor DOM will be rebuilt.
+function syncEditorToStore(pid, sid) {
+  const item = getSI(pid, sid); if(!item) return;
+  const n  = document.getElementById('notes-input');
+  const a  = document.getElementById('assigned-input');
+  const d  = document.getElementById('due-input');
+  const dd = document.getElementById('si-delivery-date');
+  const pd = document.getElementById('si-punch-date');
+  if(n)  item.notes        = n.value;
+  if(a)  item.assignedTo   = a.value;
+  if(d)  item.dueDate      = d.value;
+  if(dd) item.deliveryDate = dd.value;
+  if(pd) item.punchDate    = pd.value;
+}
+
 function _doSave(pid,sid,toast=true) {
   const item=getSI(pid,sid); if(!item) return;
-  const n=document.getElementById('notes-input');
-  const a=document.getElementById('assigned-input');
-  const d=document.getElementById('due-input');
-  if(n) item.notes=n.value;
-  if(a) item.assignedTo=a.value;
-  if(d) item.dueDate=d.value;
+  syncEditorToStore(pid, sid);
   save();
   renderLeft(route());
   if(toast) showToast('✓ Saved','green');
@@ -3503,6 +3975,7 @@ function confirmRename(pid, sid) {
   const newTitle = inp.value.trim();
   if(!newTitle) { showToast('Title cannot be empty'); return; }
   const item = getSI(pid, sid); if(!item) return;
+  syncEditorToStore(pid, sid);
   item.title = newTitle;
   save();
   buildSIEditor(pid, sid);
@@ -3518,6 +3991,51 @@ function navSI(pid,sid,dir) {
   const next=items[idx+dir];
   if(next) navToSI(pid,next.id);
   else showToast(dir>0?'Last item':'First item');
+}
+
+// ══════════════════════════════════════════
+// COVER PHOTO
+// ══════════════════════════════════════════
+let _coverPid = null;
+
+function triggerCoverPhotoUpload(pid) {
+  _coverPid = pid;
+  document.getElementById('cover-photo-input').value = '';
+  document.getElementById('cover-photo-input').click();
+}
+
+function handleCoverPhotoUpload(e) {
+  const file = e.target.files[0]; if(!file) return;
+  const proj = getProject(_coverPid); if(!proj) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const MAX = 1400;
+      let w = img.width, h = img.height;
+      if(w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      proj.coverPhoto = canvas.toDataURL('image/jpeg', 0.85);
+      save();
+      buildProjectView(_coverPid);
+      renderLeft(route());
+      showToast('✓ Cover photo updated', 'green');
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+}
+
+function removeCoverPhoto(pid) {
+  const proj = getProject(pid); if(!proj) return;
+  proj.coverPhoto = null;
+  save();
+  buildProjectView(pid);
+  renderLeft(route());
+  showToast('Cover photo removed');
 }
 
 // ══════════════════════════════════════════
@@ -3598,8 +4116,21 @@ function handleFileImport(e) {
 
       const dataReader=new FileReader();
       dataReader.onload=dataEv=>{
-        item.photos.push({data:dataEv.target.result, caption:'', takenAt});
-        if(++loaded===files.length){ save(); buildSIEditor(_pt.pid,_pt.sid); renderLeft(route()); }
+        // Resize/Compress before saving to localStorage to prevent QuotaExceededError
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 1200; // Resizing to 1200px is plenty for audit reports
+          let width = img.width;
+          let height = img.height;
+          if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+          canvas.width = width; canvas.height = height;
+          canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+          const compressedData = canvas.toDataURL('image/jpeg', 0.7); // 0.7 quality is the sweet spot
+          item.photos.push({data:compressedData, caption:'', takenAt});
+          if(++loaded===files.length){ save(); buildSIEditor(_pt.pid,_pt.sid); renderLeft(route()); }
+        };
+        img.src = dataEv.target.result;
       };
       dataReader.readAsDataURL(file);
     };
@@ -3623,6 +4154,7 @@ window.handleBrandingUpload = function(e, type) {
 
 function deletePhoto(pid,sid,idx) {
   const item=getSI(pid,sid); if(!item) return;
+  syncEditorToStore(pid,sid);
   item.photos.splice(idx,1); save();
   buildSIEditor(pid,sid); renderLeft(route());
 }
@@ -4125,8 +4657,9 @@ function exportCSV(pid) {
 async function exportPDF(pid) {
   const proj=getProject(pid); if(!proj) return;
 
-  // MANDATORY FIELD CHECK
+  // MANDATORY FIELD CHECK — completed and punch-ongoing items are exempt
   const incomplete = proj.items.filter(it => {
+    if (it.status === 'completed' || it.status === 'punch-ongoing') return false;
     const hasStatus = !!it.statusCode;
     const hasNotes = it.notes && it.notes.trim().length > 0;
     const hasPhoto = it.photos && it.photos.length > 0;
@@ -4211,7 +4744,7 @@ async function exportPDF(pid) {
 
   // ── STATUS COLORS ───────────────────
   function statusColor(s){
-    return s==='completed'?'#22c55e':s==='not-ready'?'#ef4444':s==='in-progress'?'#fbbf24':s==='on-hold'?'#f97316':'#6b7280';
+    return s==='completed'?'#22c55e':s==='punch-ongoing'?'#a855f7':s==='not-ready'?'#ef4444':s==='in-progress'?'#fbbf24':s==='on-hold'?'#f97316':'#6b7280';
   }
 
   // ── COMPRESS IMAGE + OPTIONAL TIMESTAMP ──
@@ -4288,11 +4821,16 @@ async function exportPDF(pid) {
     setTextC(T.cHeader);
     doc.text(reportTitle.toUpperCase(), textX, 18);
 
+    // Layout: if cover photo exists, split into left text (60%) + right image (38%)
+    const hasCoverPhoto = !!proj.coverPhoto;
+    const textMaxW = hasCoverPhoto ? 155 : PW - 30;
+    const imgX = 170, imgY = 65, imgW = 112, imgH = 130;
+
     // Project name
     doc.setFontSize(18);
     doc.setFont(T.font,'bold');
     setTextC(T.cTitle);
-    doc.text(proj.name,15,80,{maxWidth:180});
+    doc.text(proj.name, 15, 80, {maxWidth: textMaxW});
 
     // Meta table
     const meta=[['Client',proj.client],['Company',proj.company],['Auditor',proj.auditor],['Date',proj.date]];
@@ -4301,17 +4839,29 @@ async function exportPDF(pid) {
       doc.setFontSize(8); doc.setFont(T.font,'bold'); setTextC(T.cSub);
       doc.text(lbl.toUpperCase(),15,my);
       doc.setFontSize(11); doc.setFont(T.font,'normal'); setTextC(T.cText);
-      doc.text(val||'—',15,my+6);
+      doc.text(val||'—',15,my+6,{maxWidth: textMaxW});
       my+=16;
     });
+
+    // Cover photo (right column)
+    if(hasCoverPhoto) {
+      try {
+        // Rounded rect border / background
+        setFill(T.bgRow); setStroke(T.cBorder); doc.setLineWidth(0.3);
+        doc.roundedRect(imgX, imgY, imgW, imgH, 3, 3, 'FD');
+        // Clip and draw image
+        doc.addImage(proj.coverPhoto, 'JPEG', imgX, imgY, imgW, imgH, '', 'FAST');
+      } catch(err) { /* silently skip if image fails */ }
+    }
 
     // Stats bar
     const statY=180;
     const stats=[
       {lbl:'Total Items',val:proj.items.length,c:'#64748b'},
-      {lbl:'Ready',val:proj.items.filter(i=>i.status==='ready').length,c:'#22c55e'},
+      {lbl:'Completed',val:proj.items.filter(i=>i.status==='completed').length,c:'#22c55e'},
+      {lbl:'Punch',val:proj.items.filter(i=>i.status==='punch-ongoing').length,c:'#a855f7'},
       {lbl:'Not Ready',val:proj.items.filter(i=>i.status==='not-ready').length,c:'#ef4444'},
-      {lbl:'Changed',val:proj.items.filter(i=>i.status==='changed').length,c:'#f59e0b'},
+      {lbl:'In Progress',val:proj.items.filter(i=>i.status==='in-progress').length,c:'#f59e0b'},
       {lbl:'Pending',val:proj.items.filter(i=>i.status==='pending').length,c:'#6b7280'},
     ];
     const sw=(PW-30)/stats.length;
@@ -4352,7 +4902,8 @@ async function exportPDF(pid) {
     for(const item of items) {
       // Estimate height needed
       const hasPhotos = inclPhotos && item.photos.length>0;
-      const estH = 14 + (inclNotes&&item.notes?14:0) + (inclTags&&item.tags.length?8:0) + (hasPhotos?62:0) + 6;
+      const hasDates = !!(item.deliveryDate || item.punchDate);
+      const estH = 14 + (inclNotes&&item.notes?14:0) + (hasDates?6:0) + (inclTags&&item.tags.length?8:0) + (hasPhotos?62:0) + 6;
 
       if(cy+estH > PH-14) {
         addPage();
@@ -4400,6 +4951,15 @@ async function exportPDF(pid) {
         const lines=doc.splitTextToSize(item.notes, PW-38);
         lines.slice(0,3).forEach(line=>{ doc.text(line,22,iy); iy+=4.5; });
         iy+=2;
+      }
+
+      if(item.deliveryDate || item.punchDate) {
+        doc.setFontSize(7.5); doc.setFont(T.font,'bold'); setTextC(T.cSub);
+        const dateParts = [];
+        if(item.deliveryDate) dateParts.push(`Delivery: ${item.deliveryDate}`);
+        if(item.punchDate)    dateParts.push(`Punch: ${item.punchDate}`);
+        doc.text(dateParts.join('   |   '), 22, iy);
+        iy += 6;
       }
 
       if(inclTags && item.tags.length) {
@@ -5120,19 +5680,12 @@ function isJunkRow(values) {
 /* =========================================
    V1.5-B — SECTION MAPPING RULES
    ========================================= */
-let SECTION_RULES;
-try {
-  SECTION_RULES = JSON.parse(
-    localStorage.getItem('section_rules') ||
-    JSON.stringify({
-      'center bar': 'Center Bar',
-      'casino bar': 'Casino Bar',
-      'steak': 'Steakhouse Restaurant'
-    })
-  );
-} catch(e) {
-  SECTION_RULES = { 'center bar': 'Center Bar', 'casino bar': 'Casino Bar', 'steak': 'Steakhouse Restaurant' };
-}
+// Default SECTION_RULES — overwritten by _initStore() once IndexedDB loads
+let SECTION_RULES = {
+  'center bar': 'Center Bar',
+  'casino bar': 'Casino Bar',
+  'steak': 'Steakhouse Restaurant'
+};
 
 function mapSection(desc) {
   const d = desc.toLowerCase();
@@ -5733,12 +6286,12 @@ function showToast(msg,type='') {
 }
 
 // ══════════════════════════════════════════
-// INIT — wait for DOM to be fully ready
+// INIT — load IndexedDB then render
 // ══════════════════════════════════════════
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', render);
+  document.addEventListener('DOMContentLoaded', _initStore);
 } else {
-  render();
+  _initStore();
 }
 
 // ── INLINE PWA SETUP ─────────────────────
@@ -5766,75 +6319,15 @@ if (document.readyState === 'loading') {
   document.head.appendChild(link);
 })();
 
-// ── INLINE SERVICE WORKER ─────────────────
-// The SW code is defined here as a string and registered via blob URL
-// This means no external sw.js file is needed — works from a single HTML file
-(function registerInlineSW() {
-  // Skip SW registration on file:// protocol (not supported)
+// ── SERVICE WORKER ────────────────────────
+// Registered from sw.js (real file — more reliable than blob URL on iOS Safari)
+(function registerSW() {
   if (!('serviceWorker' in navigator)) return;
   if (location.protocol === 'file:') return;
 
-  const CACHE = 'adh-audit-v1';
-  const swCode = `
-const CACHE='adh-audit-v1';
-const CDN=['fonts.googleapis.com','fonts.gstatic.com','cdnjs.cloudflare.com'];
-
-self.addEventListener('install',e=>{
-  self.skipWaiting();
-});
-
-self.addEventListener('activate',e=>{
-  e.waitUntil(
-    caches.keys().then(keys=>Promise.all(
-      keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))
-    )).then(()=>self.clients.claim())
-  );
-});
-
-self.addEventListener('fetch',e=>{
-  const req=e.request;
-  if(req.method!=='GET') return;
-  const url=new URL(req.url);
-  if(url.protocol==='chrome-extension:') return;
-
-  const isCDN=CDN.some(d=>url.hostname.includes(d));
-
-  if(isCDN){
-    e.respondWith(
-      caches.match(req).then(cached=>{
-        if(cached) return cached;
-        return fetch(req).then(res=>{
-          if(!res||res.status!==200) return res;
-          const clone=res.clone();
-          caches.open(CACHE).then(c=>c.put(req,clone));
-          return res;
-        }).catch(()=>cached||new Response('',{status:503}));
-      })
-    );
-    return;
-  }
-
-  if(url.origin===self.location.origin){
-    e.respondWith(
-      fetch(req).then(res=>{
-        if(!res||res.status!==200||res.type!=='basic') return res;
-        const clone=res.clone();
-        caches.open(CACHE).then(c=>c.put(req,clone));
-        return res;
-      }).catch(()=>
-        caches.match(req).then(cached=>cached||caches.match('/'))
-      )
-    );
-  }
-});
-`;
-
-  const blob = new Blob([swCode], {type:'application/javascript'});
-  const swURL = URL.createObjectURL(blob);
-
-  navigator.serviceWorker.register(swURL, {scope: '/'})
+  navigator.serviceWorker.register('/sw.js', { scope: '/' })
     .then(reg => {
-      console.log('[ADH Audit] SW registered via blob');
+      console.log('[ADH Audit] SW registered');
       reg.addEventListener('updatefound', () => {
         const nw = reg.installing;
         nw.addEventListener('statechange', () => {
@@ -5845,7 +6338,6 @@ self.addEventListener('fetch',e=>{
       });
     })
     .catch(err => {
-      // Blob SW may be blocked in some browsers — silently ignore
       console.log('[ADH Audit] SW not available:', err.message);
     });
 })();
@@ -5886,6 +6378,43 @@ self.addEventListener('fetch',e=>{
       localStorage.setItem('adh_install_hint', '1');
     }, 2500);
   }
+})();
+
+// ── SAVE-ON-EXIT HANDLERS ─────────────────
+// Flush any pending editor state before the page/app is closed or backgrounded.
+(function() {
+  function flushAndSave() {
+    clearTimeout(_autoSaveTimer);
+    clearTimeout(_saveTimer);   // cancel debounce
+    const r = route();
+    if (r.view === 'si') {
+      syncEditorToStore(r.projectId, r.siId);
+    }
+    // Synchronous fallback: write to localStorage as a safety net
+    // (IDB writes are async and may not complete before the page is killed)
+    try { localStorage.setItem('fap_v3_exit', JSON.stringify(store)); } catch(e) {}
+    // Also kick off the async IDB write — may or may not finish in time
+    _idbSet('fap_v3', store).catch(() => {});
+  }
+  window.addEventListener('beforeunload', flushAndSave);
+  window.addEventListener('pagehide', flushAndSave);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) flushAndSave();
+  });
+
+  // On next startup, recover from the exit snapshot if IDB was empty
+  (async () => {
+    try {
+      const snap = localStorage.getItem('fap_v3_exit');
+      if (!snap) return;
+      const idbData = await _idbGet('fap_v3');
+      if (!idbData) {
+        await _idbSet('fap_v3', JSON.parse(snap));
+        console.log('[ADH] Recovered exit snapshot → IndexedDB');
+      }
+      localStorage.removeItem('fap_v3_exit');
+    } catch(e) {}
+  })();
 })();
 </script>
 </body>
