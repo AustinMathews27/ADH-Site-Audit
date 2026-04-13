@@ -6379,7 +6379,21 @@ if (document.readyState === 'loading') {
     }, 2500);
   }
 })();
+async function saveAuditToDatabase(auditDetails) {
+    const response = await fetch('/api/saveAudit', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(auditDetails)
+    });
 
+    if (response.ok) {
+        console.log("Audit saved successfully!");
+    } else {
+        console.error("Failed to save audit.");
+    }
+}
 // ── SAVE-ON-EXIT HANDLERS ─────────────────
 // Flush any pending editor state before the page/app is closed or backgrounded.
 (function() {
@@ -6395,6 +6409,8 @@ if (document.readyState === 'loading') {
     try { localStorage.setItem('fap_v3_exit', JSON.stringify(store)); } catch(e) {}
     // Also kick off the async IDB write — may or may not finish in time
     _idbSet('fap_v3', store).catch(() => {});
+    saveAuditToDatabase(store);
+
   }
   window.addEventListener('beforeunload', flushAndSave);
   window.addEventListener('pagehide', flushAndSave);
