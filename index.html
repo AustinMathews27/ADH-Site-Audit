@@ -6379,9 +6379,30 @@ if (document.readyState === 'loading') {
     }, 2500);
   }
 })();
+// --- AZURE API FUNCTIONS ---
+async function saveAuditToDatabase(auditDetails) {
+    try {
+        const response = await fetch('/api/saveAudit', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(auditDetails),
+            keepalive: true
+        });
+
+        if (response.ok) {
+            console.log("Audit saved successfully!");
+        } else {
+            console.error("Failed to save audit.");
+        }
+    } catch (e) {
+        console.error("Error saving to Azure:", e);
+    }
+}
+
 async function loadAuditFromDatabase() {
     try {
-        // We added { cache: 'no-store' } so it ALWAYS asks Azure for fresh data
         const response = await fetch('/api/getAudit', { cache: 'no-store' });
         if (response.ok) {
             const cloudData = await response.json();
@@ -6394,83 +6415,64 @@ async function loadAuditFromDatabase() {
     return null;
 }
 
-
-    async function loadAuditFromDatabase() {
-    try {
-        const response = await fetch('/api/getAudit');
-        if (response.ok) {
-            const cloudData = await response.json();
-            console.log("Cloud data successfully downloaded!");
-            return cloudData;
-        }
-    } catch (error) {
-        console.error("Error loading from cloud:", error);
-    }
-    return null;
-}
-
-}
 // ── SAVE-ON-EXIT HANDLERS ─────────────────
 // Flush any pending editor state before the page/app is closed or backgrounded.
 (function() {
-  function flushAndSave() {
-    clearTimeout(_autoSaveTimer);
-    clearTimeout(_saveTimer);   // cancel debounce
-    const r = route();
-    if (r.view === 'si') {
-      syncEditorToStore(r.projectId, r.siId);
+    function flushAndSave() {
+        clearTimeout(_autoSaveTimer);
+        clearTimeout(_saveTimer);   // cancel debounce
+        const r = route();
+        if (r.view === 'si') {
+            syncEditorToStore(r.projectId, r.siId);
+        }
+        // Synchronous fallback: write to localStorage as a safety net
+        try { localStorage.setItem('fap_v3_exit', JSON.stringify(store)); } catch(e) {}
+        
+        // Also kick off the async IDB write and Azure save
+        _idbSet('fap_v3', store).catch(() => {});
+        saveAuditToDatabase(store);
     }
-    // Synchronous fallback: write to localStorage as a safety net
-    // (IDB writes are async and may not complete before the page is killed)
-    try { localStorage.setItem('fap_v3_exit', JSON.stringify(store)); } catch(e) {}
-    // Also kick off the async IDB write — may or may not finish in time
-    _idbSet('fap_v3', store).catch(() => {});
-    saveAuditToDatabase(store);
 
-  }
-  window.addEventListener('beforeunload', flushAndSave);
-  window.addEventListener('pagehide', flushAndSave);
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) flushAndSave();
-  });
+    window.addEventListener('beforeunload', flushAndSave);
+    window.addEventListener('pagehide', flushAndSave);
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) flushAndSave();
+    });
 
-          // On next startup, recover from the exit snapshot if IDB was empty
-        (async () => {
-            try {
-                const snap = localStorage.getItem('fap_v3_exit');
-                if (!snap) return;
-                const idbData = await _idbGet('fap_v3');
-                if (!idbData) {
-                    await _idbSet('fap_v3', JSON.parse(snap));
-                    console.log('[ADH] Recovered exit snapshot -> IndexedDB');
-                }
-                localStorage.removeItem('fap_v3_exit');
-            } catch(e) {}
-        })();
-
-        // --- SAFE AZURE CLOUD SYNC ---
-        window.addEventListener('load', async () => {
-            if (!sessionStorage.getItem('cloudSynced')) {
-                const cloudData = await loadAuditFromDatabase();
-                
-                if (cloudData) {
-                    // Only copy your actual app data, block the Cosmos DB metadata
-                    for (let key in cloudData) {
-                        if (!key.startsWith('_') && key !== 'id') {
-                            store[key] = cloudData[key];
-                        }
-                    }
-                    
-                    // Save to local memory and reload to draw the screen
-                    await _idbSet('fap_v3', store);
-                    sessionStorage.setItem('cloudSynced', 'true');
-                    location.reload(); 
-                }
+    // On next startup, recover from the exit snapshot if IDB was empty
+    (async () => {
+        try {
+            const snap = localStorage.getItem('fap_v3_exit');
+            if (!snap) return;
+            const idbData = await _idbGet('fap_v3');
+            if (!idbData) {
+                await _idbSet('fap_v3', JSON.parse(snap));
+                console.log('[ADH] Recovered exit snapshot -> IndexedDB');
             }
-        });
-    </script>
-    } catch(e) {}
-  })();
+            localStorage.removeItem('fap_v3_exit');
+        } catch(e) {}
+    })();
+
+    // --- SAFE AZURE CLOUD SYNC ---
+    window.addEventListener('load', async () => {
+        if (!sessionStorage.getItem('cloudSynced')) {
+            const cloudData = await loadAuditFromDatabase();
+            
+            if (cloudData) {
+                // Only copy your actual app data, block the Cosmos DB metadata
+                for (let key in cloudData) {
+                    if (!key.startsWith('_') && key !== 'id') {
+                        store[key] = cloudData[key];
+                    }
+                }
+                
+                // Save to local memory and reload to draw the screen
+                await _idbSet('fap_v3', store);
+                sessionStorage.setItem('cloudSynced', 'true');
+                location.reload(); 
+            }
+        }
+    });
 })();
 </script>
 </body>
