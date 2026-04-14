@@ -6434,38 +6434,41 @@ async function loadAuditFromDatabase() {
     if (document.hidden) flushAndSave();
   });
 
-  // On next startup, recover from the exit snapshot if IDB was empty
-  (async () => {
-    try {
-      const snap = localStorage.getItem('fap_v3_exit');
-      if (!snap) return;
-      const idbData = await _idbGet('fap_v3');
-      if (!idbData) {
-        await _idbSet('fap_v3', JSON.parse(snap));
-        console.log('[ADH] Recovered exit snapshot → IndexedDB');
-      }
-      localStorage.removeItem('fap_v3_exit');
+          // On next startup, recover from the exit snapshot if IDB was empty
+        (async () => {
+            try {
+                const snap = localStorage.getItem('fap_v3_exit');
+                if (!snap) return;
+                const idbData = await _idbGet('fap_v3');
+                if (!idbData) {
+                    await _idbSet('fap_v3', JSON.parse(snap));
+                    console.log('[ADH] Recovered exit snapshot -> IndexedDB');
+                }
+                localStorage.removeItem('fap_v3_exit');
+            } catch(e) {}
+        })();
 
-           // --- NEW AZURE CLOUD SYNC ---
-        // 1. Check if we ALREADY synced this session so we don't refresh forever
-        if (!sessionStorage.getItem('cloudSynced')) {
-            
-            const cloudData = await loadAuditFromDatabase();
-            
-            if (cloudData) {
-                // 2. Put the cloud data into the app's memory
-                Object.assign(store, cloudData); 
-                await _idbSet('fap_v3', store); 
+        // --- SAFE AZURE CLOUD SYNC ---
+        window.addEventListener('load', async () => {
+            if (!sessionStorage.getItem('cloudSynced')) {
+                const cloudData = await loadAuditFromDatabase();
                 
-                // 3. Lock the door so it doesn't loop
-                sessionStorage.setItem('cloudSynced', 'true');
-                
-                // 4. Force the page to refresh so the screen redraws with the new data!
-                location.reload(); 
+                if (cloudData) {
+                    // Only copy your actual app data, block the Cosmos DB metadata
+                    for (let key in cloudData) {
+                        if (!key.startsWith('_') && key !== 'id') {
+                            store[key] = cloudData[key];
+                        }
+                    }
+                    
+                    // Save to local memory and reload to draw the screen
+                    await _idbSet('fap_v3', store);
+                    sessionStorage.setItem('cloudSynced', 'true');
+                    location.reload(); 
+                }
             }
-        }
-
-
+        });
+    </script>
     } catch(e) {}
   })();
 })();
