@@ -3,7 +3,7 @@ const { CosmosClient } = require("@azure/cosmos");
 module.exports = async function (context, req) {
     // Connect to your Cosmos DB
     const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
-    const database = client.database("AuditData");
+    const database = client.database("Auditdata");
     const container = database.container("Audits");
 
     try {
