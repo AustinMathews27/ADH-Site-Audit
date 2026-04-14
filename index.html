@@ -6379,20 +6379,21 @@ if (document.readyState === 'loading') {
     }, 2500);
   }
 })();
-async function saveAuditToDatabase(auditDetails) {
-    const response = await fetch('/api/saveAudit', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(auditDetails)
-    });
-
-    if (response.ok) {
-        console.log("Audit saved successfully!");
-    } else {
-        console.error("Failed to save audit.");
+async function loadAuditFromDatabase() {
+    try {
+        // We added { cache: 'no-store' } so it ALWAYS asks Azure for fresh data
+        const response = await fetch('/api/getAudit', { cache: 'no-store' });
+        if (response.ok) {
+            const cloudData = await response.json();
+            console.log("Cloud data successfully downloaded!");
+            return cloudData;
+        }
+    } catch (error) {
+        console.error("Error loading from cloud:", error);
     }
+    return null;
+}
+
 
     async function loadAuditFromDatabase() {
     try {
@@ -6445,14 +6446,25 @@ async function saveAuditToDatabase(auditDetails) {
       }
       localStorage.removeItem('fap_v3_exit');
 
-              // --- NEW AZURE CLOUD SYNC ---
-        const cloudData = await loadAuditFromDatabase();
-        if (cloudData) {
-            // 1. Update the app's current memory with the cloud data
-            Object.assign(store, cloudData); 
-            // 2. Save it locally to keep the V3 storage in sync
-            _idbSet('fap_v3', store).catch(() => {}); 
+           // --- NEW AZURE CLOUD SYNC ---
+        // 1. Check if we ALREADY synced this session so we don't refresh forever
+        if (!sessionStorage.getItem('cloudSynced')) {
+            
+            const cloudData = await loadAuditFromDatabase();
+            
+            if (cloudData) {
+                // 2. Put the cloud data into the app's memory
+                Object.assign(store, cloudData); 
+                await _idbSet('fap_v3', store); 
+                
+                // 3. Lock the door so it doesn't loop
+                sessionStorage.setItem('cloudSynced', 'true');
+                
+                // 4. Force the page to refresh so the screen redraws with the new data!
+                location.reload(); 
+            }
         }
+
 
     } catch(e) {}
   })();
