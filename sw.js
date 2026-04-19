@@ -1,6 +1,6 @@
 // ADH Field Audit Tool — Service Worker
 // Cache version — bump this string to force update
-const CACHE_VERSION = 'adh-audit-v2';
+const CACHE_VERSION = 'adh-audit-v3';
 
 // Resources to pre-cache on install
 const PRECACHE = [
@@ -18,6 +18,13 @@ const CDN_ORIGINS = [
   'https://fonts.gstatic.com',
   'https://cdnjs.cloudflare.com',
 ];
+
+// ── MESSAGE (allow page to trigger skipWaiting) ──────────────────
+self.addEventListener('message', event => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
 
 // ── INSTALL ──────────────────────────────────────────────────────
 self.addEventListener('install', event => {

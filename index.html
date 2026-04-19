@@ -113,6 +113,19 @@ body {
   flex-shrink: 0;
 }
 body.is-offline .offline-banner { display: block; }
+.update-banner {
+  display:none; align-items:center; justify-content:space-between;
+  background:#1e40af; color:#e2e8f0; padding:7px 16px; flex-shrink:0;
+  font-family:var(--mono); font-size:11px; font-weight:600; letter-spacing:0.3px;
+  gap:10px;
+}
+.update-banner.visible { display:flex; }
+.update-banner-btn {
+  padding:4px 12px; background:#3b82f6; color:#fff; border:none; border-radius:6px;
+  font-family:var(--mono); font-size:10px; font-weight:700; cursor:pointer;
+  white-space:nowrap; flex-shrink:0;
+}
+.update-banner-btn:hover { background:#2563eb; }
 .nav-back-btn {
   display:flex; align-items:center; justify-content:center;
   width:32px; height:32px; border-radius:8px;
@@ -1376,6 +1389,12 @@ input[type="radio"] {
 <!-- OFFLINE BANNER -->
 <div class="offline-banner">⚠️ Offline Mode — Changes will sync when reconnected</div>
 
+<!-- UPDATE BANNER -->
+<div class="update-banner" id="update-banner">
+  <span>🔄 New version available — your changes are safe</span>
+  <button class="update-banner-btn" onclick="applyAppUpdate()">Reload Now</button>
+</div>
+
 <!-- NAV BAR -->
 <div class="nav-bar">
   <div class="nav-back-btn disabled" id="back-btn" onclick="goBack()">‹</div>
@@ -1516,7 +1535,7 @@ const SEED = {
         <rect x='53' y='48' width='7' height='6' rx='1' fill='var(--accent)' opacity='0.85'/>
         <rect x='40' y='58' width='7' height='6' rx='1' fill='var(--accent)' opacity='0.85'/>
         <rect x='53' y='58' width='7' height='6' rx='1' fill='var(--accent)' opacity='0.85'/>
-      </svg>`, projects:['proj_1'], parentId:null},
+      </svg>`, projects:[], parentId:null},
 
     // ACM (Ascent Custom Millwork) - Symbol: Rising arch with decorative molding lines
     {id:'fld_acm',name:'ACM',icon:`
@@ -1528,35 +1547,9 @@ const SEED = {
         <circle cx='50' cy='27' r='4' fill='var(--accent)'/>
       </svg>`, projects:[], parentId:null},
 
-    // Standard Project Folders (Keep Emojis)
-    {id:'fld_1',name:'Casino Projects',icon:'🎰',projects:[],parentId:null},
-    {id:'fld_2',name:'Restaurant Projects',icon:'🍽️',projects:[],parentId:null},
   ],
   contacts: [],
-  projects:[
-    {
-      id:'proj_1',name:'North Fork Casino 3.9.26',
-      client:"W.E. O'Neil",company:'Allegheny Diversified Holdings',
-      auditor:'Bruce Hopper',date:'3/9/26',coverPhoto:null,
-      sections:[
-        {id:'sec_1',name:'General Conditions'},
-        {id:'sec_2',name:'Center Bar'},
-        {id:'sec_3',name:'Casino Bar'},
-        {id:'sec_4',name:'Steakhouse Restaurant'},
-      ],
-      items:[
-        {id:'si_101',sectionId:'sec_2',num:'SI 0101',title:'Center Bar Front Bar',status:'not-ready',assignedTo:'',dueDate:'',notes:'Curb is present\nConcrete curb cut open to relocate plumbing pipes',tags:['Plumbing Issue','Not Ready for Install'],photos:[]},
-        {id:'si_102',sectionId:'sec_2',num:'SI 0102',title:'Center Bar Back Bar',status:'pending',assignedTo:'',dueDate:'',notes:'',tags:[],photos:[]},
-        {id:'si_103',sectionId:'sec_2',num:'SI 0103',title:'POS Stations',status:'changed',assignedTo:'',dueDate:'',notes:'Layout changed from drawings',tags:['Layout Change'],photos:[]},
-        {id:'si_104',sectionId:'sec_2',num:'SI 0104',title:'Chucks Wood Veneer Paneling And Trims',status:'pending',assignedTo:'',dueDate:'',notes:'',tags:[],photos:[]},
-        {id:'si_105',sectionId:'sec_2',num:'SI 0105',title:'Column Paneling @ Center Bar Level 1',status:'completed',assignedTo:'',dueDate:'',notes:'Ready to proceed',tags:[],photos:[]},
-        {id:'si_106',sectionId:'sec_2',num:'SI 0106',title:'Ceiling Panel Trim @ Center Bar Level 1',status:'pending',assignedTo:'',dueDate:'',notes:'',tags:[],photos:[]},
-        {id:'si_201',sectionId:'sec_3',num:'SI 0201',title:'Front Bar @ Casino Bar Level 1',status:'pending',assignedTo:'',dueDate:'',notes:'',tags:[],photos:[]},
-        {id:'si_202',sectionId:'sec_3',num:'SI 0202',title:'Back Bar @ Casino Bar Level 1',status:'not-ready',assignedTo:'',dueDate:'',notes:'Structural steel not complete',tags:['Structural Pending'],photos:[]},
-        {id:'si_203',sectionId:'sec_3',num:'SI 0203',title:'Metal Frame And Mesh @ Casino Bar Level 1 RCP',status:'pending',assignedTo:'',dueDate:'',notes:'',tags:[],photos:[]},
-      ]
-    }
-  ]
+  projects:[]
 };
 
 // ══════════════════════════════════════════
@@ -1634,67 +1627,64 @@ function markAsDirty(itemId) {
  * Only clears synced items from pendingSync on success.
  */
 async function syncChanges(isAuto = false) {
-  if (!store.pendingSync || store.pendingSync.length === 0) {
-    if (!isAuto) showToast('No changes to sync');
-    return;
-  }
-
   const syncBtn = document.getElementById('sync-btn');
-  if (syncBtn) {
-    syncBtn.style.opacity = '0.5';
-    syncBtn.classList.add('spinning');
-  }
+  if (syncBtn) { syncBtn.style.opacity = '0.5'; syncBtn.classList.add('spinning'); }
 
-  // Create a snapshot of IDs to sync in this batch
-  const idsToSync = [...store.pendingSync];
-  
-  const payload = {
-    timestamp: Date.now(),
-    projects: [],
-    folders: [], // Include folders if markAsDirty tracks folder changes
-    contacts: store.contacts.filter(c => idsToSync.includes(c.id))
-  };
-
-  // Collect full project objects that contain at least one modified SI
-  store.projects.forEach(p => {
-    const hasDirtyItem = p.items.some(si => idsToSync.includes(si.id));
-    if (hasDirtyItem || idsToSync.includes(p.id)) {
-      payload.projects.push(p);
-    }
+  // Build full-store payload — strip photos to stay under Cosmos 2 MB item limit
+  // Photos are kept in local IndexedDB only
+  const payload = Object.assign({}, JSON.parse(JSON.stringify(store)), {
+    id: 'adh-store-v1',
+    _savedAt: Date.now(),
+    projects: store.projects.map(p => Object.assign({}, p, {
+      coverPhoto: null,
+      items: (p.items || []).map(i => Object.assign({}, i, { photos: [] }))
+    }))
   });
 
   try {
-    // Replace with your actual backend endpoint
     const success = await saveAuditToDatabase(payload);
     if (success) {
-      store.pendingSync = store.pendingSync.filter(id => !idsToSync.includes(id));
+      store._savedAt = payload._savedAt;
+      store.pendingSync = [];
       save();
-      showToast('✓ Sync complete', 'green');
+      if (!isAuto) showToast('✓ Synced to cloud', 'green');
+    } else {
+      if (!isAuto) showToast('⚠️ Cloud sync failed', 'red');
     }
   } catch (err) {
     console.error('[Sync Error]', err);
-    showToast('Sync failed - check connection', 'red');
+    if (!isAuto) showToast('Sync failed — check connection', 'red');
   } finally {
-    if (syncBtn) {
-      syncBtn.style.opacity = '1';
-      syncBtn.classList.remove('spinning');
-    }
+    if (syncBtn) { syncBtn.style.opacity = '1'; syncBtn.classList.remove('spinning'); }
   }
 }
 
-/**
- * Mock function for API persistence.
- */
 async function saveAuditToDatabase(data) {
-  // Example implementation using fetch
-  // const response = await fetch('/api/sync', { 
-  //   method: 'POST', 
-  //   body: JSON.stringify(data),
-  //   headers: { 'Content-Type': 'application/json' }
-  // });
-  // return response.ok;
-  
-  return new Promise(resolve => setTimeout(() => resolve(true), 1000));
+  try {
+    const response = await fetch('/api/saveAudit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const result = await response.json();
+    return result.ok === true;
+  } catch (err) {
+    console.warn('[Sync] Cloud save failed:', err.message);
+    return false;
+  }
+}
+
+async function loadFromDatabase() {
+  try {
+    const response = await fetch('/api/getAudit');
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch (err) {
+    console.warn('[Sync] Cloud load failed:', err.message);
+    return null;
+  }
 }
 
 // ── Migrate any existing localStorage data once, then delete it ──
@@ -1715,10 +1705,35 @@ async function _migrateFromLocalStorage() {
 // ── Bootstrap: load from IDB (or migrate from LS), then start the app ──
 async function _initStore() {
   try {
-    // Try migration first (runs only once — LS key is deleted afterward)
+    // 1. Load local data first (instant)
     let data = await _migrateFromLocalStorage();
     if (!data) data = await _idbGet('fap_v3');
     if (data) store = data;
+
+    // 2. Try cloud — 4 s timeout so offline users don't wait
+    if (navigator.onLine) {
+      try {
+        const cloudTimeout = new Promise(r => setTimeout(() => r(null), 4000));
+        const cloudData = await Promise.race([loadFromDatabase(), cloudTimeout]);
+        if (cloudData && (cloudData._savedAt || 0) > (store._savedAt || 0)) {
+          // Cloud is newer: take cloud data but restore local photos (never uploaded)
+          const localPhotos = {};
+          (store.projects || []).forEach(p => {
+            if (p.coverPhoto) localPhotos['cover_' + p.id] = p.coverPhoto;
+            (p.items || []).forEach(i => { if (i.photos && i.photos.length) localPhotos[i.id] = i.photos; });
+          });
+          store = cloudData;
+          (store.projects || []).forEach(p => {
+            if (localPhotos['cover_' + p.id]) p.coverPhoto = localPhotos['cover_' + p.id];
+            (p.items || []).forEach(i => { if (localPhotos[i.id]) i.photos = localPhotos[i.id]; });
+          });
+          await _idbSet('fap_v3', store);
+          console.log('[ADH] Loaded newer data from cloud (_savedAt:', new Date(store._savedAt).toISOString(), ')');
+        }
+      } catch (e) {
+        console.warn('[ADH] Cloud load skipped:', e.message);
+      }
+    }
   } catch(e) {
     console.warn('[ADH] Storage load error, using seed:', e);
     store = JSON.parse(JSON.stringify(SEED));
@@ -6779,21 +6794,56 @@ if (document.readyState === 'loading') {
 })();
 
 // ── SERVICE WORKER ────────────────────────
-// Registered from sw.js (real file — more reliable than blob URL on iOS Safari)
 (function registerSW() {
   if (!('serviceWorker' in navigator)) return;
   if (location.protocol === 'file:') return;
 
+  let _reg = null;
+
+  function showUpdateBanner() {
+    const el = document.getElementById('update-banner');
+    if (el) el.classList.add('visible');
+  }
+
+  window.applyAppUpdate = function() {
+    if (_reg && _reg.waiting) {
+      // Tell waiting SW to skip waiting and take over immediately
+      _reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+    } else {
+      window.location.reload();
+    }
+  };
+
+  // When the SW takes control (after SKIP_WAITING), reload once
+  let _reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (_reloading) return;
+    _reloading = true;
+    window.location.reload();
+  });
+
   navigator.serviceWorker.register('/sw.js', { scope: '/' })
     .then(reg => {
+      _reg = reg;
       console.log('[ADH Audit] SW registered');
-      reg.addEventListener('updatefound', () => {
-        const nw = reg.installing;
-        nw.addEventListener('statechange', () => {
-          if (nw.state === 'installed' && navigator.serviceWorker.controller) {
-            showToast('Update available — reload to refresh');
+
+      // Detect new SW installing
+      function trackInstall(worker) {
+        worker.addEventListener('statechange', () => {
+          if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+            showUpdateBanner();
           }
         });
+      }
+      if (reg.installing) trackInstall(reg.installing);
+      reg.addEventListener('updatefound', () => trackInstall(reg.installing));
+
+      // Periodically poll for new SW (every 30 min)
+      setInterval(() => reg.update(), 30 * 60 * 1000);
+
+      // Also check when user returns to the tab
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update();
       });
     })
     .catch(err => {
