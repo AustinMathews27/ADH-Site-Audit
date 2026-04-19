@@ -96,7 +96,7 @@ body {
   flex-shrink:0; gap:6px; overflow:hidden;
 }
 .nav-logo {
-  height: 100px;
+  height: 36px;
   width: auto;
   display: block;
   object-fit: contain;
@@ -239,6 +239,7 @@ body {
 .si-status.punch-ongoing { background:#a855f7; box-shadow:0 0 4px #a855f7; }
 
 .si-status.on-hold       { background:#f97316;         box-shadow:0 0 4px #f97316; }
+.si-status.out-of-scope  { background:var(--text3); opacity:0.45; }
 
 /* ── RIGHT PANEL ── */
 .right-panel { flex:1; display:flex; flex-direction:column; overflow:hidden; }
@@ -388,6 +389,7 @@ body {
 .status-pill.punch-ongoing { background:rgba(168,85,247,0.12);  color:#a855f7; border-color:rgba(168,85,247,0.28); }
 
 .status-pill.on-hold       { background:rgba(249,115,22,0.12);   color:#f97316; border-color:rgba(249,115,22,0.28); }
+.status-pill.out-of-scope  { background:var(--surface2); color:var(--text3); border-color:var(--border); opacity:0.6; }
 .edit-body { flex:1; overflow-y:auto; padding:16px; }
 .field-group { margin-bottom:16px; }
 .field-label {
@@ -1768,7 +1770,7 @@ function renderLeft(r) {
       title.textContent = 'PROJECTS';
       const projs = (folder.projects || []).map(id => getProject(id)).filter(p => p && (!q || p.name.toLowerCase().includes(q)));
       scroll.innerHTML = projs.map(p => {
-        const ready = p.items.filter(i => i.status === 'ready').length;
+        const ready = p.items.filter(i => i.status === 'completed').length;
         return `<div class="si-row ${r.projectId === p.id ? 'active' : ''}" onclick="navToProject('${p.id}','${r.folderId}')">
           <div class="si-thumb" style="font-size:16px">🏗</div>
           <div class="si-info">
@@ -4744,7 +4746,7 @@ async function exportPDF(pid) {
 
   // ── STATUS COLORS ───────────────────
   function statusColor(s){
-    return s==='completed'?'#22c55e':s==='punch-ongoing'?'#a855f7':s==='not-ready'?'#ef4444':s==='in-progress'?'#fbbf24':s==='on-hold'?'#f97316':'#6b7280';
+    return s==='completed'?'#22c55e':s==='punch-ongoing'?'#a855f7':s==='not-ready'?'#ef4444':s==='in-progress'?'#fbbf24':s==='on-hold'?'#f97316':s==='out-of-scope'?'#94a3b8':'#6b7280';
   }
 
   // ── COMPRESS IMAGE + OPTIONAL TIMESTAMP ──
@@ -4823,8 +4825,8 @@ async function exportPDF(pid) {
 
     // Layout: if cover photo exists, split into left text (60%) + right image (38%)
     const hasCoverPhoto = !!proj.coverPhoto;
-    const textMaxW = hasCoverPhoto ? 155 : PW - 30;
-    const imgX = 170, imgY = 65, imgW = 112, imgH = 130;
+    const textMaxW = hasCoverPhoto ? 110 : PW - 30;
+    const imgX = 128, imgY = 65, imgW = 67, imgH = 130;
 
     // Project name
     doc.setFontSize(18);
@@ -5561,23 +5563,23 @@ window.moveProject = function(pid, oldFid, newFid) {
 };
 
 // ── MANAGE SECTIONS ──────────────────────
+function _buildSectionMgrListHTML(proj, pid) {
+  return proj.sections.map((s, idx) => `
+    <div class="section-mgr-item" id="smgr-${s.id}">
+      <div class="section-mgr-moves">
+        <button class="section-mgr-move" onclick="moveSectionInModal('${pid}',${idx},-1)" ${idx===0?'disabled style="opacity:0.3"':''} title="Move up">↑</button>
+        <button class="section-mgr-move" onclick="moveSectionInModal('${pid}',${idx},1)" ${idx===proj.sections.length-1?'disabled style="opacity:0.3"':''} title="Move down">↓</button>
+      </div>
+      <span class="section-mgr-name">${s.name}</span>
+      <button class="section-mgr-del" onclick="window.deleteSectionFromModal('${pid}','${s.id}')" title="Remove section">✕</button>
+    </div>`).join('');
+}
+
 function showManageSectionsModal(pid) {
   const proj=getProject(pid); if(!proj) return;
 
-  function buildSectionListHTML() {
-    return proj.sections.map((s,idx)=>`
-      <div class="section-mgr-item" id="smgr-${s.id}">
-        <div class="section-mgr-moves">
-          <button class="section-mgr-move" onclick="moveSectionInModal('${pid}',${idx},-1)" ${idx===0?'disabled style="opacity:0.3"':''} title="Move up">↑</button>
-          <button class="section-mgr-move" onclick="moveSectionInModal('${pid}',${idx},1)" ${idx===proj.sections.length-1?'disabled style="opacity:0.3"':''} title="Move down">↓</button>
-        </div>
-        <span class="section-mgr-name">${s.name}</span>
-        <button class="section-mgr-del" onclick="window.deleteSectionFromModal('${pid}','${s.id}')" title="Remove section">✕</button>
-      </div>`).join('');
-  }
-
   makeModal('Manage Sections',`
-    <div class="section-mgr-list" id="sec-mgr-list">${buildSectionListHTML()}</div>
+    <div class="section-mgr-list" id="sec-mgr-list">${_buildSectionMgrListHTML(proj, pid)}</div>
     <div style="display:flex;gap:8px;margin-bottom:12px">
       <input class="field-input" id="new-sec-name" placeholder="New section name…" style="flex:1"
         onkeydown="if(event.key==='Enter'){event.preventDefault();window.addSectionFromModal('${pid}')}" />
@@ -5599,15 +5601,7 @@ window.moveSectionInModal=function(pid,idx,dir){
   const list=document.getElementById('sec-mgr-list');
   if(list) {
     // Rebuild with updated indices
-    list.innerHTML=proj.sections.map((s,i)=>`
-      <div class="section-mgr-item">
-        <div class="section-mgr-moves">
-          <button class="section-mgr-move" onclick="moveSectionInModal('${pid}',${i},-1)" ${i===0?'disabled style="opacity:0.3"':''}>↑</button>
-          <button class="section-mgr-move" onclick="moveSectionInModal('${pid}',${i},1)" ${i===proj.sections.length-1?'disabled style="opacity:0.3"':''}>↓</button>
-        </div>
-        <span class="section-mgr-name">${s.name}</span>
-        <button class="section-mgr-del" onclick="window.deleteSectionFromModal('${pid}','${s.id}')">✕</button>
-      </div>`).join('');
+    list.innerHTML = _buildSectionMgrListHTML(proj, pid);
   }
 };
 
@@ -5621,11 +5615,7 @@ window.addSectionFromModal=function(pid){
   save();
   if(inp) inp.value='';
   const list=document.getElementById('sec-mgr-list');
-  if(list) list.innerHTML=proj.sections.map(s=>`
-    <div class="section-mgr-item">
-      <span class="section-mgr-name">${s.name}</span>
-      <button class="section-mgr-del" onclick="window.deleteSectionFromModal('${pid}','${s.id}')">✕</button>
-    </div>`).join('');
+  if(list) list.innerHTML = _buildSectionMgrListHTML(proj, pid);
   showToast('✓ Section added','green');
 };
 
@@ -5636,11 +5626,7 @@ window.deleteSectionFromModal=function(pid,secId){
   proj.sections=proj.sections.filter(s=>s.id!==secId);
   save();
   const list=document.getElementById('sec-mgr-list');
-  if(list) list.innerHTML=proj.sections.map(s=>`
-    <div class="section-mgr-item">
-      <span class="section-mgr-name">${s.name}</span>
-      <button class="section-mgr-del" onclick="window.deleteSectionFromModal('${pid}','${s.id}')">✕</button>
-    </div>`).join('');
+  if(list) list.innerHTML = _buildSectionMgrListHTML(proj, pid);
 };
 
 // ══════════════════════════════════════════
@@ -6015,6 +6001,26 @@ function showXLSPreviewModal(fileName, data, onConfirm) {
         data.items.filter(i => i._checked).length;
     };
   });
+
+  window.toggleXLSSection = function(sec) {
+    const hdrCheck = document.querySelector(`.xls-section-check[data-sec="${sec}"]`);
+    if (!hdrCheck) return;
+    const newState = !hdrCheck.classList.contains('on');
+    hdrCheck.classList.toggle('on', newState);
+    hdrCheck.textContent = newState ? '✓' : '';
+    const group = hdrCheck.closest('.xls-section-group');
+    if (!group) return;
+    group.querySelectorAll('.xls-row-check').forEach(rowCheck => {
+      const idx = +rowCheck.dataset.index;
+      if (!isNaN(idx) && idx < data.items.length) {
+        data.items[idx]._checked = newState;
+        rowCheck.classList.toggle('on', newState);
+        rowCheck.textContent = newState ? '✓' : '';
+      }
+    });
+    const countEl = document.getElementById('xls-import-count');
+    if (countEl) countEl.textContent = data.items.filter(i => i._checked).length;
+  };
 }
 
 function showReimportDiffModal(project, diffs, onApply) {
