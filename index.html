@@ -192,6 +192,14 @@ body {
   display:flex; align-items:center; justify-content:center;
   font-size:15px; flex-shrink:0;
 }
+.folder-icon-wrap svg, .fc-icon svg {
+  width: 80%; height: 80%; display: block;
+}
+.crumb svg {
+  width: 14px; height: 14px;
+  display: inline-block; vertical-align: middle;
+  margin-right: 4px; margin-top: -2px;
+}
 .folder-info { flex:1; min-width:0; }
 .folder-name { font-size:13px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .folder-meta { font-size:10px; color:var(--text3); font-family:var(--mono); margin-top:1px; }
@@ -1249,6 +1257,9 @@ input[type="radio"] {
 </head>
 <body>
 
+<!-- OFFLINE BANNER -->
+<div class="offline-banner">⚠️ Offline Mode — Changes will sync when reconnected</div>
+
 <!-- NAV BAR -->
 <div class="nav-bar">
   <div class="nav-back-btn disabled" id="back-btn" onclick="goBack()">‹</div>
@@ -1256,6 +1267,7 @@ input[type="radio"] {
     <span class="crumb active" onclick="navToRoot()"><img src="logo.png" alt="ADH Audit" class="nav-logo" id="main-logo"></span>
   </div>
   <div class="nav-actions">
+    <div class="btn-icon" onclick="syncChanges()" title="Sync Changes" id="sync-btn">🔄</div>
     <div class="btn-icon" onclick="showThemeModal()" title="Themes">🎨</div>
     <div class="btn-icon" onclick="showShareModal()" title="Share">📤</div>
     <div class="btn-icon" onclick="handleAdd()" title="Add">＋</div>
@@ -1334,12 +1346,50 @@ input[type="radio"] {
 const SEED = {
   settings: { isAdmin: false, theme: 'light' },
   folders:[
-    {id:'fld_ast',name:'A.S.S.T',icon:'🏗',projects:[],parentId:null},
-    {id:'fld_ami',name:'AMI',icon:'🏢',projects:[],parentId:null},
-    {id:'fld_acd',name:'ACD',icon:'⚡',projects:[],parentId:null},
-    {id:'fld_acs',name:'ACS',icon:'🔧',projects:[],parentId:null},
-    {id:'fld_adh',name:'ADH',icon:'🏗',projects:[],parentId:null},
-    {id:'fld_1',name:'Casino Projects',icon:'🎰',projects:['proj_1'],parentId:null},
+    // A.S.S.T (Advanced Specialized Systems) - Symbol: Network Nodes
+    {id:'fld_ast',name:'A.S.S.T',icon:`
+      <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
+        <path d='M85,50 L50,85 L15,50 L50,15 Z' fill='var(--text3)' stroke='var(--accent)' stroke-width='3'/>
+        <circle cx='50' cy='35' r='5' fill='var(--accent)'/>
+        <circle cx='65' cy='60' r='5' fill='var(--accent)'/>
+        <circle cx='35' cy='60' r='5' fill='var(--accent)'/>
+        <path d='M50,35 L65,60 M50,35 L35,60' stroke='var(--text)' stroke-width='2'/>
+      </svg>`, projects:[], parentId:null},
+
+    // AMI (Allegheny Millwork Installation) - Symbol: Interlocking Joinery
+    {id:'fld_ami',name:'AMI',icon:`
+      <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
+        <path d='M85,50 L50,85 L15,50 L50,15 Z' fill='var(--text3)' stroke='var(--accent)' stroke-width='3'/>
+        <path d='M40,35 H60 M40,65 H60 M50,35 V65' stroke='var(--text)' stroke-width='5' stroke-linecap='square'/>
+        <path d='M40,42 H60 M40,58 H60' stroke='var(--accent)' stroke-width='2' stroke-dasharray='2 2'/>
+      </svg>`, projects:[], parentId:null},
+
+    // ACD (Allegheny Construction Division) - Symbol: I-Beam Structure
+    {id:'fld_acd',name:'ACD',icon:`
+      <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
+        <path d='M85,50 L50,85 L15,50 L50,15 Z' fill='var(--text3)' stroke='var(--accent)' stroke-width='3'/>
+        <path d='M35,35 H65 M35,65 H65 M50,35 V65' stroke='var(--text)' stroke-width='6' stroke-linecap='round'/>
+        <path d='M35,45 L65,55 M35,55 L65,45' stroke='var(--accent)' stroke-width='1' opacity='0.7'/>
+      </svg>`, projects:[], parentId:null},
+
+    // ACS (Allegheny Commissioning & Safety) - Symbol: Gear with Checkmark
+    {id:'fld_acs',name:'ACS',icon:`
+      <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
+        <path d='M85,50 L50,85 L15,50 L50,15 Z' fill='var(--text3)' stroke='var(--accent)' stroke-width='3'/>
+        <circle cx='50' cy='50' r='18' stroke='var(--text)' stroke-width='4' fill='none' stroke-dasharray='3 2'/>
+        <path d='M40,50 L47,57 L62,42' stroke='var(--accent)' stroke-width='5' fill='none' stroke-linecap='round'/>
+      </svg>`, projects:[], parentId:null},
+
+    // ADH (Allegheny Diversified Holdings) - Symbol: Multi-Tiered Crown
+    {id:'fld_adh',name:'ADH',icon:`
+      <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
+        <path d='M85,50 L50,85 L15,50 L50,15 Z' fill='var(--text3)' stroke='var(--accent)' stroke-width='3'/>
+        <path d='M30,65 V45 L40,35 L50,45 L60,35 L70,45 V65 H30' fill='var(--text)' stroke='none'/>
+        <rect x='42' y='28' width='16' height='4' rx='2' fill='var(--accent)'/>
+      </svg>`, projects:['proj_1'], parentId:null},
+
+    // Standard Project Folders (Keep Emojis)
+    {id:'fld_1',name:'Casino Projects',icon:'🎰',projects:[],parentId:null},
     {id:'fld_2',name:'Restaurant Projects',icon:'🍽️',projects:[],parentId:null},
   ],
   contacts: [],
@@ -1426,6 +1476,87 @@ function save() {
   }, 80);   // 80 ms debounce keeps UI snappy
 }
 
+/**
+ * Marks an item as modified and needing synchronization.
+ * Updates the global timestamp and triggers a local save.
+ */
+function markAsDirty(itemId) {
+  if (!store.pendingSync) store.pendingSync = [];
+  if (!store.pendingSync.includes(itemId)) {
+    store.pendingSync.push(itemId);
+  }
+  store.lastUpdated = Date.now();
+  save(); 
+}
+
+/**
+ * Sends modified data to the server.
+ * Only clears synced items from pendingSync on success.
+ */
+async function syncChanges(isAuto = false) {
+  if (!store.pendingSync || store.pendingSync.length === 0) {
+    if (!isAuto) showToast('No changes to sync');
+    return;
+  }
+
+  const syncBtn = document.getElementById('sync-btn');
+  if (syncBtn) {
+    syncBtn.style.opacity = '0.5';
+    syncBtn.classList.add('spinning');
+  }
+
+  // Create a snapshot of IDs to sync in this batch
+  const idsToSync = [...store.pendingSync];
+  
+  const payload = {
+    timestamp: Date.now(),
+    projects: [],
+    folders: [], // Include folders if markAsDirty tracks folder changes
+    contacts: store.contacts.filter(c => idsToSync.includes(c.id))
+  };
+
+  // Collect full project objects that contain at least one modified SI
+  store.projects.forEach(p => {
+    const hasDirtyItem = p.items.some(si => idsToSync.includes(si.id));
+    if (hasDirtyItem || idsToSync.includes(p.id)) {
+      payload.projects.push(p);
+    }
+  });
+
+  try {
+    // Replace with your actual backend endpoint
+    const success = await saveAuditToDatabase(payload);
+    if (success) {
+      store.pendingSync = store.pendingSync.filter(id => !idsToSync.includes(id));
+      save();
+      showToast('✓ Sync complete', 'green');
+    }
+  } catch (err) {
+    console.error('[Sync Error]', err);
+    showToast('Sync failed - check connection', 'red');
+  } finally {
+    if (syncBtn) {
+      syncBtn.style.opacity = '1';
+      syncBtn.classList.remove('spinning');
+    }
+  }
+}
+
+/**
+ * Mock function for API persistence.
+ */
+async function saveAuditToDatabase(data) {
+  // Example implementation using fetch
+  // const response = await fetch('/api/sync', { 
+  //   method: 'POST', 
+  //   body: JSON.stringify(data),
+  //   headers: { 'Content-Type': 'application/json' }
+  // });
+  // return response.ok;
+  
+  return new Promise(resolve => setTimeout(() => resolve(true), 1000));
+}
+
 // ── Migrate any existing localStorage data once, then delete it ──
 async function _migrateFromLocalStorage() {
   try {
@@ -1458,7 +1589,15 @@ async function _initStore() {
   if(store.settings.theme === undefined || store.settings.theme === 'default') store.settings.theme = 'light';
   store.folders.forEach(f => { if(f.parentId === undefined) f.parentId = null; });
   if(!store.contacts) store.contacts = [];
+  if(!store.pendingSync) store.pendingSync = [];
   store.contacts.forEach(c => { if(!c.project) c.project = 'Office'; });
+
+  // Update branded folder icons to use theme variables for existing users
+  ['fld_ast', 'fld_ami', 'fld_acd', 'fld_acs', 'fld_adh'].forEach(id => {
+    const f = store.folders.find(folder => folder.id === id);
+    const seedF = SEED.folders.find(sf => sf.id === id);
+    if (f && seedF) f.icon = seedF.icon;
+  });
 
   window.contactCategoryFilter = 'All';
   window.contactProjectFilter  = 'All';
@@ -1483,6 +1622,19 @@ async function _initStore() {
   } catch(e) { /* keep default SECTION_RULES */ }
 
   render();
+
+  // Start background auto-sync every 5 minutes if online
+  setInterval(() => {
+    if (navigator.onLine) syncChanges(true);
+  }, 300000); // 300,000ms = 5 minutes
+
+  // Handle online/offline status changes
+  function updateOnlineStatus() {
+    document.body.classList.toggle('is-offline', !navigator.onLine);
+  }
+  window.addEventListener('online',  updateOnlineStatus);
+  window.addEventListener('offline', updateOnlineStatus);
+  updateOnlineStatus(); // Initial check
 }
 
 // isAdmin declared here so _initStore can set it before render()
@@ -3914,6 +4066,7 @@ function syncEditorToStore(pid, sid) {
 function _doSave(pid,sid,toast=true) {
   const item=getSI(pid,sid); if(!item) return;
   syncEditorToStore(pid, sid);
+  markAsDirty(sid);
   save();
   renderLeft(route());
   if(toast) showToast('✓ Saved','green');
@@ -6379,100 +6532,42 @@ if (document.readyState === 'loading') {
     }, 2500);
   }
 })();
-// --- AZURE API FUNCTIONS ---
-async function saveAuditToDatabase(auditDetails) {
-    try {
-        const response = await fetch('/api/saveAudit', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(auditDetails),
-            keepalive: true
-        });
-
-        if (response.ok) {
-            console.log("Audit saved successfully!");
-        } else {
-            console.error("Failed to save audit.");
-        }
-    } catch (e) {
-        console.error("Error saving to Azure:", e);
-    }
-}
-
-async function loadAuditFromDatabase() {
-    try {
-        const response = await fetch('/api/getAudit', { cache: 'no-store' });
-        if (response.ok) {
-            const cloudData = await response.json();
-            console.log("Cloud data successfully downloaded!");
-            return cloudData;
-        }
-    } catch (error) {
-        console.error("Error loading from cloud:", error);
-    }
-    return null;
-}
 
 // ── SAVE-ON-EXIT HANDLERS ─────────────────
 // Flush any pending editor state before the page/app is closed or backgrounded.
 (function() {
-    function flushAndSave() {
-        clearTimeout(_autoSaveTimer);
-        clearTimeout(_saveTimer);   // cancel debounce
-        const r = route();
-        if (r.view === 'si') {
-            syncEditorToStore(r.projectId, r.siId);
-        }
-        // Synchronous fallback: write to localStorage as a safety net
-        try { localStorage.setItem('fap_v3_exit', JSON.stringify(store)); } catch(e) {}
-        
-        // Also kick off the async IDB write and Azure save
-        _idbSet('fap_v3', store).catch(() => {});
-        saveAuditToDatabase(store);
+  function flushAndSave() {
+    clearTimeout(_autoSaveTimer);
+    clearTimeout(_saveTimer);   // cancel debounce
+    const r = route();
+    if (r.view === 'si') {
+      syncEditorToStore(r.projectId, r.siId);
     }
+    // Synchronous fallback: write to localStorage as a safety net
+    // (IDB writes are async and may not complete before the page is killed)
+    try { localStorage.setItem('fap_v3_exit', JSON.stringify(store)); } catch(e) {}
+    // Also kick off the async IDB write — may or may not finish in time
+    _idbSet('fap_v3', store).catch(() => {});
+  }
+  window.addEventListener('beforeunload', flushAndSave);
+  window.addEventListener('pagehide', flushAndSave);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) flushAndSave();
+  });
 
-    window.addEventListener('beforeunload', flushAndSave);
-    window.addEventListener('pagehide', flushAndSave);
-    document.addEventListener('visibilitychange', () => {
-        if (document.hidden) flushAndSave();
-    });
-
-    // On next startup, recover from the exit snapshot if IDB was empty
-    (async () => {
-        try {
-            const snap = localStorage.getItem('fap_v3_exit');
-            if (!snap) return;
-            const idbData = await _idbGet('fap_v3');
-            if (!idbData) {
-                await _idbSet('fap_v3', JSON.parse(snap));
-                console.log('[ADH] Recovered exit snapshot -> IndexedDB');
-            }
-            localStorage.removeItem('fap_v3_exit');
-        } catch(e) {}
-    })();
-
-    // --- SAFE AZURE CLOUD SYNC ---
-    window.addEventListener('load', async () => {
-        if (!sessionStorage.getItem('cloudSynced')) {
-            const cloudData = await loadAuditFromDatabase();
-            
-            if (cloudData) {
-                // Only copy your actual app data, block the Cosmos DB metadata
-                for (let key in cloudData) {
-                    if (!key.startsWith('_') && key !== 'id') {
-                        store[key] = cloudData[key];
-                    }
-                }
-                
-                // Save to local memory and reload to draw the screen
-                await _idbSet('fap_v3', store);
-                sessionStorage.setItem('cloudSynced', 'true');
-                location.reload(); 
-            }
-        }
-    });
+  // On next startup, recover from the exit snapshot if IDB was empty
+  (async () => {
+    try {
+      const snap = localStorage.getItem('fap_v3_exit');
+      if (!snap) return;
+      const idbData = await _idbGet('fap_v3');
+      if (!idbData) {
+        await _idbSet('fap_v3', JSON.parse(snap));
+        console.log('[ADH] Recovered exit snapshot → IndexedDB');
+      }
+      localStorage.removeItem('fap_v3_exit');
+    } catch(e) {}
+  })();
 })();
 </script>
 </body>
