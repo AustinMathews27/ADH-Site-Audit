@@ -91,16 +91,28 @@ body {
 /* ── NAV BAR ── */
 .nav-bar {
   display:flex; align-items:center;
-  padding:0 14px; height:50px;
+  padding:0 14px; height:110px;
   background:var(--surface); border-bottom:1px solid var(--border);
-  flex-shrink:0; gap:6px; overflow:hidden;
+  flex-shrink:0; gap:6px;
 }
 .nav-logo {
-  height: 36px;
+  height: 100px;
   width: auto;
   display: block;
   object-fit: contain;
 }
+.offline-banner {
+  display: none;
+  background: #f97316;
+  color: #000;
+  text-align: center;
+  padding: 5px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  flex-shrink: 0;
+}
+body.is-offline .offline-banner { display: block; }
 .nav-back-btn {
   display:flex; align-items:center; justify-content:center;
   width:32px; height:32px; border-radius:8px;
