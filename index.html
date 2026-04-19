@@ -1152,6 +1152,18 @@ input[type="radio"] {
 }
 .labor-bar-wrap { width:100%; height:4px; background:rgba(255,255,255,0.15); border-radius:2px; margin-top:3px; }
 .labor-bar { height:4px; border-radius:2px; transition:width 0.3s; }
+.cell-labor-inputs { display:flex; gap:6px; margin-top:5px; padding-top:4px; border-top:1px solid rgba(255,255,255,0.07); align-items:center; }
+.cell-labor-field { display:flex; align-items:center; gap:2px; font-size:9px; color:var(--text3); font-family:var(--mono); }
+.cell-labor-inp {
+  width:38px; padding:2px 4px; background:rgba(255,255,255,0.05);
+  border:1px solid var(--border); border-radius:4px;
+  font-size:9px; color:var(--text); font-family:var(--mono);
+  text-align:center; outline:none;
+}
+.cell-labor-inp:focus { border-color:rgba(96,165,250,0.5); background:rgba(96,165,250,0.06); }
+.si-rem-hours { font-size:9px; font-family:var(--mono); margin-top:1px; color:var(--text3); }
+.si-rem-hours.low { color:#f97316; }
+.si-rem-hours.done { color:#22c55e; }
 
 /* ── TOWER WORK ── */
 .tower-section { border:1px solid var(--border); border-radius:10px; overflow:hidden; margin-top:4px; }
@@ -3282,6 +3294,7 @@ function buildScheduleView(pid) {
   const proj = getProject(pid); if(!proj) return;
   if(!proj.schedule) proj.schedule = {};
   if(!proj.laborSettings) proj.laborSettings = { show:false, workers:4, hoursPerDay:8, workDays:5 };
+  if(!proj.laborLog) proj.laborLog = {};
   const ls = proj.laborSettings;
 
   const el = document.getElementById('v-schedule');
@@ -3309,38 +3322,66 @@ function buildScheduleView(pid) {
       const hasCell = !!(proj.schedule[`${item.id}_${w.key}`] || '').trim();
       return sum + (hasCell && item.laborHours ? item.laborHours : 0);
     }, 0);
+    const logged = items.reduce((sum, item) => {
+      const log = proj.laborLog[`${item.id}_${w.key}`] || {};
+      return sum + (log.hours || 0);
+    }, 0);
     const capacity = ls.workers * ls.hoursPerDay * ls.workDays;
-    const pct = capacity > 0 ? Math.round((scheduled / capacity) * 100) : 0;
+    const display = logged > 0 ? logged : scheduled;
+    const pct = capacity > 0 ? Math.round((display / capacity) * 100) : 0;
     const barColor = pct > 100 ? '#ef4444' : pct >= 80 ? '#fbbf24' : '#22c55e';
-    return { scheduled, capacity, pct, barColor };
+    return { scheduled, logged, capacity, pct, barColor, display };
   });
 
   const headerRow = `
     <div class="week-cell header">SI Item</div>
     ${weeks.map(w=>`<div class="week-cell header">${w.label}<span class="week-col-date">${w.dates}</span></div>`).join('')}`;
 
-  const dataRows = items.map(item=>`
+  const dataRows = items.map(item => {
+    const totalLogged = weeks.reduce((sum, w) => {
+      const log = proj.laborLog[`${item.id}_${w.key}`] || {};
+      return sum + (log.hours || 0);
+    }, 0);
+    const remaining = (item.laborHours || 0) - totalLogged;
+    const remPct = item.laborHours > 0 ? remaining / item.laborHours : 1;
+    const remClass = remaining <= 0 ? 'done' : remPct < 0.25 ? 'low' : '';
+    const remLabel = remaining <= 0 ? '✓ Fully logged' : `${remaining}h left`;
+    return `
     <div class="week-cell si-label">
       <span class="si-lbl-num">${statusDot(item.status)}${item.num}</span>
       <span style="font-size:10px;line-height:1.3">${item.title}</span>
-      ${item.laborHours != null ? `<span style="font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:1px">⏱ ${item.laborHours}h</span>` : ''}
+      ${item.laborHours != null ? `<span style="font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:1px">⏱ ${item.laborHours}h est.</span>` : ''}
+      ${ls.show && item.laborHours ? `<span class="si-rem-hours ${remClass}">${remLabel}</span>` : ''}
     </div>
-    ${weeks.map(w=>{
-      const key=`${item.id}_${w.key}`;
-      const val=(proj.schedule[key]||'').replace(/'/g,'&#39;');
+    ${weeks.map(w => {
+      const key = `${item.id}_${w.key}`;
+      const val = (proj.schedule[key] || '').replace(/'/g, '&#39;');
+      const log = proj.laborLog[key] || {};
       return `<div class="week-cell editable">
         <input type="text" value="${val}" placeholder="—"
           onchange="saveScheduleCell('${pid}','${key}',this.value)"
           onfocus="this.select()" />
+        ${ls.show && item.laborHours ? `
+          <div class="cell-labor-inputs">
+            <div class="cell-labor-field">👷 <input type="number" class="cell-labor-inp" min="0" max="99"
+              value="${log.workers || ''}" placeholder="0"
+              onchange="saveLaborLog('${pid}','${key}','workers',+this.value||0)"
+              title="Workers on this item this week" /></div>
+            <div class="cell-labor-field">⏱ <input type="number" class="cell-labor-inp" min="0" max="9999"
+              value="${log.hours || ''}" placeholder="0h"
+              onchange="saveLaborLog('${pid}','${key}','hours',+this.value||0)"
+              title="Hours logged this week" /></div>
+          </div>` : ''}
       </div>`;
     }).join('')}
-  `).join('');
+  `;
+  }).join('');
 
   const laborRow = ls.show ? `
     <div class="week-cell labor-row" style="justify-content:center">👷 LABOR</div>
     ${weekLabor.map(wl=>`
       <div class="week-cell labor-row">
-        <span style="color:#93c5fd;font-size:10px">${wl.scheduled}h <span style="color:#475569;font-size:9px">/ ${wl.capacity}h cap</span></span>
+        <span style="color:#93c5fd;font-size:10px">${wl.logged > 0 ? wl.logged + 'h logged' : wl.scheduled + 'h est'} <span style="color:#475569;font-size:9px">/ ${wl.capacity}h cap</span></span>
         <span style="font-size:9px;color:${wl.barColor}">${wl.pct}% utilized</span>
         <div class="labor-bar-wrap"><div class="labor-bar" style="width:${Math.min(wl.pct,100)}%;background:${wl.barColor}"></div></div>
       </div>`).join('')}` : '';
@@ -3420,6 +3461,16 @@ window.saveScheduleSetting=function(pid,field,value){
   const proj=getProject(pid); if(!proj) return;
   if(!proj.laborSettings) proj.laborSettings={show:false,workers:4,hoursPerDay:8,workDays:5};
   proj.laborSettings[field]=value;
+  save();
+  buildScheduleView(pid);
+};
+
+window.saveLaborLog=function(pid,key,field,value){
+  const proj=getProject(pid); if(!proj) return;
+  if(!proj.laborLog) proj.laborLog={};
+  if(!proj.laborLog[key]) proj.laborLog[key]={workers:0,hours:0};
+  proj.laborLog[key][field]=value;
+  if(!proj.laborLog[key].workers && !proj.laborLog[key].hours) delete proj.laborLog[key];
   save();
   buildScheduleView(pid);
 };
