@@ -1360,56 +1360,70 @@ input[type="radio"] {
 const SEED = {
   settings: { isAdmin: false, theme: 'light' },
   folders:[
-    // A.S.S.T (Advanced Specialized Systems) - Symbol: Network Nodes
+    // A.S.S.T (Allegheny Solid Surfaces Technologies) - Symbol: Countertop slab cross-section
     {id:'fld_ast',name:'A.S.S.T',icon:`
       <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
         <path d='M85,50 L50,85 L15,50 L50,15 Z' fill='var(--text3)' stroke='var(--accent)' stroke-width='3'/>
-        <circle cx='50' cy='35' r='5' fill='var(--accent)'/>
-        <circle cx='65' cy='60' r='5' fill='var(--accent)'/>
-        <circle cx='35' cy='60' r='5' fill='var(--accent)'/>
-        <path d='M50,35 L65,60 M50,35 L35,60' stroke='var(--text)' stroke-width='2'/>
+        <rect x='24' y='43' width='52' height='13' rx='3' fill='var(--text)'/>
+        <line x1='28' y1='48' x2='72' y2='48' stroke='var(--accent)' stroke-width='2'/>
+        <line x1='33' y1='56' x2='33' y2='66' stroke='var(--text)' stroke-width='3'/>
+        <line x1='50' y1='56' x2='50' y2='66' stroke='var(--text)' stroke-width='3'/>
+        <line x1='67' y1='56' x2='67' y2='66' stroke='var(--text)' stroke-width='3'/>
       </svg>`, projects:[], parentId:null},
 
-    // AMI (Allegheny Millwork Installation) - Symbol: Interlocking Joinery
+    // AMI (Allegheny Millwork) - Symbol: Stacked wood planks with grain joints
     {id:'fld_ami',name:'AMI',icon:`
       <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
         <path d='M85,50 L50,85 L15,50 L50,15 Z' fill='var(--text3)' stroke='var(--accent)' stroke-width='3'/>
-        <path d='M40,35 H60 M40,65 H60 M50,35 V65' stroke='var(--text)' stroke-width='5' stroke-linecap='square'/>
-        <path d='M40,42 H60 M40,58 H60' stroke='var(--accent)' stroke-width='2' stroke-dasharray='2 2'/>
+        <rect x='27' y='33' width='46' height='9' rx='1.5' fill='var(--text)'/>
+        <rect x='27' y='44' width='46' height='9' rx='1.5' fill='var(--text)'/>
+        <rect x='27' y='55' width='46' height='9' rx='1.5' fill='var(--text)'/>
+        <line x1='44' y1='33' x2='44' y2='42' stroke='var(--accent)' stroke-width='1.5'/>
+        <line x1='59' y1='44' x2='59' y2='53' stroke='var(--accent)' stroke-width='1.5'/>
+        <line x1='40' y1='55' x2='40' y2='64' stroke='var(--accent)' stroke-width='1.5'/>
       </svg>`, projects:[], parentId:null},
 
-    // ACD (Allegheny Construction Division) - Symbol: I-Beam Structure
+    // ACD (Allegheny Commercial Doors) - Symbol: Door with frame and handle
     {id:'fld_acd',name:'ACD',icon:`
       <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
         <path d='M85,50 L50,85 L15,50 L50,15 Z' fill='var(--text3)' stroke='var(--accent)' stroke-width='3'/>
-        <path d='M35,35 H65 M35,65 H65 M50,35 V65' stroke='var(--text)' stroke-width='6' stroke-linecap='round'/>
-        <path d='M35,45 L65,55 M35,55 L65,45' stroke='var(--accent)' stroke-width='1' opacity='0.7'/>
+        <rect x='33' y='25' width='34' height='50' rx='2' fill='none' stroke='var(--text)' stroke-width='3.5'/>
+        <rect x='35' y='29' width='4' height='3' rx='1' fill='var(--accent)'/>
+        <rect x='35' y='65' width='4' height='3' rx='1' fill='var(--accent)'/>
+        <circle cx='58' cy='51' r='3.5' fill='var(--accent)'/>
+        <line x1='55' y1='51' x2='51' y2='51' stroke='var(--accent)' stroke-width='2' stroke-linecap='round'/>
       </svg>`, projects:[], parentId:null},
 
-    // ACS (Allegheny Commissioning & Safety) - Symbol: Gear with Checkmark
+    // ACS (Allegheny Construction Specialties Div 10) - Symbol: Shield with checkmark
     {id:'fld_acs',name:'ACS',icon:`
       <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
         <path d='M85,50 L50,85 L15,50 L50,15 Z' fill='var(--text3)' stroke='var(--accent)' stroke-width='3'/>
-        <circle cx='50' cy='50' r='18' stroke='var(--text)' stroke-width='4' fill='none' stroke-dasharray='3 2'/>
-        <path d='M40,50 L47,57 L62,42' stroke='var(--accent)' stroke-width='5' fill='none' stroke-linecap='round'/>
+        <path d='M50,26 L67,35 V53 Q67,66 50,74 Q33,66 33,53 V35 Z' fill='none' stroke='var(--text)' stroke-width='3'/>
+        <path d='M40,51 L47,58 L62,43' stroke='var(--accent)' stroke-width='4.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/>
       </svg>`, projects:[], parentId:null},
 
-    // ADH (Allegheny Diversified Holdings) - Symbol: Multi-Tiered Crown
+    // ADH (Allegheny Diversified Holdings) - Symbol: Corporate tower with windows
     {id:'fld_adh',name:'ADH',icon:`
       <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
         <path d='M85,50 L50,85 L15,50 L50,15 Z' fill='var(--text3)' stroke='var(--accent)' stroke-width='3'/>
-        <path d='M30,65 V45 L40,35 L50,45 L60,35 L70,45 V65 H30' fill='var(--text)' stroke='none'/>
-        <rect x='42' y='28' width='16' height='4' rx='2' fill='var(--accent)'/>
+        <rect x='36' y='32' width='28' height='40' rx='2' fill='var(--text)'/>
+        <rect x='44' y='24' width='12' height='9' rx='1' fill='var(--accent)'/>
+        <rect x='40' y='38' width='7' height='6' rx='1' fill='var(--accent)' opacity='0.85'/>
+        <rect x='53' y='38' width='7' height='6' rx='1' fill='var(--accent)' opacity='0.85'/>
+        <rect x='40' y='48' width='7' height='6' rx='1' fill='var(--accent)' opacity='0.85'/>
+        <rect x='53' y='48' width='7' height='6' rx='1' fill='var(--accent)' opacity='0.85'/>
+        <rect x='40' y='58' width='7' height='6' rx='1' fill='var(--accent)' opacity='0.85'/>
+        <rect x='53' y='58' width='7' height='6' rx='1' fill='var(--accent)' opacity='0.85'/>
       </svg>`, projects:['proj_1'], parentId:null},
 
-    // ACM (Allegheny Construction Management) - Symbol: Blueprint Grid
+    // ACM (Ascent Custom Millwork) - Symbol: Rising arch with decorative molding lines
     {id:'fld_acm',name:'ACM',icon:`
       <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
         <path d='M85,50 L50,85 L15,50 L50,15 Z' fill='var(--text3)' stroke='var(--accent)' stroke-width='3'/>
-        <rect x='33' y='33' width='34' height='34' fill='none' stroke='var(--text)' stroke-width='3'/>
-        <line x1='33' y1='50' x2='67' y2='50' stroke='var(--accent)' stroke-width='2'/>
-        <line x1='50' y1='33' x2='50' y2='67' stroke='var(--accent)' stroke-width='2'/>
-        <circle cx='50' cy='50' r='4' fill='var(--accent)'/>
+        <path d='M27,67 Q27,34 50,27 Q73,34 73,67' stroke='var(--text)' stroke-width='3.5' fill='none' stroke-linecap='round'/>
+        <line x1='37' y1='57' x2='63' y2='57' stroke='var(--accent)' stroke-width='2.5' stroke-linecap='round'/>
+        <line x1='34' y1='63' x2='66' y2='63' stroke='var(--accent)' stroke-width='2.5' stroke-linecap='round'/>
+        <circle cx='50' cy='27' r='4' fill='var(--accent)'/>
       </svg>`, projects:[], parentId:null},
 
     // Standard Project Folders (Keep Emojis)
