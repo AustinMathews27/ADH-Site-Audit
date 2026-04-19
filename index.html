@@ -2776,6 +2776,7 @@ function buildFolderView(fid) {
       ${MAIN_FOLDERS.includes(folder.name) ? `<button class="btn-add" onclick="showNewFolderModal('${fid}')" style="color:var(--folder);background:var(--folder-dim);border-color:rgba(245,158,11,0.22)">＋ Folder</button>` : ''}
       <button class="btn-add" onclick="showNewProjectModal('${fid}')">＋ Project</button>
       <button class="import-xls-btn" onclick="triggerXLSImport('${fid}')">📥 Import XLS</button>
+      <button class="import-xls-btn" onclick="triggerWorkOrdersImport('${fid}')" style="background:rgba(96,165,250,0.08);border-color:rgba(96,165,250,0.25);color:#60a5fa">📋 Work Orders</button>
       <button class="btn-icon" onclick="confirmDeleteFolder('${fid}')" title="Delete Folder" style="border-color:var(--red-dim);color:var(--red)">🗑</button>
     </div>
 
@@ -2872,6 +2873,11 @@ function buildProjectView(pid) {
       <div class="action-row" onclick="triggerReimportXLS('${pid}')">
         <div class="action-icon" style="background:rgba(245,158,11,0.1)">🔄</div>
         <div class="action-body"><div class="action-title">Sync Spreadsheet</div><div class="action-desc">Update SI items and delivery logistics from Excel</div></div>
+        <div class="action-arrow">›</div>
+      </div>
+      <div class="action-row" onclick="triggerWorkOrdersImport('', '${pid}')">
+        <div class="action-icon" style="background:rgba(96,165,250,0.1)">📋</div>
+        <div class="action-body"><div class="action-title">Import Work Orders</div><div class="action-desc">Update dates & hours from Work Orders spreadsheet</div></div>
         <div class="action-arrow">›</div>
       </div>
       <div class="action-row" onclick="navToSchedule('${pid}')">
@@ -6625,6 +6631,319 @@ if (document.readyState === 'loading') {
     } catch(e) {}
   })();
 })();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WORK ORDERS XLSX IMPORT  (v1.0)
+// ═══════════════════════════════════════════════════════════════════════════
+(function injectWorkOrderFileInput() {
+  function inject() {
+    if (document.getElementById('wo-xls-input')) return;
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.id = 'wo-xls-input';
+    inp.accept = '.xls,.xlsx';
+    inp.style.display = 'none';
+    inp.onchange = (e) => window.handleWorkOrdersXLSX(e);
+    document.body.appendChild(inp);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', inject);
+  } else {
+    inject();
+  }
+})();
+
+let _woTargetFid = null;
+let _woTargetPid = null;
+
+window.triggerWorkOrdersImport = function(fid, pid) {
+  _woTargetFid = fid || '';
+  _woTargetPid = pid || null;
+  const inp = document.getElementById('wo-xls-input');
+  if (!inp) return showToast('Import input not ready', 'red');
+  inp.value = '';
+  inp.click();
+};
+
+const WO_HEADER_ALIASES = {
+  name:            ['name','item','description','work order','work order name'],
+  type:            ['type'],
+  plannedCritical: ['planned critical date','critical date','need by','required date'],
+  workflow:        ['workflow name','workflow'],
+  plannedStart:    ['planned start date','start date','install date'],
+  shipmentDate:    ['actual shipment date','shipment date','ship date'],
+  laborHours:      ['estimated total labor hours','total labor hours','labor hours','hours'],
+  deliveryDate:    ['delivery/on site date','delivery date','on site date','on-site date','delivery'],
+  siNumber:        ['si #','si#','si number','si no','si']
+};
+
+function _woNormalizeHeader(h) {
+  return String(h || '').toLowerCase().replace(/[\s_\-\/#\.]+/g, ' ').trim();
+}
+
+function _woBuildHeaderIndex(headerRow) {
+  const idx = {};
+  headerRow.forEach((h, i) => {
+    const norm = _woNormalizeHeader(h);
+    for (const canonical in WO_HEADER_ALIASES) {
+      if (WO_HEADER_ALIASES[canonical].some(alias => _woNormalizeHeader(alias) === norm)) {
+        idx[canonical] = i;
+        return;
+      }
+    }
+  });
+  return idx;
+}
+
+function _woParseName(name) {
+  if (!name) return { si: null, title: '' };
+  const s = String(name).trim();
+  const lead = s.match(/^(\d{2,4})\s*[-–:.\s]?\s*(.*)$/);
+  if (lead) return { si: lead[1].padStart(4, '0'), title: lead[2].trim() || s };
+  const any = s.match(/\b(\d{2,4})\b/);
+  return { si: any ? any[1].padStart(4, '0') : null, title: s };
+}
+
+function _woToISODate(v) {
+  if (v == null || v === '') return '';
+  if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0, 10);
+  if (typeof v === 'number') {
+    const d = new Date(Math.round((v - 25569) * 86400 * 1000));
+    return isNaN(d) ? '' : d.toISOString().slice(0, 10);
+  }
+  const s = String(v).trim();
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  if (m) {
+    let [, mo, da, yr] = m;
+    if (yr.length === 2) yr = '20' + yr;
+    const iso = `${yr}-${mo.padStart(2,'0')}-${da.padStart(2,'0')}`;
+    return isNaN(new Date(iso)) ? '' : iso;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = new Date(s);
+  return isNaN(d) ? '' : d.toISOString().slice(0, 10);
+}
+
+function _woToNumber(v) {
+  if (v == null || v === '') return null;
+  const n = parseFloat(v);
+  return isNaN(n) ? null : Math.round(n * 100) / 100;
+}
+
+function extractWorkOrdersFromSheet(sheet) {
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, cellDates: true, defval: '' });
+  if (!rows.length) return { items: [], skipped: [], headerFound: false };
+
+  let headerRowIdx = -1, headerIdx = null;
+  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+    const h = _woBuildHeaderIndex(rows[i]);
+    if ('name' in h && ('plannedStart' in h || 'plannedCritical' in h || 'deliveryDate' in h)) {
+      headerRowIdx = i; headerIdx = h; break;
+    }
+  }
+  if (headerRowIdx === -1) return { items: [], skipped: [], headerFound: false };
+
+  const items = [], skipped = [];
+  for (let r = headerRowIdx + 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || row.every(c => c === '' || c == null)) continue;
+    const rawName = headerIdx.name != null ? row[headerIdx.name] : '';
+    const { si, title } = _woParseName(rawName);
+    if (!si) { skipped.push({ row: r + 1, reason: 'No SI number detected in Name' }); continue; }
+    items.push({
+      si, title: title || rawName,
+      type:            String(headerIdx.type        != null ? row[headerIdx.type]        : '').trim(),
+      workflow:        String(headerIdx.workflow     != null ? row[headerIdx.workflow]    : '').trim(),
+      plannedStart:    _woToISODate(headerIdx.plannedStart    != null ? row[headerIdx.plannedStart]    : ''),
+      plannedCritical: _woToISODate(headerIdx.plannedCritical != null ? row[headerIdx.plannedCritical] : ''),
+      shipmentDate:    _woToISODate(headerIdx.shipmentDate    != null ? row[headerIdx.shipmentDate]    : ''),
+      deliveryDate:    _woToISODate(headerIdx.deliveryDate    != null ? row[headerIdx.deliveryDate]    : ''),
+      laborHours:      _woToNumber( headerIdx.laborHours      != null ? row[headerIdx.laborHours]      : ''),
+      _checked: true
+    });
+  }
+  const seen = new Map();
+  items.forEach(it => { if (seen.has(it.si)) it._duplicate = true; seen.set(it.si, true); });
+  return { items, skipped, headerFound: true };
+}
+
+function _woWeekKeyFor(isoDate) {
+  if (!isoDate) return null;
+  const d = new Date(isoDate + 'T00:00:00');
+  if (isNaN(d)) return null;
+  const today = new Date();
+  const day = today.getDay();
+  const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(today.getFullYear(), today.getMonth(), diff);
+  const wIdx = Math.floor((d - monday) / (7 * 24 * 60 * 60 * 1000));
+  if (wIdx < 0 || wIdx > 5) return null;
+  return 'w' + wIdx;
+}
+
+function showWorkOrdersPreviewModal(filename, parsed, onConfirm) {
+  if (!parsed.headerFound) return showToast('Could not find header row (expected "Name" column)', 'red');
+  if (!parsed.items.length) return showToast('No importable rows found', 'red');
+
+  const hasMerge = !!_woTargetPid;
+  const targetProject = hasMerge ? getProject(_woTargetPid) : null;
+
+  const rowsHTML = parsed.items.map((it, i) => `
+    <div style="display:grid;grid-template-columns:28px 60px 1fr 90px 70px;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border);font-size:11px;align-items:center">
+      <input type="checkbox" ${it._checked ? 'checked' : ''} data-woi="${i}" class="wo-row-check" />
+      <span style="font-family:var(--mono);font-weight:600;color:var(--accent)">${it.si}${it._duplicate ? ' ⚠' : ''}</span>
+      <span style="color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.title}</span>
+      <span style="font-family:var(--mono);color:var(--text2);font-size:10px">${it.plannedStart || '—'}</span>
+      <span style="font-family:var(--mono);color:var(--text2);font-size:10px;text-align:right">${it.laborHours != null ? it.laborHours + 'h' : '—'}</span>
+    </div>`).join('');
+
+  const skippedHTML = parsed.skipped.length
+    ? `<div style="margin-top:10px;padding:10px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.3);border-radius:8px;font-size:11px;color:var(--text2)">
+         <div style="font-weight:600;color:var(--yellow);margin-bottom:4px">⚠ ${parsed.skipped.length} row(s) skipped</div>
+         ${parsed.skipped.slice(0,5).map(s=>`<div>Row ${s.row}: ${s.reason}</div>`).join('')}
+         ${parsed.skipped.length > 5 ? `<div>…and ${parsed.skipped.length-5} more</div>` : ''}
+       </div>` : '';
+
+  const targetHTML = hasMerge
+    ? `<div style="padding:10px;background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.3);border-radius:8px;font-size:11px;margin-bottom:10px">
+         <div style="font-weight:600;color:var(--accent);margin-bottom:2px">↻ Merging into existing project</div>
+         <div style="color:var(--text2)">${targetProject ? targetProject.name : '(unknown)'}</div>
+       </div>`
+    : `<div class="field-group">
+         <div class="field-label">New Project Name</div>
+         <input class="field-input" id="wo-project-name" value="Work Orders – ${filename.replace(/\.xlsx?$/i,'')}" placeholder="Project name" />
+       </div>`;
+
+  makeModal(hasMerge ? 'Merge Work Orders' : 'Import Work Orders', `
+    <div style="font-size:11px;color:var(--text3);margin-bottom:10px;font-family:var(--mono)">${filename} · ${parsed.items.length} item${parsed.items.length!==1?'s':''} detected</div>
+    ${targetHTML}
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <button class="btn-nav" style="flex:1;font-size:11px" onclick="document.querySelectorAll('.wo-row-check').forEach(c=>c.checked=true)">Select All</button>
+      <button class="btn-nav" style="flex:1;font-size:11px" onclick="document.querySelectorAll('.wo-row-check').forEach(c=>c.checked=false)">Select None</button>
+    </div>
+    <div style="display:grid;grid-template-columns:28px 60px 1fr 90px 70px;gap:8px;padding:6px 10px;border-bottom:2px solid var(--border);font-size:10px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;font-weight:600">
+      <span></span><span>SI</span><span>Title</span><span>Start</span><span style="text-align:right">Labor</span>
+    </div>
+    <div style="max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">${rowsHTML}</div>
+    ${skippedHTML}
+    <div style="margin-top:10px;font-size:11px;color:var(--text3)">💡 Planned Start Dates within the next 6 weeks will auto-populate the schedule.</div>
+  `, () => {
+    const selected = parsed.items.filter((_,i) => {
+      const cb = document.querySelector(`.wo-row-check[data-woi="${i}"]`);
+      return cb && cb.checked;
+    });
+    if (!selected.length) return showToast('No items selected', 'red');
+    const projectName = document.getElementById('wo-project-name')?.value?.trim();
+    onConfirm(selected, projectName);
+  });
+}
+
+function _woBuildSIItem(it, sectionId) {
+  return {
+    id: 'si_' + it.si + '_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
+    sectionId, num: 'SI ' + it.si, title: it.title,
+    status: 'pending', assignedTo: '', dueDate: it.plannedStart || '',
+    notes: '', tags: [], customTags: [], photos: [],
+    plannedStart: it.plannedStart || '', plannedCritical: it.plannedCritical || '',
+    shipmentDate: it.shipmentDate || '', deliveryDate: it.deliveryDate || '',
+    laborHours: it.laborHours, workflow: it.workflow || '', workOrderType: it.type || '',
+    delivery: { deliveryDate: it.deliveryDate || '', truck: '' }
+  };
+}
+
+function _woPopulateSchedule(project, items) {
+  if (!project.schedule) project.schedule = {};
+  let populated = 0;
+  items.forEach(si => {
+    const wkey = _woWeekKeyFor(si.plannedStart);
+    if (!wkey) return;
+    const cellKey = `${si.id}_${wkey}`;
+    if (!project.schedule[cellKey]) { project.schedule[cellKey] = 'Planned Start'; populated++; }
+  });
+  return populated;
+}
+
+function createProjectFromWorkOrders(items, projectName, folderId) {
+  const pid = 'proj_' + Date.now();
+  const section = { id: 'sec_imported_' + Date.now(), name: 'Imported Work Orders' };
+  const siItems = items.map(it => _woBuildSIItem(it, section.id));
+  const project = {
+    id: pid, name: projectName || 'Work Orders Import',
+    client: '', company: '', auditor: '', date: new Date().toLocaleDateString(),
+    projectType: '', coverPhoto: null, sections: [section], items: siItems,
+    schedule: {}, importLog: []
+  };
+  const populated = _woPopulateSchedule(project, siItems);
+  store.projects.push(project);
+  if (folderId) { const f = getFolder(folderId); if (f && !f.projects.includes(pid)) f.projects.push(pid); }
+  project.importLog.push({ date: new Date().toISOString(), summary: { added: siItems.length, modified: 0, removed: 0, conflicts: 0, scheduled: populated }, source: 'work-orders-xlsx' });
+  save();
+  return { pid, added: siItems.length, scheduled: populated };
+}
+
+function mergeWorkOrdersIntoProject(project, items) {
+  let section = project.sections.find(s => s.name === 'Imported Work Orders');
+  if (!section) { section = { id: 'sec_imported_' + Date.now(), name: 'Imported Work Orders' }; project.sections.push(section); }
+  const existingBySI = new Map();
+  project.items.forEach(i => { const m = String(i.num||'').match(/\d{2,4}/); if (m) existingBySI.set(m[0].padStart(4,'0'), i); });
+  let added = 0, updated = 0;
+  const newOrUpdatedItems = [];
+  items.forEach(it => {
+    const existing = existingBySI.get(it.si);
+    if (existing) {
+      existing.dueDate         = it.plannedStart    || existing.dueDate;
+      existing.plannedStart    = it.plannedStart    || existing.plannedStart    || '';
+      existing.plannedCritical = it.plannedCritical || existing.plannedCritical || '';
+      existing.shipmentDate    = it.shipmentDate    || existing.shipmentDate    || '';
+      existing.deliveryDate    = it.deliveryDate    || existing.deliveryDate    || '';
+      existing.laborHours      = (it.laborHours != null) ? it.laborHours : existing.laborHours;
+      existing.workflow        = it.workflow     || existing.workflow     || '';
+      existing.workOrderType   = it.type         || existing.workOrderType || '';
+      if (it.deliveryDate) { existing.delivery = existing.delivery || { deliveryDate:'', truck:'' }; existing.delivery.deliveryDate = it.deliveryDate; }
+      newOrUpdatedItems.push(existing); updated++;
+    } else {
+      const si = _woBuildSIItem(it, section.id);
+      project.items.push(si); newOrUpdatedItems.push(si); added++;
+    }
+  });
+  const populated = _woPopulateSchedule(project, newOrUpdatedItems);
+  if (!project.importLog) project.importLog = [];
+  project.importLog.push({ date: new Date().toISOString(), summary: { added, modified: updated, removed: 0, conflicts: 0, scheduled: populated }, source: 'work-orders-xlsx' });
+  save();
+  return { added, updated, scheduled: populated };
+}
+
+window.handleWorkOrdersXLSX = function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (typeof XLSX === 'undefined') return showToast('XLSX library not loaded', 'red');
+  const folderId = _woTargetFid, mergePid = _woTargetPid;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    let wb;
+    try { wb = XLSX.read(ev.target.result, { type: 'array', cellDates: true }); }
+    catch (err) { console.error('[WO Import] read failed:', err); return showToast('Could not read spreadsheet', 'red'); }
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const parsed = extractWorkOrdersFromSheet(sheet);
+    showWorkOrdersPreviewModal(file.name, parsed, (selected, projectName) => {
+      if (mergePid) {
+        const proj = getProject(mergePid);
+        if (!proj) { closeModal(); return showToast('Target project not found', 'red'); }
+        const res = mergeWorkOrdersIntoProject(proj, selected);
+        closeModal();
+        showToast(`✓ +${res.added} new · ~${res.updated} updated · 📅 ${res.scheduled} scheduled`, 'green');
+        render();
+      } else {
+        const res = createProjectFromWorkOrders(selected, projectName, folderId);
+        closeModal();
+        showToast(`✓ Imported ${res.added} SI · 📅 ${res.scheduled} scheduled`, 'green');
+        setTimeout(() => navToProject(res.pid, folderId), 50);
+      }
+      _woTargetFid = null; _woTargetPid = null;
+    });
+  };
+  reader.readAsArrayBuffer(file);
+  e.target.value = '';
+};
 </script>
 </body>
 </html>
