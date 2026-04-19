@@ -1402,6 +1402,16 @@ const SEED = {
         <rect x='42' y='28' width='16' height='4' rx='2' fill='var(--accent)'/>
       </svg>`, projects:['proj_1'], parentId:null},
 
+    // ACM (Allegheny Construction Management) - Symbol: Blueprint Grid
+    {id:'fld_acm',name:'ACM',icon:`
+      <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
+        <path d='M85,50 L50,85 L15,50 L50,15 Z' fill='var(--text3)' stroke='var(--accent)' stroke-width='3'/>
+        <rect x='33' y='33' width='34' height='34' fill='none' stroke='var(--text)' stroke-width='3'/>
+        <line x1='33' y1='50' x2='67' y2='50' stroke='var(--accent)' stroke-width='2'/>
+        <line x1='50' y1='33' x2='50' y2='67' stroke='var(--accent)' stroke-width='2'/>
+        <circle cx='50' cy='50' r='4' fill='var(--accent)'/>
+      </svg>`, projects:[], parentId:null},
+
     // Standard Project Folders (Keep Emojis)
     {id:'fld_1',name:'Casino Projects',icon:'🎰',projects:[],parentId:null},
     {id:'fld_2',name:'Restaurant Projects',icon:'🍽️',projects:[],parentId:null},
@@ -1607,11 +1617,17 @@ async function _initStore() {
   store.contacts.forEach(c => { if(!c.project) c.project = 'Office'; });
 
   // Update branded folder icons to use theme variables for existing users
-  ['fld_ast', 'fld_ami', 'fld_acd', 'fld_acs', 'fld_adh'].forEach(id => {
+  ['fld_ast', 'fld_ami', 'fld_acd', 'fld_acs', 'fld_adh', 'fld_acm'].forEach(id => {
     const f = store.folders.find(folder => folder.id === id);
     const seedF = SEED.folders.find(sf => sf.id === id);
     if (f && seedF) f.icon = seedF.icon;
   });
+
+  // One-time migration: add ACM main folder if missing
+  if (!store.folders.find(f => f.id === 'fld_acm')) {
+    const seedAcm = SEED.folders.find(f => f.id === 'fld_acm');
+    if (seedAcm) store.folders.push(JSON.parse(JSON.stringify(seedAcm)));
+  }
 
   window.contactCategoryFilter = 'All';
   window.contactProjectFilter  = 'All';
@@ -1667,7 +1683,7 @@ const getFolder  = id => store.folders.find(f=>f.id===id);
 const getProject = id => store.projects.find(p=>p.id===id);
 const getSI      = (pid,sid) => getProject(pid)?.items.find(i=>i.id===sid);
 
-const MAIN_FOLDERS = ['A.S.S.T', 'AMI', 'ACD', 'ACS', 'ADH'];
+const MAIN_FOLDERS = ['A.S.S.T', 'AMI', 'ACD', 'ACS', 'ADH', 'ACM'];
 
 function showLoginModal() {
   if (isAdmin) {
@@ -1689,10 +1705,18 @@ function showLoginModal() {
       <div class="field-label">Password</div>
       <input type="password" id="login-pw" class="field-input" placeholder="Enter Password">
     </div>
-  `, () => {
+  `, async () => {
     const id = document.getElementById('login-id').value;
     const pw = document.getElementById('login-pw').value;
-    if (id === 'zaxcas' && pw === 'Facafaca12@') {
+    const enc = new TextEncoder();
+    const hashHex = buf => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+    const [idHash, pwHash] = await Promise.all([
+      crypto.subtle.digest('SHA-256', enc.encode(id)).then(hashHex),
+      crypto.subtle.digest('SHA-256', enc.encode(pw)).then(hashHex),
+    ]);
+    const ADMIN_ID = 'c3196027fbc47ddb17bfcb8a07ab778958fb763a22696b6f329e368ec372be73';
+    const ADMIN_PW = '3c8b46cacd0109af0afe94d568d9e20ed8c34c60e0665ab3d59857bd24847bba';
+    if (idHash === ADMIN_ID && pwHash === ADMIN_PW) {
       isAdmin = true;
       store.settings.isAdmin = true;
       save(); closeModal(); render(); showToast('Admin Access Granted', 'green');
@@ -2025,10 +2049,10 @@ function buildRootView() {
     <div class="section-divider">Folders</div>
     <div class="folder-grid">
       ${store.folders.filter(f => f.parentId === null).map(f=> folderCardHTML(f)).join('')}
-      <div class="folder-card new-card" onclick="showNewFolderModal(null)">
+      ${isAdmin ? `<div class="folder-card new-card" onclick="showNewFolderModal(null)">
         <div style="font-size:22px;opacity:0.4">＋</div>
         <div style="font-size:12px">New Folder</div>
-      </div>
+      </div>` : ''}
     </div>
     <div class="section-divider" style="margin-top:4px">All Projects</div>
     <div class="proj-grid">
@@ -4339,12 +4363,13 @@ function previewPhoto(pid,sid,idx) {
 // ══════════════════════════════════════════
 function handleAdd() {
   const r=route();
-  if(!r.folderId) showNewFolderModal();
+  if(!r.folderId) { if(isAdmin) showNewFolderModal(); else showToast('Admin access required to create root folders','red'); }
   else if(r.folderId&&!r.projectId) showNewProjectModal(r.folderId);
   else if(r.projectId) showNewSIModal(r.projectId);
 }
 
 function showNewFolderModal(parentId = null) {
+  if (parentId === null && !isAdmin) { showToast('Admin access required to create root folders', 'red'); return; }
   const icons=['📁','🏗','🎰','🍽️','🏨','🏥','🏫','🏢','🏪','📅','⚡','🔧'];
   makeModal(parentId ? 'New Subfolder' : 'New Folder',`
     <div class="field-group">
@@ -5658,8 +5683,8 @@ window.confirmDeleteFolder = function(fid) {
   const folder = getFolder(fid);
   if (!folder) return;
   
-  if (MAIN_FOLDERS.includes(folder.name) && !isAdmin) {
-    showToast('Only administrators can delete main folders', 'red');
+  if (MAIN_FOLDERS.includes(folder.name)) {
+    showToast('Main folders cannot be deleted', 'red');
     return;
   }
 
