@@ -1114,6 +1114,97 @@ input[type="radio"] {
   cursor:pointer; transition:all 0.15s;
 }
 .schedule-export-btn:hover { background:rgba(52,211,153,0.2); }
+.labor-toggle-btn {
+  display:flex; align-items:center; gap:6px; padding:9px 14px;
+  background:var(--surface2); color:var(--text2);
+  border:1px solid var(--border); border-radius:9px;
+  font-family:var(--mono); font-size:12px; font-weight:700;
+  cursor:pointer; transition:all 0.15s;
+}
+.labor-toggle-btn.active { background:rgba(96,165,250,0.12); color:#60a5fa; border-color:rgba(96,165,250,0.3); }
+.labor-toggle-btn:hover { background:var(--surface3); }
+.labor-panel {
+  display:none; align-items:center; flex-wrap:wrap; gap:12px;
+  padding:12px 16px; margin-bottom:12px;
+  background:var(--surface2); border:1px solid var(--border);
+  border-radius:10px; font-size:11px;
+}
+.labor-panel.open { display:flex; }
+.labor-panel-label { font-family:var(--mono); font-size:10px; color:var(--text3); font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
+.labor-num-input {
+  width:54px; padding:5px 8px; background:var(--surface); border:1px solid var(--border);
+  border-radius:7px; font-family:var(--mono); font-size:12px; font-weight:600;
+  color:var(--text); text-align:center; outline:none;
+}
+.labor-num-input:focus { border-color:var(--accent); }
+.workday-btns { display:flex; gap:3px; }
+.workday-btn {
+  padding:5px 10px; border-radius:6px; border:1px solid var(--border);
+  background:var(--surface); color:var(--text3); font-family:var(--mono);
+  font-size:11px; font-weight:700; cursor:pointer; transition:all 0.1s;
+}
+.workday-btn.active { background:rgba(96,165,250,0.15); color:#60a5fa; border-color:rgba(96,165,250,0.35); }
+.week-cell.labor-row {
+  background:#1e3a5f; color:#e2e8f0;
+  font-family:var(--mono); font-size:9px; font-weight:700;
+  text-transform:uppercase; letter-spacing:0.5px;
+  display:flex; flex-direction:column; gap:2px; padding:8px 10px;
+}
+.labor-bar-wrap { width:100%; height:4px; background:rgba(255,255,255,0.15); border-radius:2px; margin-top:3px; }
+.labor-bar { height:4px; border-radius:2px; transition:width 0.3s; }
+
+/* ── TOWER WORK ── */
+.tower-section { border:1px solid var(--border); border-radius:10px; overflow:hidden; margin-top:4px; }
+.tower-toggle-btn {
+  width:100%; display:flex; align-items:center; gap:8px; padding:10px 14px;
+  background:var(--surface2); border:none; cursor:pointer;
+  font-size:12px; font-weight:700; font-family:var(--mono); color:var(--text2);
+  transition:all 0.15s; text-align:left;
+}
+.tower-toggle-btn.active { background:rgba(96,165,250,0.1); color:#60a5fa; }
+.tower-toggle-btn .tw-chevron { margin-left:auto; font-size:10px; transition:transform 0.2s; }
+.tower-toggle-btn.active .tw-chevron { transform:rotate(180deg); }
+.tower-body { padding:12px 14px; background:var(--surface); }
+.tw-stats-row { display:flex; gap:16px; margin-bottom:10px; align-items:flex-end; }
+.tw-stat { display:flex; flex-direction:column; gap:1px; }
+.tw-stat-num { font-family:var(--mono); font-size:20px; font-weight:700; color:var(--text); line-height:1; }
+.tw-stat-label { font-size:9px; font-family:var(--mono); color:var(--text3); text-transform:uppercase; letter-spacing:0.5px; }
+.tw-progress-bar { height:6px; background:var(--surface3); border-radius:3px; overflow:hidden; margin-bottom:12px; }
+.tw-progress-fill { height:100%; border-radius:3px; transition:width 0.3s; }
+.tw-room-list { max-height:220px; overflow-y:auto; margin-bottom:10px; display:flex; flex-direction:column; gap:3px; }
+.tw-room-row {
+  display:flex; align-items:center; gap:8px; padding:6px 8px;
+  border-radius:7px; background:var(--surface2); font-size:11px;
+  cursor:pointer; transition:background 0.1s; user-select:none;
+}
+.tw-room-row:hover { background:var(--surface3); }
+.tw-room-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+.tw-room-num { font-family:var(--mono); font-weight:700; font-size:12px; color:var(--text); min-width:44px; }
+.tw-room-type { flex:1; color:var(--text2); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tw-room-status-lbl { font-family:var(--mono); font-size:9px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; white-space:nowrap; }
+.tw-room-del { font-size:10px; color:var(--text3); cursor:pointer; padding:2px 6px; border-radius:4px; border:none; background:transparent; flex-shrink:0; }
+.tw-room-del:hover { background:var(--red-dim); color:var(--red); }
+.tw-add-section { border-top:1px solid var(--border); padding-top:10px; display:flex; flex-direction:column; gap:7px; }
+.tw-input-row { display:flex; gap:6px; align-items:center; }
+.tw-input {
+  flex:1; padding:7px 10px; background:var(--surface2); border:1px solid var(--border);
+  border-radius:7px; font-size:11px; color:var(--text); outline:none; min-width:0;
+}
+.tw-input:focus { border-color:var(--accent); }
+.tw-input.narrow { flex:0 0 72px; text-align:center; }
+.tw-add-btn {
+  padding:7px 12px; background:rgba(96,165,250,0.12); color:#60a5fa;
+  border:1px solid rgba(96,165,250,0.3); border-radius:7px;
+  font-size:11px; font-weight:700; font-family:var(--mono); cursor:pointer; white-space:nowrap;
+}
+.tw-add-btn:hover { background:rgba(96,165,250,0.22); }
+.tw-badge {
+  font-family:var(--mono); font-size:9px; font-weight:700;
+  padding:2px 6px; border-radius:20px;
+  background:rgba(96,165,250,0.12); color:#60a5fa;
+  border:1px solid rgba(96,165,250,0.25); white-space:nowrap; flex-shrink:0;
+}
+.tw-badge.done { background:rgba(34,197,94,0.12); color:#22c55e; border-color:rgba(34,197,94,0.3); }
 
 /* ── CONTEXT MENU ── */
 .ctx-menu {
@@ -1642,6 +1733,13 @@ async function _initStore() {
     if (seedAcm) store.folders.push(JSON.parse(JSON.stringify(seedAcm)));
   }
 
+  // Ensure laborSettings exists on all existing projects
+  store.projects.forEach(p => {
+    if (!p.laborSettings) p.laborSettings = { show:false, workers:4, hoursPerDay:8, workDays:5 };
+    // Ensure towerWork field exists on all SI items
+    (p.items || []).forEach(i => { if (!i.towerWork) i.towerWork = { enabled:false, rooms:[] }; });
+  });
+
   window.contactCategoryFilter = 'All';
   window.contactProjectFilter  = 'All';
   window.importMenuOpen        = false;
@@ -1994,11 +2092,17 @@ function renderLeft(r) {
       html+=`<div class="section-group">${sec.name}<span class="section-count">${items.length}</span></div>`;
       items.forEach(item=>{
         const thumb=item.photos.length?`<img src="${item.photos[0].data}" />`:`<span>📷</span>`;
+        const tw = item.towerWork;
+        const twEnabled = tw && tw.enabled && tw.rooms && tw.rooms.length > 0;
+        const twDone = twEnabled ? tw.rooms.filter(r=>r.status==='completed').length : 0;
+        const twTotal = twEnabled ? tw.rooms.length : 0;
+        const twAllDone = twEnabled && twDone === twTotal;
         html+=`<div class="si-row ${r.siId===item.id?'active':''}" onclick="navToSI('${proj.id}','${item.id}')">
           <div class="si-thumb">${thumb}</div>
           <div class="si-info">
             <div class="si-num">
               SI# ${item.num.replace(/^SI\s+/, '')}
+              ${twEnabled ? `<span class="tw-badge ${twAllDone?'done':''}" style="margin-left:4px">🏢 ${twDone}/${twTotal}</span>` : ''}
             </div>
             <div class="si-title">${item.title}</div>
           </div>
@@ -3084,6 +3188,12 @@ function buildSIEditor(pid,sid) {
             <input class="field-input" id="due-input" type="date" value="${item.dueDate}" onchange="scheduleAutoSave('${pid}','${sid}')" />
         </div>
       </div>
+      <div class="field-group">
+        <div class="field-label">Tower Work / Multiple Rooms</div>
+        <div class="tower-section" id="tower-panel-${sid}">
+          ${_buildTowerPanelHTML(pid, sid)}
+        </div>
+      </div>
     </div>
     <div class="save-bar">
       <button class="btn-nav" onclick="navSI('${pid}','${sid}',-1)">‹ Prev</button>
@@ -3170,12 +3280,13 @@ function showRenameSINumModal(pid, sid) {
 // ══════════════════════════════════════════
 function buildScheduleView(pid) {
   const proj = getProject(pid); if(!proj) return;
-  if(!proj.schedule) proj.schedule = {}; // keyed by "siId_week" -> text
+  if(!proj.schedule) proj.schedule = {};
+  if(!proj.laborSettings) proj.laborSettings = { show:false, workers:4, hoursPerDay:8, workDays:5 };
+  const ls = proj.laborSettings;
 
   const el = document.getElementById('v-schedule');
   const items = proj.items;
 
-  // Generate 6 week headers starting from this Monday
   function getMonday(d) {
     const day = d.getDay(), diff = d.getDate() - day + (day===0?-6:1);
     return new Date(d.setDate(diff));
@@ -3184,17 +3295,25 @@ function buildScheduleView(pid) {
   const weeks = Array.from({length:6},(_,i)=>{
     const d = new Date(mon); d.setDate(mon.getDate()+i*7);
     const end = new Date(d); end.setDate(d.getDate()+6);
-    return {
-      label: `Wk ${i+1}`,
-      dates: `${d.getMonth()+1}/${d.getDate()} – ${end.getMonth()+1}/${end.getDate()}`,
-      key: `w${i}`
-    };
+    return { label:`Wk ${i+1}`, dates:`${d.getMonth()+1}/${d.getDate()} – ${end.getMonth()+1}/${end.getDate()}`, key:`w${i}` };
   });
 
   function statusDot(s) {
     const c={completed:'#22c55e','punch-ongoing':'#a855f7','not-ready':'#ef4444','in-progress':'#fbbf24','on-hold':'#f97316',pending:'#4e5669'};
     return `<span class="sched-status-dot" style="background:${c[s]||c.pending}"></span>`;
   }
+
+  // Per-week labor totals
+  const weekLabor = weeks.map(w => {
+    const scheduled = items.reduce((sum, item) => {
+      const hasCell = !!(proj.schedule[`${item.id}_${w.key}`] || '').trim();
+      return sum + (hasCell && item.laborHours ? item.laborHours : 0);
+    }, 0);
+    const capacity = ls.workers * ls.hoursPerDay * ls.workDays;
+    const pct = capacity > 0 ? Math.round((scheduled / capacity) * 100) : 0;
+    const barColor = pct > 100 ? '#ef4444' : pct >= 80 ? '#fbbf24' : '#22c55e';
+    return { scheduled, capacity, pct, barColor };
+  });
 
   const headerRow = `
     <div class="week-cell header">SI Item</div>
@@ -3204,6 +3323,7 @@ function buildScheduleView(pid) {
     <div class="week-cell si-label">
       <span class="si-lbl-num">${statusDot(item.status)}${item.num}</span>
       <span style="font-size:10px;line-height:1.3">${item.title}</span>
+      ${item.laborHours != null ? `<span style="font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:1px">⏱ ${item.laborHours}h</span>` : ''}
     </div>
     ${weeks.map(w=>{
       const key=`${item.id}_${w.key}`;
@@ -3216,16 +3336,56 @@ function buildScheduleView(pid) {
     }).join('')}
   `).join('');
 
+  const laborRow = ls.show ? `
+    <div class="week-cell labor-row" style="justify-content:center">👷 LABOR</div>
+    ${weekLabor.map(wl=>`
+      <div class="week-cell labor-row">
+        <span style="color:#93c5fd;font-size:10px">${wl.scheduled}h <span style="color:#475569;font-size:9px">/ ${wl.capacity}h cap</span></span>
+        <span style="font-size:9px;color:${wl.barColor}">${wl.pct}% utilized</span>
+        <div class="labor-bar-wrap"><div class="labor-bar" style="width:${Math.min(wl.pct,100)}%;background:${wl.barColor}"></div></div>
+      </div>`).join('')}` : '';
+
+  const laborPanelHTML = `
+    <div class="labor-panel ${ls.show ? 'open' : ''}" id="labor-panel-${pid}">
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="labor-panel-label">Workers</span>
+        <input type="number" class="labor-num-input" min="1" max="999" value="${ls.workers}"
+          onchange="saveScheduleSetting('${pid}','workers',+this.value||1)" />
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="labor-panel-label">Hrs / Day</span>
+        <input type="number" class="labor-num-input" min="1" max="24" value="${ls.hoursPerDay}"
+          onchange="saveScheduleSetting('${pid}','hoursPerDay',+this.value||8)" />
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="labor-panel-label">Work Days</span>
+        <div class="workday-btns">
+          ${[5,6,7].map(d=>`<button class="workday-btn ${ls.workDays===d?'active':''}"
+            onclick="saveScheduleSetting('${pid}','workDays',${d})">${d}d</button>`).join('')}
+        </div>
+      </div>
+      <div style="margin-left:auto;font-size:10px;color:var(--text3);font-family:var(--mono)">
+        Capacity: ${ls.workers * ls.hoursPerDay * ls.workDays}h/wk per crew
+      </div>
+    </div>`;
+
   el.innerHTML=`
     <div class="schedule-wrap">
       <div class="schedule-header-row">
         <div class="schedule-title">📅 6-Week Look Ahead
           <span style="font-size:11px;color:var(--text3);font-weight:400;font-family:var(--mono)">${proj.name}</span>
         </div>
-        <button class="schedule-export-btn" onclick="exportSchedulePDF('${pid}')">
-          ⬇ Export Schedule PDF
-        </button>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="labor-toggle-btn ${ls.show?'active':''}" onclick="saveScheduleSetting('${pid}','show',${!ls.show})">
+            👷 Manpower
+          </button>
+          <button class="schedule-export-btn" onclick="exportSchedulePDF('${pid}')">
+            ⬇ Export Schedule PDF
+          </button>
+        </div>
       </div>
+
+      ${ls.show ? laborPanelHTML : ''}
 
       ${items.length===0?`
         <div style="text-align:center;padding:48px;color:var(--text3)">
@@ -3238,6 +3398,7 @@ function buildScheduleView(pid) {
           <div class="week-grid" style="min-width:700px">
             ${headerRow}
             ${dataRows}
+            ${laborRow}
           </div>
         </div>
         <div style="font-size:11px;color:var(--text3);margin-top:10px;font-family:var(--mono)">
@@ -3253,6 +3414,14 @@ window.saveScheduleCell=function(pid,key,val){
   if(val.trim()) proj.schedule[key]=val.trim();
   else delete proj.schedule[key];
   save();
+};
+
+window.saveScheduleSetting=function(pid,field,value){
+  const proj=getProject(pid); if(!proj) return;
+  if(!proj.laborSettings) proj.laborSettings={show:false,workers:4,hoursPerDay:8,workDays:5};
+  proj.laborSettings[field]=value;
+  save();
+  buildScheduleView(pid);
 };
 
 async function exportSchedulePDF(pid) {
@@ -3333,6 +3502,30 @@ async function exportSchedulePDF(pid) {
     });
     y+=rowH;
   });
+
+  // Labor row (if manpower panel was on)
+  const ls = proj.laborSettings;
+  if(ls && ls.show) {
+    if(y+rowH>PH-10){ doc.addPage(); y=14; }
+    doc.setFillColor(...h2r(BG)); doc.rect(14,y,PW-28,rowH+2,'F');
+    doc.setFontSize(7); doc.setFont('helvetica','bold'); doc.setTextColor(...h2r(FG));
+    doc.text('👷 LABOR',16,y+6);
+    weeks.forEach((w,i)=>{
+      const x=14+siColW+i*colW;
+      const scheduled = proj.items.reduce((sum,item)=>{
+        const hasCell=!!(proj.schedule?.[`${item.id}_${w.key}`]||'').trim();
+        return sum+(hasCell&&item.laborHours?item.laborHours:0);
+      },0);
+      const capacity = ls.workers*ls.hoursPerDay*ls.workDays;
+      const pct = capacity>0?Math.round((scheduled/capacity)*100):0;
+      const [r,g,b] = pct>100?[239,68,68]:pct>=80?[251,191,36]:[34,197,94];
+      doc.setFontSize(7); doc.setFont('helvetica','bold'); doc.setTextColor(147,197,253);
+      doc.text(`${scheduled}h / ${capacity}h`,x+2,y+5,{maxWidth:colW-4});
+      doc.setTextColor(r,g,b); doc.setFont('helvetica','normal'); doc.setFontSize(6.5);
+      doc.text(`${pct}% utilized`,x+2,y+9,{maxWidth:colW-4});
+    });
+    y+=rowH+2;
+  }
 
   // Footer
   const pc=doc.getNumberOfPages();
@@ -6631,6 +6824,186 @@ if (document.readyState === 'loading') {
     } catch(e) {}
   })();
 })();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOWER WORK / MULTIPLE ROOMS
+// ═══════════════════════════════════════════════════════════════════════════
+const TW_STATUS_CYCLE = ['pending', 'in-progress', 'completed'];
+const TW_STATUS_COLOR = { pending:'#64748b', 'in-progress':'#fbbf24', completed:'#22c55e' };
+const TW_STATUS_LABEL = { pending:'Pending', 'in-progress':'In Progress', completed:'Done' };
+
+function _twEnsure(item) {
+  if (!item.towerWork) item.towerWork = { enabled: false, rooms: [] };
+  if (!item.towerWork.rooms) item.towerWork.rooms = [];
+}
+
+function _buildTowerPanelHTML(pid, sid) {
+  const item = getSI(pid, sid); if (!item) return '';
+  _twEnsure(item);
+  const tw = item.towerWork;
+  const enabled = tw.enabled;
+
+  if (!enabled) {
+    return `<button class="tower-toggle-btn" onclick="toggleTowerWork('${pid}','${sid}')">
+      🏢 Tower Work / Multiple Rooms
+      <span style="margin-left:auto;font-size:10px;color:var(--text3);font-weight:400">Tap to enable</span>
+      <span class="tw-chevron">▼</span>
+    </button>`;
+  }
+
+  const rooms = [...tw.rooms].sort((a,b) => {
+    const na = parseInt(a.number) || 0, nb = parseInt(b.number) || 0;
+    return na !== nb ? na - nb : a.number.localeCompare(b.number);
+  });
+  const total = rooms.length;
+  const done = rooms.filter(r => r.status === 'completed').length;
+  const inProg = rooms.filter(r => r.status === 'in-progress').length;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const barColor = pct === 100 ? '#22c55e' : pct >= 50 ? '#60a5fa' : '#fbbf24';
+
+  const roomsHTML = rooms.length ? rooms.map(rm => `
+    <div class="tw-room-row" onclick="cycleTowerRoomStatus('${pid}','${sid}','${rm.id}')">
+      <div class="tw-room-dot" style="background:${TW_STATUS_COLOR[rm.status]||TW_STATUS_COLOR.pending}"></div>
+      <span class="tw-room-num">${rm.number}</span>
+      <span class="tw-room-type">${rm.type || '—'}</span>
+      <span class="tw-room-status-lbl" style="color:${TW_STATUS_COLOR[rm.status]||TW_STATUS_COLOR.pending}">${TW_STATUS_LABEL[rm.status]||'Pending'}</span>
+      <button class="tw-room-del" onclick="event.stopPropagation();deleteTowerRoom('${pid}','${sid}','${rm.id}')">✕</button>
+    </div>`).join('')
+    : `<div style="text-align:center;padding:14px;font-size:11px;color:var(--text3)">No rooms added yet</div>`;
+
+  return `
+    <button class="tower-toggle-btn active" onclick="toggleTowerWork('${pid}','${sid}')">
+      🏢 Tower Work / Multiple Rooms
+      <span class="tw-chevron">▲</span>
+    </button>
+    <div class="tower-body">
+      <div class="tw-stats-row">
+        <div class="tw-stat"><span class="tw-stat-num" style="color:#22c55e">${done}</span><span class="tw-stat-label">Done</span></div>
+        <div class="tw-stat"><span class="tw-stat-num" style="color:#fbbf24">${inProg}</span><span class="tw-stat-label">In Progress</span></div>
+        <div class="tw-stat"><span class="tw-stat-num" style="color:var(--text3)">${total - done - inProg}</span><span class="tw-stat-label">Pending</span></div>
+        <div class="tw-stat" style="margin-left:auto"><span class="tw-stat-num">${total}</span><span class="tw-stat-label">Total Rooms</span></div>
+      </div>
+      <div class="tw-progress-bar">
+        <div class="tw-progress-fill" style="width:${pct}%;background:${barColor}"></div>
+      </div>
+      <div class="tw-room-list">${roomsHTML}</div>
+      <div class="tw-add-section">
+        <div style="font-size:10px;font-family:var(--mono);color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Add Rooms</div>
+        <div class="tw-input-row">
+          <input class="tw-input narrow" id="tw-room-num-${sid}" placeholder="Room #" maxlength="10"
+            onkeydown="if(event.key==='Enter')addTowerRoom('${pid}','${sid}')" />
+          <input class="tw-input" id="tw-room-type-${sid}" placeholder="Type (e.g. King, Suite…)"
+            list="tw-type-list-${sid}"
+            onkeydown="if(event.key==='Enter')addTowerRoom('${pid}','${sid}')" />
+          <datalist id="tw-type-list-${sid}">
+            <option value="King"><option value="Queen"><option value="Double Queen">
+            <option value="Suite"><option value="Accessible"><option value="Studio">
+            <option value="Corridor"><option value="Bathroom"><option value="Lobby">
+            <option value="Conference"><option value="Penthouse">
+          </datalist>
+          <button class="tw-add-btn" onclick="addTowerRoom('${pid}','${sid}')">＋ Add</button>
+        </div>
+        <div class="tw-input-row" style="margin-top:4px">
+          <input class="tw-input" id="tw-range-${sid}" placeholder="Range: 101-110 or 201,203,205"
+            onkeydown="if(event.key==='Enter')addTowerRoomRange('${pid}','${sid}')" />
+          <input class="tw-input" id="tw-range-type-${sid}" placeholder="Type for all"
+            list="tw-type-list-${sid}"
+            onkeydown="if(event.key==='Enter')addTowerRoomRange('${pid}','${sid}')" />
+          <button class="tw-add-btn" onclick="addTowerRoomRange('${pid}','${sid}')">＋ Range</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _refreshTowerPanel(pid, sid) {
+  const el = document.getElementById(`tower-panel-${sid}`);
+  if (el) el.innerHTML = _buildTowerPanelHTML(pid, sid);
+  renderLeft(route()); // refresh badge in list
+}
+
+window.toggleTowerWork = function(pid, sid) {
+  const item = getSI(pid, sid); if (!item) return;
+  _twEnsure(item);
+  item.towerWork.enabled = !item.towerWork.enabled;
+  save();
+  _refreshTowerPanel(pid, sid);
+};
+
+window.addTowerRoom = function(pid, sid) {
+  const numEl = document.getElementById(`tw-room-num-${sid}`);
+  const typeEl = document.getElementById(`tw-room-type-${sid}`);
+  const num = (numEl?.value || '').trim();
+  const type = (typeEl?.value || '').trim();
+  if (!num) { showToast('Enter a room number', 'red'); numEl?.focus(); return; }
+  const item = getSI(pid, sid); if (!item) return;
+  _twEnsure(item);
+  // Prevent duplicate room numbers
+  if (item.towerWork.rooms.some(r => r.number === num)) {
+    showToast(`Room ${num} already exists`, 'red'); return;
+  }
+  item.towerWork.rooms.push({ id:'rm_'+Date.now()+'_'+Math.random().toString(36).slice(2,5), number:num, type, status:'pending' });
+  save();
+  if (numEl) numEl.value = '';
+  if (typeEl) typeEl.value = '';
+  _refreshTowerPanel(pid, sid);
+  // Re-focus for rapid entry
+  setTimeout(() => document.getElementById(`tw-room-num-${sid}`)?.focus(), 50);
+};
+
+window.addTowerRoomRange = function(pid, sid) {
+  const rangeEl = document.getElementById(`tw-range-${sid}`);
+  const typeEl  = document.getElementById(`tw-range-type-${sid}`);
+  const raw  = (rangeEl?.value || '').trim();
+  const type = (typeEl?.value || '').trim();
+  if (!raw) { showToast('Enter a range or list', 'red'); rangeEl?.focus(); return; }
+
+  const item = getSI(pid, sid); if (!item) return;
+  _twEnsure(item);
+  const existing = new Set(item.towerWork.rooms.map(r => r.number));
+
+  // Parse "101-110" range or "201,203,205" list
+  let numbers = [];
+  if (/^\d+-\d+$/.test(raw)) {
+    const [from, to] = raw.split('-').map(Number);
+    if (to < from || to - from > 500) { showToast('Invalid range (max 500 rooms)', 'red'); return; }
+    for (let n = from; n <= to; n++) numbers.push(String(n));
+  } else {
+    numbers = raw.split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
+  }
+
+  let added = 0;
+  numbers.forEach(num => {
+    if (!existing.has(num)) {
+      item.towerWork.rooms.push({ id:'rm_'+Date.now()+'_'+Math.random().toString(36).slice(2,5)+'_'+num, number:num, type, status:'pending' });
+      existing.add(num);
+      added++;
+    }
+  });
+
+  save();
+  if (rangeEl) rangeEl.value = '';
+  _refreshTowerPanel(pid, sid);
+  showToast(`＋${added} room${added!==1?'s':''} added`, 'green');
+};
+
+window.cycleTowerRoomStatus = function(pid, sid, roomId) {
+  const item = getSI(pid, sid); if (!item) return;
+  _twEnsure(item);
+  const room = item.towerWork.rooms.find(r => r.id === roomId);
+  if (!room) return;
+  const idx = TW_STATUS_CYCLE.indexOf(room.status);
+  room.status = TW_STATUS_CYCLE[(idx + 1) % TW_STATUS_CYCLE.length];
+  save();
+  _refreshTowerPanel(pid, sid);
+};
+
+window.deleteTowerRoom = function(pid, sid, roomId) {
+  const item = getSI(pid, sid); if (!item) return;
+  _twEnsure(item);
+  item.towerWork.rooms = item.towerWork.rooms.filter(r => r.id !== roomId);
+  save();
+  _refreshTowerPanel(pid, sid);
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // WORK ORDERS XLSX IMPORT  (v1.0)
