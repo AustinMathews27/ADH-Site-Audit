@@ -1610,29 +1610,46 @@ function save() {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// SYNC ENGINE v3 — Granular project-level patching
+// SYNC ENGINE v4 — Item-level patching
 // ══════════════════════════════════════════════════════════════════
 //
 // HOW IT WORKS:
-//   - Every change is tracked per-project in _dirtyProjects (a Set of project IDs)
-//   - On sync, only the changed projects are sent to patchAudit
-//   - patchAudit deep-merges on the server using ETags — never a full overwrite
-//   - User A editing Project X and User B editing Project Y: BOTH survive
-//   - Polls every 15s; when remote _ts is newer, merges cloud changes
-//     into local store at the project level (not a full replace)
+//   - _dirtyItems   : Set of SI item IDs that changed (most granular)
+//   - _dirtyProjects: Set of project IDs with structural changes
+//                     (new/deleted items, sections, project meta)
+//   - _dirtyStore   : flag for folders / contacts / settings changes
 //
-// OFFLINE: all changes save to IndexedDB immediately. When reconnected,
-//   dirty projects sync automatically.
+// AUTO-SYNC (every 2 min, only if dirty):
+//   Sends itemsById: { si_abc: {...}, si_xyz: {...} }
+//   The server merges ONLY those items into their parent projects.
+//   Superintendent A editing SI 0101 notes and Superintendent B
+//   editing SI 0202 status → both changes survive even on the same
+//   project, even if they sync at the same moment.
+//
+// MANUAL SYNC (🔄 button):
+//   Sends the full store as a clean confirmed baseline.
+//   Still a deep-merge on the server — never a full overwrite.
+//
+// POLL (every 15s):
+//   Merges cloud changes at the item level into local store.
+//   Local photos are always preserved (never uploaded to cloud).
+//
+// OFFLINE:
+//   All changes save to IndexedDB immediately.
+//   When reconnected, dirty items sync automatically.
 // ══════════════════════════════════════════════════════════════════
 
-// Tracks which project IDs have unsaved cloud changes
-const _dirtyProjects = new Set();
+const _dirtyItems    = new Set(); // SI item IDs
+const _dirtyProjects = new Set(); // project IDs (structural changes)
+let   _dirtyStore    = false;     // folders / contacts / settings
 
 /**
- * Marks a project (via its SI item ID) as modified.
- * Triggers a local save and queues a cloud sync.
+ * Call when an SI item field changes (notes, status, tags, etc.)
+ * This is the most granular — only that one item is synced.
  */
 function markAsDirty(itemId) {
+  _dirtyItems.add(itemId);
+  // Also track the parent project for structural awareness
   const proj = store.projects.find(p => p.items && p.items.some(i => i.id === itemId));
   if (proj) _dirtyProjects.add(proj.id);
   if (!store.pendingSync) store.pendingSync = [];
@@ -1642,20 +1659,34 @@ function markAsDirty(itemId) {
 }
 
 /**
- * Mark non-project data (folders, contacts, settings) as dirty.
- * Call after changing store.folders, store.contacts, or store.settings.
+ * Call when a project's structure changes (new/deleted SI, section
+ * changes, project meta edits, new project added).
  */
-function markStoreDirty() {
-  _dirtyProjects.add('__store__');
+function markProjectDirty(projectId) {
+  _dirtyProjects.add(projectId);
   store.lastUpdated = Date.now();
   save();
 }
 
-// ── Build a cloud payload for one project (strips photos) ────────
+/**
+ * Call when folders, contacts, or settings change.
+ */
+function markStoreDirty() {
+  _dirtyStore = true;
+  store.lastUpdated = Date.now();
+  save();
+}
+
+// ── Strip photos from an item (photos live in IndexedDB only) ────
+function _buildItemPayload(item) {
+  return Object.assign({}, item, { photos: [] });
+}
+
+// ── Strip photos from a project ──────────────────────────────────
 function _buildProjectPayload(p) {
   return Object.assign({}, p, {
     coverPhoto: null,
-    items: (p.items || []).map(i => Object.assign({}, i, { photos: [] }))
+    items: (p.items || []).map(_buildItemPayload)
   });
 }
 
@@ -1693,9 +1724,17 @@ async function loadFromDatabase() {
 }
 
 /**
- * Main sync — sends only dirty projects to the cloud.
- * Manual sync (isAuto=false) always sends full store.
- * Auto sync sends only changed projects for safety.
+ * Main sync function.
+ *
+ * AUTO (isAuto=true, runs every 2 min):
+ *   - Skips if nothing dirty
+ *   - Sends itemsById if only items changed (most granular)
+ *   - Sends projectsById if project structure changed
+ *   - Sends full store if store-level data changed
+ *
+ * MANUAL (isAuto=false, 🔄 button):
+ *   - Always sends full store as confirmed baseline
+ *   - Server still deep-merges — never a full overwrite
  */
 async function syncChanges(isAuto = false) {
   if (!navigator.onLine) {
@@ -1708,33 +1747,53 @@ async function syncChanges(isAuto = false) {
 
   try {
     const now = Date.now();
+    const nothingDirty = _dirtyItems.size === 0 && _dirtyProjects.size === 0 && !_dirtyStore;
 
-    // Auto-sync: skip if nothing is dirty
-    if (isAuto && _dirtyProjects.size === 0) return;
+    if (isAuto && nothingDirty) return; // nothing to do
 
     let patch;
 
-    const hasDirtyStore   = _dirtyProjects.has('__store__');
-    const dirtyProjectIds = [..._dirtyProjects].filter(id => id !== '__store__');
-
-    if (!isAuto || hasDirtyStore || dirtyProjectIds.length === 0) {
-      // Manual sync OR store-level changes: send everything
+    if (!isAuto || _dirtyStore) {
+      // Manual sync OR store-level change: full store baseline
       patch = {
-        id: 'adh-store-v1',
+        id:       'adh-store-v1',
         _savedAt: now,
         settings: store.settings,
         folders:  store.folders,
         contacts: store.contacts,
         projects: store.projects.map(_buildProjectPayload)
       };
+
+    } else if (_dirtyItems.size > 0 && _dirtyProjects.size === 0) {
+      // ── Most granular: only specific items changed ──
+      // Build itemsById: { si_abc: { projectId, item } }
+      // The server finds the item inside its project and merges only that item.
+      const itemsById = {};
+      _dirtyItems.forEach(itemId => {
+        const proj = store.projects.find(p => p.items && p.items.some(i => i.id === itemId));
+        if (!proj) return;
+        const item = proj.items.find(i => i.id === itemId);
+        if (!item) return;
+        itemsById[itemId] = {
+          projectId: proj.id,
+          item: _buildItemPayload(item)
+        };
+      });
+      if (Object.keys(itemsById).length === 0) return;
+      patch = { id: 'adh-store-v1', _savedAt: now, itemsById };
+
     } else {
-      // Auto sync: send only dirty projects keyed by ID
-      // The server merges these into the existing document —
-      // other projects are completely untouched
+      // ── Project-level: structural changes (new/deleted items, meta) ──
+      // Send only the affected projects
       const projectsById = {};
-      dirtyProjectIds.forEach(id => {
-        const p = store.projects.find(pr => pr.id === id);
-        if (p) projectsById[id] = _buildProjectPayload(p);
+      // Include projects with dirty items too
+      _dirtyItems.forEach(itemId => {
+        const proj = store.projects.find(p => p.items && p.items.some(i => i.id === itemId));
+        if (proj) _dirtyProjects.add(proj.id);
+      });
+      _dirtyProjects.forEach(pid => {
+        const p = store.projects.find(pr => pr.id === pid);
+        if (p) projectsById[pid] = _buildProjectPayload(p);
       });
       if (Object.keys(projectsById).length === 0) return;
       patch = { id: 'adh-store-v1', _savedAt: now, projectsById };
@@ -1743,10 +1802,12 @@ async function syncChanges(isAuto = false) {
     const result = await patchAuditToDatabase(patch);
 
     if (result.ok) {
-      store._savedAt = now;
+      store._savedAt   = now;
       store.pendingSync = [];
+      _dirtyItems.clear();
       _dirtyProjects.clear();
-      _lastRemoteTs = result._ts || _lastRemoteTs;
+      _dirtyStore      = false;
+      _lastRemoteTs    = result._ts || _lastRemoteTs;
       await _idbSet('fap_v3', store);
       if (!isAuto) showToast('✓ Synced to cloud', 'green');
     } else {
@@ -1761,10 +1822,10 @@ async function syncChanges(isAuto = false) {
 }
 
 // ── Remote-change polling ─────────────────────────────────────────
-// Every 15s, checks cloud _ts. If newer, does a project-level merge:
-//   - Cloud projects overwrite local versions of the same project
-//   - Local-only projects (created offline) are kept untouched
-//   - Local photos are always preserved (never uploaded)
+// Every 15s checks cloud _ts. If newer, merges at the item level:
+//   - Cloud items overwrite matching local items
+//   - Local-only items (created offline) are kept
+//   - Local photos always preserved (never in cloud)
 let _lastRemoteTs   = 0;
 let _pollIntervalId = null;
 const POLL_MS = 15000;
@@ -1783,7 +1844,7 @@ async function _pollForRemoteChanges() {
 
     console.log('[ADH] Remote change detected — merging from cloud');
 
-    // Snapshot local photos before overwriting
+    // Snapshot all local photos first
     const localPhotos = {};
     (store.projects || []).forEach(p => {
       if (p.coverPhoto) localPhotos['cover_' + p.id] = p.coverPhoto;
@@ -1792,37 +1853,83 @@ async function _pollForRemoteChanges() {
       });
     });
 
-    // Restore photos into a project
-    function _restorePhotos(p) {
-      const out = Object.assign({}, p);
-      if (localPhotos['cover_' + p.id]) out.coverPhoto = localPhotos['cover_' + p.id];
-      out.items = (p.items || []).map(i => {
-        const item = Object.assign({}, i);
-        if (localPhotos[i.id]) item.photos = localPhotos[i.id];
-        return item;
-      });
+    function _restoreItemPhotos(item) {
+      const out = Object.assign({}, item);
+      if (localPhotos[item.id]) out.photos = localPhotos[item.id];
       return out;
     }
 
-    // Project-level merge: cloud wins per project, local-only kept
+    function _restoreProjectPhotos(p) {
+      const out = Object.assign({}, p);
+      if (localPhotos['cover_' + p.id]) out.coverPhoto = localPhotos['cover_' + p.id];
+      out.items = (p.items || []).map(_restoreItemPhotos);
+      return out;
+    }
+
+    // Build working maps
     const localProjMap = new Map((store.projects || []).map(p => [p.id, p]));
+    const mergedMap    = new Map(localProjMap); // start from local
 
-    // Handle both full-projects and projectsById patch formats
-    const cloudProjects = cloudData.projects || [];
-    const cloudProjById = cloudData.projectsById || {};
+    // ── Apply itemsById (most granular format) ──
+    if (cloudData.itemsById) {
+      Object.entries(cloudData.itemsById).forEach(([itemId, { projectId, item }]) => {
+        const proj = mergedMap.get(projectId);
+        if (!proj) return;
+        const updatedProj = Object.assign({}, proj);
+        const itemIdx = (updatedProj.items || []).findIndex(i => i.id === itemId);
+        const cloudItem = _restoreItemPhotos(item);
+        if (itemIdx >= 0) {
+          // Deep-merge cloud item into local item so concurrent field
+          // edits on the same SI both survive
+          updatedProj.items = [...updatedProj.items];
+          updatedProj.items[itemIdx] = Object.assign({}, updatedProj.items[itemIdx], cloudItem);
+        } else {
+          updatedProj.items = [...(updatedProj.items || []), cloudItem];
+        }
+        mergedMap.set(projectId, updatedProj);
+      });
+    }
 
-    const mergedMap = new Map(localProjMap); // start with local
+    // ── Apply projectsById (project-level format) ──
+    if (cloudData.projectsById) {
+      Object.values(cloudData.projectsById).forEach(cp => {
+        const localProj = mergedMap.get(cp.id);
+        if (localProj) {
+          // Item-level merge within the project
+          const localItemMap = new Map((localProj.items || []).map(i => [i.id, i]));
+          const cloudItemMap = new Map((cp.items || []).map(i => [i.id, i]));
+          // Cloud items win; local-only items (offline) kept
+          cloudItemMap.forEach((ci, id) => localItemMap.set(id, _restoreItemPhotos(ci)));
+          const mergedProj = Object.assign({}, cp);
+          if (localPhotos['cover_' + cp.id]) mergedProj.coverPhoto = localPhotos['cover_' + cp.id];
+          mergedProj.items = [...localItemMap.values()];
+          mergedMap.set(cp.id, mergedProj);
+        } else {
+          mergedMap.set(cp.id, _restoreProjectPhotos(cp));
+        }
+      });
+    }
 
-    // Apply full cloud projects
-    cloudProjects.forEach(cp => mergedMap.set(cp.id, _restorePhotos(cp)));
+    // ── Apply full projects array (manual sync format) ──
+    (cloudData.projects || []).forEach(cp => {
+      const localProj = mergedMap.get(cp.id);
+      if (localProj) {
+        const localItemMap = new Map((localProj.items || []).map(i => [i.id, i]));
+        const cloudItemMap = new Map((cp.items || []).map(i => [i.id, i]));
+        cloudItemMap.forEach((ci, id) => localItemMap.set(id, _restoreItemPhotos(ci)));
+        const mergedProj = Object.assign({}, cp);
+        if (localPhotos['cover_' + cp.id]) mergedProj.coverPhoto = localPhotos['cover_' + cp.id];
+        mergedProj.items = [...localItemMap.values()];
+        mergedMap.set(cp.id, mergedProj);
+      } else {
+        mergedMap.set(cp.id, _restoreProjectPhotos(cp));
+      }
+    });
 
-    // Apply granular projectsById patches (may be more recent)
-    Object.values(cloudProjById).forEach(cp => mergedMap.set(cp.id, _restorePhotos(cp)));
-
-    // Merge non-project fields
-    if (cloudData.settings)  store.settings  = cloudData.settings;
-    if (cloudData.folders)   store.folders   = cloudData.folders;
-    if (cloudData.contacts)  store.contacts  = cloudData.contacts;
+    // Apply non-project fields from cloud
+    if (cloudData.settings) store.settings = cloudData.settings;
+    if (cloudData.folders)  store.folders  = cloudData.folders;
+    if (cloudData.contacts) store.contacts = cloudData.contacts;
     store.projects  = [...mergedMap.values()];
     store._savedAt  = cloudData._savedAt;
 
@@ -3454,7 +3561,7 @@ function confirmRenameNum(pid, sid) {
   const item = getSI(pid, sid); if(!item) return;
   syncEditorToStore(pid, sid);
   item.num = 'SI ' + newNum;
-  save();
+  markAsDirty(sid); save();
   buildSIEditor(pid, sid);
   renderLeft(route());
   showToast('✓ SI# Updated', 'green');
@@ -3659,14 +3766,14 @@ window.saveScheduleCell=function(pid,key,val){
   if(!proj.schedule) proj.schedule={};
   if(val.trim()) proj.schedule[key]=val.trim();
   else delete proj.schedule[key];
-  save();
+  markProjectDirty(pid); save();
 };
 
 window.saveScheduleSetting=function(pid,field,value){
   const proj=getProject(pid); if(!proj) return;
   if(!proj.laborSettings) proj.laborSettings={show:false,workers:4,hoursPerDay:8,workDays:5};
   proj.laborSettings[field]=value;
-  save();
+  markProjectDirty(pid); save();
   buildScheduleView(pid);
 };
 
@@ -3676,7 +3783,7 @@ window.saveLaborLog=function(pid,key,field,value){
   if(!proj.laborLog[key]) proj.laborLog[key]={workers:0,hours:0};
   proj.laborLog[key][field]=value;
   if(!proj.laborLog[key].workers && !proj.laborLog[key].hours) delete proj.laborLog[key];
-  save();
+  markProjectDirty(pid); save();
   buildScheduleView(pid);
 };
 
@@ -4145,7 +4252,7 @@ window.updateThreshold = function(pid, metric, val) {
   else if(metric==='maxTemp') thr.maxTemp = isNaN(num)?80:num;
   else if(metric==='minHum')  thr.minHum  = isNaN(num)?20:num;
   else if(metric==='maxHum')  thr.maxHum  = isNaN(num)?60:num;
-  save();
+  markProjectDirty(pid); save();
   buildEnvView(pid);
 };
 
@@ -4158,7 +4265,7 @@ window.applyZonePreset = function(pid, zone) {
   const proj = getProject(pid); if(!proj) return;
   if(!proj.envData) proj.envData = { sensors:[], screenshots:[] };
   proj.envData.thresholds = { ...ZONE_PRESETS[zone] };
-  save();
+  markProjectDirty(pid); save();
   buildEnvView(pid);
   showToast(`✓ ${zone} thresholds applied`, 'green');
 };
@@ -4314,7 +4421,7 @@ function handleEnvFile(e) {
     const reader=new FileReader();
     reader.onload=ev=>{
       proj.envData.screenshots.push({data:ev.target.result, label:file.name.replace(/\.[^.]+$/,'')});
-      save(); buildEnvView(pid);
+      markProjectDirty(pid); save(); buildEnvView(pid);
     };
     reader.readAsDataURL(file);
   } else {
@@ -4324,7 +4431,7 @@ function handleEnvFile(e) {
       if(!sensor) return showToast('Could not parse CSV — expected columns: timestamp, temperature, humidity');
       proj.envData.sensors.push(sensor);
       const newSi = proj.envData.sensors.length-1;
-      save(); buildEnvView(pid);
+      markProjectDirty(pid); save(); buildEnvView(pid);
       setTimeout(()=>drawSensorCharts(pid, sensor, newSi), 120);
     };
     reader.readAsText(file);
@@ -4399,13 +4506,13 @@ function parseEnvCSV(text, filename) {
 function deleteEnvSensor(pid, idx) {
   const proj=getProject(pid); if(!proj||!proj.envData) return;
   proj.envData.sensors.splice(idx,1);
-  save(); buildEnvView(pid);
+  markProjectDirty(pid); save(); buildEnvView(pid);
 }
 
 function deleteEnvScreenshot(pid, idx) {
   const proj=getProject(pid); if(!proj||!proj.envData) return;
   proj.envData.screenshots.splice(idx,1);
-  save(); buildEnvView(pid);
+  markProjectDirty(pid); save(); buildEnvView(pid);
 }
 
 // ══════════════════════════════════════════
@@ -4414,7 +4521,7 @@ function deleteEnvScreenshot(pid, idx) {
 function setStatus(pid,sid,status) {
   const item=getSI(pid,sid); if(!item) return;
   syncEditorToStore(pid,sid);
-  item.status=status; save();
+  item.status=status; markAsDirty(sid); save();
   buildSIEditor(pid,sid);
   renderLeft(route());
 }
@@ -4422,7 +4529,7 @@ function setStatus(pid,sid,status) {
 function moveSISection(pid,sid,newSecId) {
   const item=getSI(pid,sid); if(!item) return;
   syncEditorToStore(pid,sid);
-  item.sectionId=newSecId; save();
+  item.sectionId=newSecId; markAsDirty(sid); save();
   renderLeft(route());
   showToast('✓ Moved to section','green');
 }
@@ -4431,8 +4538,8 @@ window.updateSIField = function(pid, sid, field, value) {
   const item = getSI(pid, sid);
   if (!item) return;
   item[field] = value;
-  save();
-  scheduleAutoSave(pid, sid); 
+  markAsDirty(sid); save();
+  scheduleAutoSave(pid, sid);
 };
 
 window.showBatchApplyModal = function(pid, sectionId) {
@@ -4461,7 +4568,7 @@ window.batchApplyFieldCheck = function(pid, sectionId, code) {
   if (!proj) return;
   const r = route();
   if (r.view === 'si') syncEditorToStore(r.projectId, r.siId);
-  proj.items.filter(it => it.sectionId === sectionId).forEach(it => it.statusCode = code);
+  proj.items.filter(it => it.sectionId === sectionId).forEach(it => { it.statusCode = code; markAsDirty(it.id); });
   save();
   render();
   showToast(`✓ Applied ${code} to section`, 'green');
@@ -4541,7 +4648,7 @@ window.addCustomTag=function(pid,sid){
   syncEditorToStore(pid,sid);
   item.customTags.push(tag);
   if(!item.tags.includes(tag)) item.tags.push(tag); // auto-select it
-  save(); buildSIEditor(pid,sid);
+  markAsDirty(sid); save(); buildSIEditor(pid,sid);
 };
 
 window.removeCustomTag=function(pid,sid,tag){
@@ -4550,7 +4657,7 @@ window.removeCustomTag=function(pid,sid,tag){
   syncEditorToStore(pid,sid);
   item.customTags=item.customTags.filter(t=>t!==tag);
   item.tags=item.tags.filter(t=>t!==tag);
-  save(); buildSIEditor(pid,sid);
+  markAsDirty(sid); save(); buildSIEditor(pid,sid);
 };
 
 // Flush the SI editor DOM fields into the store without saving.
@@ -4636,7 +4743,7 @@ function confirmRename(pid, sid) {
   const item = getSI(pid, sid); if(!item) return;
   syncEditorToStore(pid, sid);
   item.title = newTitle;
-  save();
+  markAsDirty(sid); save();
   buildSIEditor(pid, sid);
   renderLeft(route());
   showToast('✓ Renamed', 'green');
@@ -4677,7 +4784,7 @@ function handleCoverPhotoUpload(e) {
       canvas.width = w; canvas.height = h;
       canvas.getContext('2d').drawImage(img, 0, 0, w, h);
       proj.coverPhoto = canvas.toDataURL('image/jpeg', 0.85);
-      save();
+      markProjectDirty(_coverPid); save();
       buildProjectView(_coverPid);
       renderLeft(route());
       showToast('✓ Cover photo updated', 'green');
@@ -4691,7 +4798,7 @@ function handleCoverPhotoUpload(e) {
 function removeCoverPhoto(pid) {
   const proj = getProject(pid); if(!proj) return;
   proj.coverPhoto = null;
-  save();
+  markProjectDirty(pid); save();
   buildProjectView(pid);
   renderLeft(route());
   showToast('Cover photo removed');
@@ -4787,7 +4894,7 @@ function handleFileImport(e) {
           canvas.getContext('2d').drawImage(img, 0, 0, width, height);
           const compressedData = canvas.toDataURL('image/jpeg', 0.7); // 0.7 quality is the sweet spot
           item.photos.push({data:compressedData, caption:'', takenAt});
-          if(++loaded===files.length){ save(); buildSIEditor(_pt.pid,_pt.sid); renderLeft(route()); }
+          if(++loaded===files.length){ markAsDirty(_pt.sid); save(); buildSIEditor(_pt.pid,_pt.sid); renderLeft(route()); }
         };
         img.src = dataEv.target.result;
       };
@@ -4814,7 +4921,7 @@ window.handleBrandingUpload = function(e, type) {
 function deletePhoto(pid,sid,idx) {
   const item=getSI(pid,sid); if(!item) return;
   syncEditorToStore(pid,sid);
-  item.photos.splice(idx,1); save();
+  item.photos.splice(idx,1); markAsDirty(sid); save();
   buildSIEditor(pid,sid); renderLeft(route());
 }
 function previewPhoto(pid,sid,idx) {
@@ -4932,7 +5039,7 @@ function showNewSIModal(pid) {
       num,
       title,status:'pending',assignedTo:'',dueDate:'',notes:'',tags:[],customTags:[],photos:[]
     };
-    proj.items.push(item); save(); closeModal();
+    proj.items.push(item); markProjectDirty(pid); save(); closeModal();
     // Defer nav so modal teardown completes first on iOS
     setTimeout(()=>navToSI(pid,item.id), 50);
   });
@@ -4961,7 +5068,7 @@ function showEditProjectModal(pid) {
     proj.auditor=document.getElementById('m-auditor').value;
     proj.date=document.getElementById('m-date').value;
     proj.projectType=document.getElementById('m-type')?.value||'';
-    save(); closeModal(); buildProjectView(pid);
+    markProjectDirty(pid); save(); closeModal(); buildProjectView(pid);
   });
 }
 
@@ -6113,7 +6220,7 @@ function duplicateProject(pid,fid,opts) {
   store.projects.push(newProj);
   // Add to same folder
   if(fid){ const f=getFolder(fid); if(f) f.projects.push(newProj.id); }
-  save(); closeModal();
+  markStoreDirty(); save(); closeModal();
   // Rebuild current view
   const r=route();
   if(r.view==='folder') buildFolderView(fid);
@@ -6134,7 +6241,7 @@ function confirmDeleteProject(pid,fid) {
     store.folders.forEach(f=>{ f.projects=f.projects.filter(id=>id!==pid); });
     // Remove project
     store.projects=store.projects.filter(p=>p.id!==pid);
-    save(); closeModal();
+    markStoreDirty(); save(); closeModal();
     // If we were inside this project, go back
     if(route().projectId===pid) fid?navToFolder(fid):navToRoot();
     else {
@@ -6172,7 +6279,7 @@ window.confirmDeleteFolder = function(fid) {
     };
     findChildren(fid);
     store.folders = store.folders.filter(f => !toDelete.includes(f.id));
-    save();
+    markStoreDirty(); save();
     closeModal();
     if (parentId) navToFolder(parentId); else navToRoot();
     showToast('Folder deleted');
@@ -6270,7 +6377,7 @@ window.addSectionFromModal=function(pid){
   if(!name) return showToast('Enter a section name');
   const sec={id:'sec_'+Date.now(), name};
   proj.sections.push(sec);
-  save();
+  markProjectDirty(pid); save();
   if(inp) inp.value='';
   const list=document.getElementById('sec-mgr-list');
   if(list) list.innerHTML = _buildSectionMgrListHTML(proj, pid);
@@ -6282,7 +6389,7 @@ window.deleteSectionFromModal=function(pid,secId){
   const hasItems=proj.items.some(i=>i.sectionId===secId);
   if(hasItems) return showToast('Remove all items in this section first');
   proj.sections=proj.sections.filter(s=>s.id!==secId);
-  save();
+  markProjectDirty(pid); save();
   const list=document.getElementById('sec-mgr-list');
   if(list) list.innerHTML = _buildSectionMgrListHTML(proj, pid);
 };
@@ -6820,6 +6927,7 @@ function handleXLSImport(e) {
       detectConflicts(diffs);
       showReimportDiffModal(project, diffs, selectedDiffs => {
         applyReimportDiff(project, selectedDiffs, diffs);
+        markProjectDirty(reimportPid);
         closeModal();
         render();
         showToast(`Applied ${selectedDiffs.length} changes`, 'green');
@@ -7216,7 +7324,7 @@ window.toggleTowerWork = function(pid, sid) {
   const item = getSI(pid, sid); if (!item) return;
   _twEnsure(item);
   item.towerWork.enabled = !item.towerWork.enabled;
-  save();
+  markAsDirty(sid); save();
   _refreshTowerPanel(pid, sid);
 };
 
@@ -7233,7 +7341,7 @@ window.addTowerRoom = function(pid, sid) {
     showToast(`Room ${num} already exists`, 'red'); return;
   }
   item.towerWork.rooms.push({ id:'rm_'+Date.now()+'_'+Math.random().toString(36).slice(2,5), number:num, type, status:'pending' });
-  save();
+  markAsDirty(sid); save();
   if (numEl) numEl.value = '';
   if (typeEl) typeEl.value = '';
   _refreshTowerPanel(pid, sid);
@@ -7271,7 +7379,7 @@ window.addTowerRoomRange = function(pid, sid) {
     }
   });
 
-  save();
+  markAsDirty(sid); save();
   if (rangeEl) rangeEl.value = '';
   _refreshTowerPanel(pid, sid);
   showToast(`＋${added} room${added!==1?'s':''} added`, 'green');
@@ -7284,7 +7392,7 @@ window.cycleTowerRoomStatus = function(pid, sid, roomId) {
   if (!room) return;
   const idx = TW_STATUS_CYCLE.indexOf(room.status);
   room.status = TW_STATUS_CYCLE[(idx + 1) % TW_STATUS_CYCLE.length];
-  save();
+  markAsDirty(sid); save();
   _refreshTowerPanel(pid, sid);
 };
 
@@ -7292,7 +7400,7 @@ window.deleteTowerRoom = function(pid, sid, roomId) {
   const item = getSI(pid, sid); if (!item) return;
   _twEnsure(item);
   item.towerWork.rooms = item.towerWork.rooms.filter(r => r.id !== roomId);
-  save();
+  markAsDirty(sid); save();
   _refreshTowerPanel(pid, sid);
 };
 
@@ -7593,6 +7701,7 @@ window.handleWorkOrdersXLSX = function(e) {
         const proj = getProject(mergePid);
         if (!proj) { closeModal(); return showToast('Target project not found', 'red'); }
         const res = mergeWorkOrdersIntoProject(proj, selected);
+        markProjectDirty(mergePid);
         closeModal();
         showToast(`✓ +${res.added} new · ~${res.updated} updated · 📅 ${res.scheduled} scheduled`, 'green');
         render();
