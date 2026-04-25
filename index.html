@@ -1926,14 +1926,35 @@ async function _mergeCloudIntoLocal(cloudData) {
     localProjMap.set(cp.id, local ? _mergeProjectItems(local, cp) : { ...cp, items: (cp.items || []).map(_restoreItemPhotos) });
   });
 
-  // Apply non-project fields only if they exist in cloud
-  if (cloudData.settings) store.settings = cloudData.settings;
-  if (cloudData.folders)  store.folders  = cloudData.folders;
-  if (cloudData.contacts) store.contacts = cloudData.contacts;
-  store.projects  = [...localProjMap.values()];
-  store._savedAt  = Math.max(store._savedAt || 0, cloudData._savedAt || 0);
-}
+  // Apply non-project fields — but ONLY if local doesn't have unsynced store changes.
+  // If _dirtyStore is true, the user just created a folder/contact/setting that
+  // hasn't been pushed yet. A full replace from cloud would wipe it out.
+  // Instead, merge by ID so local additions survive until next push.
+  if (cloudData.settings && !_dirtyStore) store.settings = cloudData.settings;
 
+  if (cloudData.folders) {
+    if (!_dirtyStore) {
+      // Safe to fully accept cloud — no pending local folder changes
+      store.folders = cloudData.folders;
+    } else {
+      // Merge by ID: keep local-only folders, accept cloud-only folders, prefer local for conflicts
+      const localById = new Map((store.folders || []).map(f => [f.id, f]));
+      const cloudById = new Map((cloudData.folders || []).map(f => [f.id, f]));
+      const mergedIds = new Set([...localById.keys(), ...cloudById.keys()]);
+      store.folders = [...mergedIds].map(id => localById.get(id) || cloudById.get(id));
+    }
+  }
+
+  if (cloudData.contacts) {
+    if (!_dirtyStore) {
+      store.contacts = cloudData.contacts;
+    } else {
+      const localById = new Map((store.contacts || []).map(c => [c.id, c]));
+      const cloudById = new Map((cloudData.contacts || []).map(c => [c.id, c]));
+      const mergedIds = new Set([...localById.keys(), ...cloudById.keys()]);
+      store.contacts = [...mergedIds].map(id => localById.get(id) || cloudById.get(id));
+    }
+  }
 async function _pollForRemoteChanges() {
   if (!navigator.onLine) return;
   try {
