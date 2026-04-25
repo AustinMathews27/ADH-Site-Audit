@@ -15,24 +15,17 @@
 const { CosmosClient } = require("@azure/cosmos");
 
 const client    = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
-const database  = client.database("Auditdata");
+const database  = client.database("adh-site-db");
 const container = database.container("Audits");
 
 const DOC_ID = "adh-store-v1";
 
-// Recursively merge patch into target — only touches keys present in patch
 function deepMerge(target, patch) {
   for (const key of Object.keys(patch)) {
     const pVal = patch[key];
     const tVal = target[key];
-    if (
-      pVal !== null &&
-      typeof pVal === "object" &&
-      !Array.isArray(pVal) &&
-      tVal !== null &&
-      typeof tVal === "object" &&
-      !Array.isArray(tVal)
-    ) {
+    if (pVal !== null && typeof pVal === "object" && !Array.isArray(pVal) &&
+        tVal !== null && typeof tVal === "object" && !Array.isArray(tVal)) {
       deepMerge(tVal, pVal);
     } else {
       target[key] = pVal;
@@ -55,15 +48,13 @@ module.exports = async function (context, req) {
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      // 1. Read current document + its ETag
       let current, etag;
       try {
-        const { resource, headers: resHeaders } = await container.item(DOC_ID, DOC_ID).read();
+        const { resource } = await container.item(DOC_ID, DOC_ID).read();
         current = resource;
         etag    = resource._etag;
       } catch (readErr) {
         if (readErr.code === 404) {
-          // First ever save — no document yet
           current = { id: DOC_ID };
           etag    = null;
         } else {
@@ -71,12 +62,9 @@ module.exports = async function (context, req) {
         }
       }
 
-      // 2. Deep-merge the incoming patch onto the current document
       const updated = deepMerge(JSON.parse(JSON.stringify(current)), incoming);
       updated._savedAt = Date.now();
 
-      // 3. Write back — if etag exists, only write if nobody else has written since our read
-      //    (412 Precondition Failed = conflict → retry loop)
       const writeOpts = etag
         ? { accessCondition: { type: "IfMatch", condition: etag } }
         : {};
@@ -88,10 +76,8 @@ module.exports = async function (context, req) {
       return;
 
     } catch (err) {
-      // 412 = ETag conflict (concurrent write) — re-read and retry
       if (err.code === 412 && attempt < MAX_RETRIES) {
-        context.log.warn(`[patchAudit] ETag conflict, retry ${attempt}/${MAX_RETRIES}`);
-        await new Promise(r => setTimeout(r, 60 * attempt)); // small backoff
+        await new Promise(r => setTimeout(r, 60 * attempt));
         continue;
       }
       context.log.error("[patchAudit] Error:", err.message);
