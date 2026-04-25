@@ -193,7 +193,7 @@ module.exports = async function (context, req) {
       }
       context.log.error("[patchAudit] Error:", err.message);
       context.res.status = err.code === 412 ? 409 : 500;
-      context.res.body   = { ok: false, error: err.message };
+      context.res.body   = { ok: false, error: err.message, stack: err.stack };
       return;
     }
   }
