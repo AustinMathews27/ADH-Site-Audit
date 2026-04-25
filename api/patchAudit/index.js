@@ -15,7 +15,7 @@
 const { CosmosClient } = require("@azure/cosmos");
 
 const client    = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
-const database  = client.database("adh-site-db");
+const database  = client.database("Auditdata");
 const container = database.container("Audits");
 
 const DOC_ID = "adh-store-v1";
