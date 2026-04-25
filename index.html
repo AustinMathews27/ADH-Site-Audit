@@ -2088,9 +2088,9 @@ async function _initStore() {
     if (navigator.onLine && (_dirtyItems.size > 0 || _dirtyProjects.size > 0 || _dirtyStore)) syncChanges(true);
   
 
-  // Auto-sync local changes to cloud every 2 minutes (if online and dirty)
+  // Auto-sync local changes to cloud every 30 seconds (if online and dirty)
   setInterval(() => {
-    if (navigator.onLine && store.pendingSync && store.pendingSync.length > 0) {
+    if (navigator.onLine && (_dirtyItems.size > 0 || _dirtyProjects.size > 0 || _dirtyStore)) {
       syncChanges(true);
     }
   }, 30000); // 30 seconds
