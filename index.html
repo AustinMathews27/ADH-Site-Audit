@@ -1646,16 +1646,17 @@ async function syncChanges(isAuto = false) {
 
   try {
     const result = await patchAuditToDatabase(patch);
-    if (result.ok) {
-      store._savedAt = patch._savedAt;
-      store.pendingSync = [];
-      // Remember the Cosmos _ts so our poll doesn't fire onChange for our own save
-      _lastRemoteTs = result._ts || _lastRemoteTs;
-      save();
-      if (!isAuto) showToast('✓ Synced to cloud', 'green');
-    } else {
-      if (!isAuto) showToast('⚠️ Cloud sync failed', 'red');
-    }
+if (result.ok) {
+  store._savedAt = patch._savedAt;
+  store.pendingSync = [];
+  _lastRemoteTs = result._ts || _lastRemoteTs;
+  // Update IndexedDB with the confirmed _savedAt so this device
+  // never overwrites a newer cloud save with stale local data
+  await _idbSet('fap_v3', store);
+  if (!isAuto) showToast('✓ Synced to cloud', 'green');
+} else {
+  if (!isAuto) showToast('⚠️ Cloud sync failed', 'red');
+}
   } catch (err) {
     console.error('[Sync Error]', err);
     if (!isAuto) showToast('Sync failed — check connection', 'red');
@@ -1789,7 +1790,7 @@ async function _initStore() {
       try {
         const cloudTimeout = new Promise(r => setTimeout(() => r(null), 4000));
         const cloudData = await Promise.race([loadFromDatabase(), cloudTimeout]);
-        if (cloudData && (cloudData._savedAt || 0) > (store._savedAt || 0)) {
+        if (cloudData && (cloudData._savedAt || 0) >= (store._savedAt || 0)) {
           // Cloud is newer: take cloud data but restore local photos (never uploaded)
           const localPhotos = {};
           (store.projects || []).forEach(p => {
