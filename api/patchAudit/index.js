@@ -56,9 +56,9 @@ module.exports = async function (context, req) {
       // ── 1. Read current document + ETag ──────────────────────────
       let current, etag;
       try {
-        const { resource } = await container.item(DOC_ID, DOC_ID).read();
-        current = resource;
-        etag    = resource._etag;
+       const { resource } = await container.item(DOC_ID, DOC_ID).read();
+       if (!resource) { current = { id: DOC_ID }; etag = null; }
+       else { current = resource; etag = resource._etag; }
       } catch (e) {
         if (e.code === 404) { current = { id: DOC_ID }; etag = null; }
         else throw e;
