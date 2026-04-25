@@ -167,17 +167,22 @@ module.exports = async function (context, req) {
         updated.projects = [...existingProjMap.values()];
       }
 
+      updated.id       = DOC_ID;
       updated._savedAt = incoming._savedAt || Date.now();
 
       // ── 3. Write back with ETag check ─────────────────────────────
-      const writeOpts = etag
-        ? { accessCondition: { type: "IfMatch", condition: etag } }
-        : {};
-      updated.id = DOC_ID;      
-      const { resource: saved } = await container.items.upsert(updated, writeOpts);
-
-      context.res.status = 200;
-      context.res.body   = { ok: true, _savedAt: saved._savedAt, _ts: saved._ts };
+      if (etag) {
+        const { resource: saved } = await container.items.upsert(
+          updated,
+          { accessCondition: { type: "IfMatch", condition: etag } }
+        );
+        context.res.status = 200;
+        context.res.body   = { ok: true, _savedAt: saved._savedAt, _ts: saved._ts };
+      } else {
+        const { resource: saved } = await container.items.upsert(updated);
+        context.res.status = 200;
+        context.res.body   = { ok: true, _savedAt: saved._savedAt, _ts: saved._ts };
+      }
       return;
 
     } catch (err) {
