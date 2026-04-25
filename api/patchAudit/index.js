@@ -1,16 +1,16 @@
 // api/patchAudit/index.js
 // POST /api/patchAudit
-// Body: { patch: { ...fields to deep-merge into the store } }
+// Body: { patch: { ...fields } }
 //
-// This is the KEY fix for the "users overwrite each other" bug.
-// Instead of replacing the whole document, we:
-//   1. Read current document from Cosmos (with its ETag)
-//   2. Deep-merge ONLY the fields sent in the request
-//   3. Write back using optimistic concurrency (ETag check)
-//   4. Retry up to 5x if two users saved at the exact same moment
+// Supports two patch formats:
+//   1. Full store:  { id, _savedAt, settings, folders, contacts, projects: [...] }
+//   2. Granular:    { id, _savedAt, projectsById: { proj_123: {...}, proj_456: {...} } }
 //
-// This means User A changing project status and User B changing notes
-// will BOTH survive — neither overwrites the other.
+// Format 2 is used by auto-sync: only changed projects are sent.
+// The server merges them per-project so other projects are untouched,
+// even when two users sync at the same moment.
+//
+// Uses ETags for optimistic concurrency — retries up to 5x on conflict.
 
 const { CosmosClient } = require("@azure/cosmos");
 
@@ -24,8 +24,10 @@ function deepMerge(target, patch) {
   for (const key of Object.keys(patch)) {
     const pVal = patch[key];
     const tVal = target[key];
-    if (pVal !== null && typeof pVal === "object" && !Array.isArray(pVal) &&
-        tVal !== null && typeof tVal === "object" && !Array.isArray(tVal)) {
+    if (
+      pVal !== null && typeof pVal === "object" && !Array.isArray(pVal) &&
+      tVal !== null && typeof tVal === "object" && !Array.isArray(tVal)
+    ) {
       deepMerge(tVal, pVal);
     } else {
       target[key] = pVal;
@@ -54,16 +56,30 @@ module.exports = async function (context, req) {
         current = resource;
         etag    = resource._etag;
       } catch (readErr) {
-        if (readErr.code === 404) {
-          current = { id: DOC_ID };
-          etag    = null;
-        } else {
-          throw readErr;
-        }
+        if (readErr.code === 404) { current = { id: DOC_ID }; etag = null; }
+        else throw readErr;
       }
 
-      const updated = deepMerge(JSON.parse(JSON.stringify(current)), incoming);
-      updated._savedAt = Date.now();
+      const updated = JSON.parse(JSON.stringify(current));
+
+      if (incoming.projectsById) {
+        // Granular format: only touch the listed projects
+        Object.keys(incoming).forEach(k => {
+          if (k !== "projectsById") updated[k] = incoming[k];
+        });
+        if (!updated.projects) updated.projects = [];
+        const projectMap = new Map(updated.projects.map(p => [p.id, p]));
+        Object.entries(incoming.projectsById).forEach(([id, proj]) => {
+          if (projectMap.has(id)) deepMerge(projectMap.get(id), proj);
+          else projectMap.set(id, proj);
+        });
+        updated.projects = [...projectMap.values()];
+      } else {
+        // Full-store format: deep-merge everything
+        deepMerge(updated, incoming);
+      }
+
+      updated._savedAt = incoming._savedAt || Date.now();
 
       const writeOpts = etag
         ? { accessCondition: { type: "IfMatch", condition: etag } }
@@ -77,6 +93,7 @@ module.exports = async function (context, req) {
 
     } catch (err) {
       if (err.code === 412 && attempt < MAX_RETRIES) {
+        context.log.warn(`[patchAudit] ETag conflict, retry ${attempt}/${MAX_RETRIES}`);
         await new Promise(r => setTimeout(r, 60 * attempt));
         continue;
       }

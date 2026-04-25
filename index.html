@@ -1609,65 +1609,57 @@ function save() {
   }, 80);   // 80 ms debounce keeps UI snappy
 }
 
+// ══════════════════════════════════════════════════════════════════
+// SYNC ENGINE v3 — Granular project-level patching
+// ══════════════════════════════════════════════════════════════════
+//
+// HOW IT WORKS:
+//   - Every change is tracked per-project in _dirtyProjects (a Set of project IDs)
+//   - On sync, only the changed projects are sent to patchAudit
+//   - patchAudit deep-merges on the server using ETags — never a full overwrite
+//   - User A editing Project X and User B editing Project Y: BOTH survive
+//   - Polls every 15s; when remote _ts is newer, merges cloud changes
+//     into local store at the project level (not a full replace)
+//
+// OFFLINE: all changes save to IndexedDB immediately. When reconnected,
+//   dirty projects sync automatically.
+// ══════════════════════════════════════════════════════════════════
+
+// Tracks which project IDs have unsaved cloud changes
+const _dirtyProjects = new Set();
+
 /**
- * Marks an item as modified and needing synchronization.
- * Updates the global timestamp and triggers a local save.
+ * Marks a project (via its SI item ID) as modified.
+ * Triggers a local save and queues a cloud sync.
  */
 function markAsDirty(itemId) {
+  const proj = store.projects.find(p => p.items && p.items.some(i => i.id === itemId));
+  if (proj) _dirtyProjects.add(proj.id);
   if (!store.pendingSync) store.pendingSync = [];
-  if (!store.pendingSync.includes(itemId)) {
-    store.pendingSync.push(itemId);
-  }
+  if (!store.pendingSync.includes(itemId)) store.pendingSync.push(itemId);
   store.lastUpdated = Date.now();
-  save(); 
+  save();
 }
 
 /**
- * Sends modified data to the server.
- * Only clears synced items from pendingSync on success.
+ * Mark non-project data (folders, contacts, settings) as dirty.
+ * Call after changing store.folders, store.contacts, or store.settings.
  */
-async function syncChanges(isAuto = false) {
-  const syncBtn = document.getElementById('sync-btn');
-  if (syncBtn) { syncBtn.style.opacity = '0.5'; syncBtn.classList.add('spinning'); }
+function markStoreDirty() {
+  _dirtyProjects.add('__store__');
+  store.lastUpdated = Date.now();
+  save();
+}
 
-  // Build the patch payload — strip photos to stay under Cosmos 2 MB item limit.
-  // Photos stay in local IndexedDB only.
-  // We send the FULL store as the patch object so patchAudit deep-merges it
-  // onto whatever is currently in Cosmos — other users' changes to fields
-  // we didn't touch are preserved.
-  const patch = Object.assign({}, JSON.parse(JSON.stringify(store)), {
-    id: 'adh-store-v1',
-    _savedAt: Date.now(),
-    projects: store.projects.map(p => Object.assign({}, p, {
-      coverPhoto: null,
-      items: (p.items || []).map(i => Object.assign({}, i, { photos: [] }))
-    }))
+// ── Build a cloud payload for one project (strips photos) ────────
+function _buildProjectPayload(p) {
+  return Object.assign({}, p, {
+    coverPhoto: null,
+    items: (p.items || []).map(i => Object.assign({}, i, { photos: [] }))
   });
-
-  try {
-    const result = await patchAuditToDatabase(patch);
-if (result.ok) {
-  store._savedAt = patch._savedAt;
-  store.pendingSync = [];
-  _lastRemoteTs = result._ts || _lastRemoteTs;
-  // Update IndexedDB with the confirmed _savedAt so this device
-  // never overwrites a newer cloud save with stale local data
-  await _idbSet('fap_v3', store);
-  if (!isAuto) showToast('✓ Synced to cloud', 'green');
-} else {
-  if (!isAuto) showToast('⚠️ Cloud sync failed', 'red');
-}
-  } catch (err) {
-    console.error('[Sync Error]', err);
-    if (!isAuto) showToast('Sync failed — check connection', 'red');
-  } finally {
-    if (syncBtn) { syncBtn.style.opacity = '1'; syncBtn.classList.remove('spinning'); }
-  }
 }
 
-// ── patchAuditToDatabase: deep-merge (NOT full overwrite) ──────────────────
-// Uses /api/patchAudit which handles ETag-based optimistic concurrency.
-// Returns { ok, _ts } on success, { ok: false } on failure.
+// ── POST a patch to /api/patchAudit ──────────────────────────────
 async function patchAuditToDatabase(patch) {
   try {
     const response = await fetch('/api/patchAudit', {
@@ -1676,14 +1668,13 @@ async function patchAuditToDatabase(patch) {
       body: JSON.stringify({ patch })
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return await response.json(); // { ok, _savedAt, _ts }
+    return await response.json();
   } catch (err) {
     console.warn('[Sync] Cloud patch failed:', err.message);
     return { ok: false };
   }
 }
 
-// Keep saveAuditToDatabase as an alias so nothing else breaks
 async function saveAuditToDatabase(data) {
   const result = await patchAuditToDatabase(data);
   return result.ok === true;
@@ -1701,13 +1692,82 @@ async function loadFromDatabase() {
   }
 }
 
-// ── Remote-change polling ──────────────────────────────────────────────────
-// Tracks the Cosmos _ts (server-side Unix timestamp) of the last document
-// we know about. If a poll returns a higher _ts, someone else saved — we
-// reload from cloud and re-render so this user sees the changes.
+/**
+ * Main sync — sends only dirty projects to the cloud.
+ * Manual sync (isAuto=false) always sends full store.
+ * Auto sync sends only changed projects for safety.
+ */
+async function syncChanges(isAuto = false) {
+  if (!navigator.onLine) {
+    if (!isAuto) showToast('Offline — changes saved locally');
+    return;
+  }
+
+  const syncBtn = document.getElementById('sync-btn');
+  if (syncBtn) { syncBtn.style.opacity = '0.5'; syncBtn.classList.add('spinning'); }
+
+  try {
+    const now = Date.now();
+
+    // Auto-sync: skip if nothing is dirty
+    if (isAuto && _dirtyProjects.size === 0) return;
+
+    let patch;
+
+    const hasDirtyStore   = _dirtyProjects.has('__store__');
+    const dirtyProjectIds = [..._dirtyProjects].filter(id => id !== '__store__');
+
+    if (!isAuto || hasDirtyStore || dirtyProjectIds.length === 0) {
+      // Manual sync OR store-level changes: send everything
+      patch = {
+        id: 'adh-store-v1',
+        _savedAt: now,
+        settings: store.settings,
+        folders:  store.folders,
+        contacts: store.contacts,
+        projects: store.projects.map(_buildProjectPayload)
+      };
+    } else {
+      // Auto sync: send only dirty projects keyed by ID
+      // The server merges these into the existing document —
+      // other projects are completely untouched
+      const projectsById = {};
+      dirtyProjectIds.forEach(id => {
+        const p = store.projects.find(pr => pr.id === id);
+        if (p) projectsById[id] = _buildProjectPayload(p);
+      });
+      if (Object.keys(projectsById).length === 0) return;
+      patch = { id: 'adh-store-v1', _savedAt: now, projectsById };
+    }
+
+    const result = await patchAuditToDatabase(patch);
+
+    if (result.ok) {
+      store._savedAt = now;
+      store.pendingSync = [];
+      _dirtyProjects.clear();
+      _lastRemoteTs = result._ts || _lastRemoteTs;
+      await _idbSet('fap_v3', store);
+      if (!isAuto) showToast('✓ Synced to cloud', 'green');
+    } else {
+      if (!isAuto) showToast('⚠️ Cloud sync failed', 'red');
+    }
+  } catch (err) {
+    console.error('[Sync Error]', err);
+    if (!isAuto) showToast('Sync failed — check connection', 'red');
+  } finally {
+    if (syncBtn) { syncBtn.style.opacity = '1'; syncBtn.classList.remove('spinning'); }
+  }
+}
+
+// ── Remote-change polling ─────────────────────────────────────────
+// Every 15s, checks cloud _ts. If newer, does a project-level merge:
+//   - Cloud projects overwrite local versions of the same project
+//   - Local-only projects (created offline) are kept untouched
+//   - Local photos are always preserved (never uploaded)
 let _lastRemoteTs   = 0;
 let _pollIntervalId = null;
-const POLL_MS = 15000; // check every 15 seconds
+const POLL_MS = 15000;
 
 async function _pollForRemoteChanges() {
   if (!navigator.onLine) return;
@@ -1716,37 +1776,60 @@ async function _pollForRemoteChanges() {
     if (!cloudData) return;
 
     const remoteTs = cloudData._ts || 0;
-    if (remoteTs > _lastRemoteTs) {
-      _lastRemoteTs = remoteTs;
+    if (remoteTs <= _lastRemoteTs) return;
+    _lastRemoteTs = remoteTs;
 
-      // Only update if remote is actually newer than what we have locally
-      if ((cloudData._savedAt || 0) > (store._savedAt || 0)) {
-        console.log('[ADH] Remote change detected — reloading from cloud');
+    if ((cloudData._savedAt || 0) <= (store._savedAt || 0)) return;
 
-        // Preserve local photos (they are never uploaded to cloud)
-        const localPhotos = {};
-        (store.projects || []).forEach(p => {
-          if (p.coverPhoto) localPhotos['cover_' + p.id] = p.coverPhoto;
-          (p.items || []).forEach(i => {
-            if (i.photos && i.photos.length) localPhotos[i.id] = i.photos;
-          });
-        });
+    console.log('[ADH] Remote change detected — merging from cloud');
 
-        store = cloudData;
+    // Snapshot local photos before overwriting
+    const localPhotos = {};
+    (store.projects || []).forEach(p => {
+      if (p.coverPhoto) localPhotos['cover_' + p.id] = p.coverPhoto;
+      (p.items || []).forEach(i => {
+        if (i.photos && i.photos.length) localPhotos[i.id] = i.photos;
+      });
+    });
 
-        // Restore local photos into freshly loaded data
-        (store.projects || []).forEach(p => {
-          if (localPhotos['cover_' + p.id]) p.coverPhoto = localPhotos['cover_' + p.id];
-          (p.items || []).forEach(i => {
-            if (localPhotos[i.id]) i.photos = localPhotos[i.id];
-          });
-        });
-
-        await _idbSet('fap_v3', store);
-        render();
-        showToast('🔄 Updated from cloud', 'green');
-      }
+    // Restore photos into a project
+    function _restorePhotos(p) {
+      const out = Object.assign({}, p);
+      if (localPhotos['cover_' + p.id]) out.coverPhoto = localPhotos['cover_' + p.id];
+      out.items = (p.items || []).map(i => {
+        const item = Object.assign({}, i);
+        if (localPhotos[i.id]) item.photos = localPhotos[i.id];
+        return item;
+      });
+      return out;
     }
+
+    // Project-level merge: cloud wins per project, local-only kept
+    const localProjMap = new Map((store.projects || []).map(p => [p.id, p]));
+
+    // Handle both full-projects and projectsById patch formats
+    const cloudProjects = cloudData.projects || [];
+    const cloudProjById = cloudData.projectsById || {};
+
+    const mergedMap = new Map(localProjMap); // start with local
+
+    // Apply full cloud projects
+    cloudProjects.forEach(cp => mergedMap.set(cp.id, _restorePhotos(cp)));
+
+    // Apply granular projectsById patches (may be more recent)
+    Object.values(cloudProjById).forEach(cp => mergedMap.set(cp.id, _restorePhotos(cp)));
+
+    // Merge non-project fields
+    if (cloudData.settings)  store.settings  = cloudData.settings;
+    if (cloudData.folders)   store.folders   = cloudData.folders;
+    if (cloudData.contacts)  store.contacts  = cloudData.contacts;
+    store.projects  = [...mergedMap.values()];
+    store._savedAt  = cloudData._savedAt;
+
+    await _idbSet('fap_v3', store);
+    render();
+    showToast('🔄 Updated from cloud', 'green');
+
   } catch (e) {
     console.warn('[Poll] Error:', e.message);
   }
@@ -1790,7 +1873,7 @@ async function _initStore() {
       try {
         const cloudTimeout = new Promise(r => setTimeout(() => r(null), 4000));
         const cloudData = await Promise.race([loadFromDatabase(), cloudTimeout]);
-        if (cloudData && (cloudData._savedAt || 0) >= (store._savedAt || 0)) {
+        if (cloudData && (cloudData._savedAt || 0) > (store._savedAt || 0)) {
           // Cloud is newer: take cloud data but restore local photos (never uploaded)
           const localPhotos = {};
           (store.projects || []).forEach(p => {
@@ -1935,7 +2018,7 @@ function showLoginModal() {
     if(confirm('Log out of Admin?')) {
       isAdmin = false;
       store.settings.isAdmin = false;
-      save();
+      markStoreDirty(); save();
       render();
       showToast('Logged out');
     }
@@ -1964,7 +2047,7 @@ function showLoginModal() {
     if (idHash === ADMIN_ID && pwHash === ADMIN_PW) {
       isAdmin = true;
       store.settings.isAdmin = true;
-      save(); closeModal(); render(); showToast('Admin Access Granted', 'green');
+      markStoreDirty(); save(); closeModal(); render(); showToast('Admin Access Granted', 'green');
     } else { showToast('Invalid credentials', 'red'); }
   });
 }
@@ -1995,7 +2078,7 @@ function showThemeModal() {
 
 function setTheme(id) {
   store.settings.theme = id;
-  save();
+  markStoreDirty(); save();
   applyTheme(id);
   render(); // Re-render to update the logo in the breadcrumbs
   closeModal();
@@ -2546,7 +2629,7 @@ function showNewContactModal() {
     };
 
     store.contacts.push(contact);
-    save(); closeModal(); buildContactBookView(); renderLeft(route());
+    markStoreDirty(); save(); closeModal(); buildContactBookView(); renderLeft(route());
     showToast('✓ Contact added', 'green');
   });
 }
@@ -2555,7 +2638,7 @@ window.deleteContact = function(id) {
   if(!confirm('Delete this contact?')) return;
   window.selectedContacts.delete(id);
   store.contacts = store.contacts.filter(c => c.id !== id);
-  save(); buildContactBookView(); renderLeft(route());
+  markStoreDirty(); save(); buildContactBookView(); renderLeft(route());
   showToast('Contact deleted');
 };
 
@@ -4776,7 +4859,7 @@ function showNewFolderModal(parentId = null) {
     if(!name) return showToast('Folder name required');
     const id = 'fld_'+Date.now();
     store.folders.push({id, name, icon:document.getElementById('m-ficon').value||'📁', projects:[], parentId});
-    save(); closeModal(); 
+    markStoreDirty(); save(); closeModal(); 
     if(parentId) navToFolder(parentId); else navToRoot();
     showToast('✓ Folder created','green');
   });
@@ -4823,7 +4906,7 @@ function showNewProjectModal(fid) {
     };
     store.projects.push(proj);
     if(fid){ const f=getFolder(fid); if(f&&!f.projects.includes(proj.id)) f.projects.push(proj.id); }
-    save(); closeModal();
+    markStoreDirty(); save(); closeModal();
     setTimeout(()=>navToProject(proj.id,fid), 50);
   });
 }
@@ -6133,7 +6216,7 @@ window.moveProject = function(pid, oldFid, newFid) {
     const f = getFolder(newFid);
     if (f && !f.projects.includes(pid)) f.projects.push(pid);
   }
-  save(); closeModal(); render();
+  markStoreDirty(); save(); closeModal(); render();
   showToast('✓ Project moved', 'green');
 };
 
