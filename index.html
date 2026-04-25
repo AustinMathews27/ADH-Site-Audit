@@ -1751,10 +1751,31 @@ async function syncChanges(isAuto = false) {
 
     if (isAuto && nothingDirty) return; // nothing to do
 
+    // ── PULL BEFORE PUSH (manual sync only) ───────────────────────
+    // Before sending anything, fetch the latest cloud state and merge
+    // it into local store. This guarantees we never overwrite data from
+    // other devices that this device hasn't seen yet.
+    // Auto-sync skips this because it only sends granular item/project
+    // patches that don't touch other users' data anyway.
+    if (!isAuto) {
+      try {
+        const cloudData = await loadFromDatabase();
+        if (cloudData && (cloudData._ts || 0) > _lastRemoteTs) {
+          // There's newer cloud data — merge it in before we push
+          await _mergeCloudIntoLocal(cloudData);
+          _lastRemoteTs = cloudData._ts;
+          console.log('[ADH] Pull-before-push: merged cloud changes locally');
+        }
+      } catch (e) {
+        console.warn('[ADH] Pull-before-push fetch failed, proceeding with push:', e.message);
+      }
+    }
+
     let patch;
 
     if (!isAuto || _dirtyStore) {
       // Manual sync OR store-level change: full store baseline
+      // Safe now because we just pulled and merged cloud state above
       patch = {
         id:       'adh-store-v1',
         _savedAt: now,
@@ -1766,8 +1787,6 @@ async function syncChanges(isAuto = false) {
 
     } else if (_dirtyItems.size > 0 && _dirtyProjects.size === 0) {
       // ── Most granular: only specific items changed ──
-      // Build itemsById: { si_abc: { projectId, item } }
-      // The server finds the item inside its project and merges only that item.
       const itemsById = {};
       _dirtyItems.forEach(itemId => {
         const proj = store.projects.find(p => p.items && p.items.some(i => i.id === itemId));
@@ -1783,10 +1802,8 @@ async function syncChanges(isAuto = false) {
       patch = { id: 'adh-store-v1', _savedAt: now, itemsById };
 
     } else {
-      // ── Project-level: structural changes (new/deleted items, meta) ──
-      // Send only the affected projects
+      // ── Project-level: structural changes ──
       const projectsById = {};
-      // Include projects with dirty items too
       _dirtyItems.forEach(itemId => {
         const proj = store.projects.find(p => p.items && p.items.some(i => i.id === itemId));
         if (proj) _dirtyProjects.add(proj.id);
@@ -1830,6 +1847,93 @@ let _lastRemoteTs   = 0;
 let _pollIntervalId = null;
 const POLL_MS = 15000;
 
+// ── Shared merge helper ───────────────────────────────────────────
+// Merges cloudData into local store at the item level.
+// Used by both _pollForRemoteChanges and the pull-before-push in syncChanges.
+// Never replaces the whole store — always merges project by project,
+// item by item, so local unsaved changes survive.
+async function _mergeCloudIntoLocal(cloudData) {
+  // Snapshot local photos (never in cloud)
+  const localPhotos = {};
+  (store.projects || []).forEach(p => {
+    if (p.coverPhoto) localPhotos['cover_' + p.id] = p.coverPhoto;
+    (p.items || []).forEach(i => {
+      if (i.photos && i.photos.length) localPhotos[i.id] = i.photos;
+    });
+  });
+
+  function _restoreItemPhotos(item) {
+    const out = Object.assign({}, item);
+    if (localPhotos[item.id]) out.photos = localPhotos[item.id];
+    return out;
+  }
+
+  function _mergeProjectItems(localProj, cloudProj) {
+    const localItemMap = new Map((localProj.items || []).map(i => [i.id, i]));
+    const cloudItemMap = new Map((cloudProj.items || []).map(i => [i.id, i]));
+    // Cloud items win field-by-field via deepMerge; local-only items kept
+    cloudItemMap.forEach((ci, id) => {
+      if (localItemMap.has(id)) {
+        // Deep-merge so concurrent edits on different fields both survive
+        const merged = Object.assign({}, localItemMap.get(id));
+        Object.keys(ci).forEach(k => {
+          if (k !== 'photos') merged[k] = ci[k]; // photos always local
+        });
+        localItemMap.set(id, merged);
+      } else {
+        localItemMap.set(id, _restoreItemPhotos(ci));
+      }
+    });
+    const out = Object.assign({}, localProj, cloudProj);
+    if (localPhotos['cover_' + cloudProj.id]) out.coverPhoto = localPhotos['cover_' + cloudProj.id];
+    out.items = [...localItemMap.values()];
+    return out;
+  }
+
+  const localProjMap = new Map((store.projects || []).map(p => [p.id, p]));
+
+  // Apply itemsById (most granular)
+  if (cloudData.itemsById) {
+    Object.entries(cloudData.itemsById).forEach(([itemId, { projectId, item }]) => {
+      const proj = localProjMap.get(projectId);
+      if (!proj) return;
+      const updatedProj = Object.assign({}, proj);
+      const idx = (updatedProj.items || []).findIndex(i => i.id === itemId);
+      const cloudItem = _restoreItemPhotos(item);
+      if (idx >= 0) {
+        updatedProj.items = [...updatedProj.items];
+        Object.keys(cloudItem).forEach(k => {
+          if (k !== 'photos') updatedProj.items[idx][k] = cloudItem[k];
+        });
+      } else {
+        updatedProj.items = [...(updatedProj.items || []), cloudItem];
+      }
+      localProjMap.set(projectId, updatedProj);
+    });
+  }
+
+  // Apply projectsById
+  if (cloudData.projectsById) {
+    Object.values(cloudData.projectsById).forEach(cp => {
+      const local = localProjMap.get(cp.id);
+      localProjMap.set(cp.id, local ? _mergeProjectItems(local, cp) : { ...cp, items: (cp.items || []).map(_restoreItemPhotos) });
+    });
+  }
+
+  // Apply full projects array
+  (cloudData.projects || []).forEach(cp => {
+    const local = localProjMap.get(cp.id);
+    localProjMap.set(cp.id, local ? _mergeProjectItems(local, cp) : { ...cp, items: (cp.items || []).map(_restoreItemPhotos) });
+  });
+
+  // Apply non-project fields only if they exist in cloud
+  if (cloudData.settings) store.settings = cloudData.settings;
+  if (cloudData.folders)  store.folders  = cloudData.folders;
+  if (cloudData.contacts) store.contacts = cloudData.contacts;
+  store.projects  = [...localProjMap.values()];
+  store._savedAt  = Math.max(store._savedAt || 0, cloudData._savedAt || 0);
+}
+
 async function _pollForRemoteChanges() {
   if (!navigator.onLine) return;
   try {
@@ -1840,99 +1944,11 @@ async function _pollForRemoteChanges() {
     if (remoteTs <= _lastRemoteTs) return;
     _lastRemoteTs = remoteTs;
 
+    // Only update if cloud is actually newer than our local state
     if ((cloudData._savedAt || 0) <= (store._savedAt || 0)) return;
 
     console.log('[ADH] Remote change detected — merging from cloud');
-
-    // Snapshot all local photos first
-    const localPhotos = {};
-    (store.projects || []).forEach(p => {
-      if (p.coverPhoto) localPhotos['cover_' + p.id] = p.coverPhoto;
-      (p.items || []).forEach(i => {
-        if (i.photos && i.photos.length) localPhotos[i.id] = i.photos;
-      });
-    });
-
-    function _restoreItemPhotos(item) {
-      const out = Object.assign({}, item);
-      if (localPhotos[item.id]) out.photos = localPhotos[item.id];
-      return out;
-    }
-
-    function _restoreProjectPhotos(p) {
-      const out = Object.assign({}, p);
-      if (localPhotos['cover_' + p.id]) out.coverPhoto = localPhotos['cover_' + p.id];
-      out.items = (p.items || []).map(_restoreItemPhotos);
-      return out;
-    }
-
-    // Build working maps
-    const localProjMap = new Map((store.projects || []).map(p => [p.id, p]));
-    const mergedMap    = new Map(localProjMap); // start from local
-
-    // ── Apply itemsById (most granular format) ──
-    if (cloudData.itemsById) {
-      Object.entries(cloudData.itemsById).forEach(([itemId, { projectId, item }]) => {
-        const proj = mergedMap.get(projectId);
-        if (!proj) return;
-        const updatedProj = Object.assign({}, proj);
-        const itemIdx = (updatedProj.items || []).findIndex(i => i.id === itemId);
-        const cloudItem = _restoreItemPhotos(item);
-        if (itemIdx >= 0) {
-          // Deep-merge cloud item into local item so concurrent field
-          // edits on the same SI both survive
-          updatedProj.items = [...updatedProj.items];
-          updatedProj.items[itemIdx] = Object.assign({}, updatedProj.items[itemIdx], cloudItem);
-        } else {
-          updatedProj.items = [...(updatedProj.items || []), cloudItem];
-        }
-        mergedMap.set(projectId, updatedProj);
-      });
-    }
-
-    // ── Apply projectsById (project-level format) ──
-    if (cloudData.projectsById) {
-      Object.values(cloudData.projectsById).forEach(cp => {
-        const localProj = mergedMap.get(cp.id);
-        if (localProj) {
-          // Item-level merge within the project
-          const localItemMap = new Map((localProj.items || []).map(i => [i.id, i]));
-          const cloudItemMap = new Map((cp.items || []).map(i => [i.id, i]));
-          // Cloud items win; local-only items (offline) kept
-          cloudItemMap.forEach((ci, id) => localItemMap.set(id, _restoreItemPhotos(ci)));
-          const mergedProj = Object.assign({}, cp);
-          if (localPhotos['cover_' + cp.id]) mergedProj.coverPhoto = localPhotos['cover_' + cp.id];
-          mergedProj.items = [...localItemMap.values()];
-          mergedMap.set(cp.id, mergedProj);
-        } else {
-          mergedMap.set(cp.id, _restoreProjectPhotos(cp));
-        }
-      });
-    }
-
-    // ── Apply full projects array (manual sync format) ──
-    (cloudData.projects || []).forEach(cp => {
-      const localProj = mergedMap.get(cp.id);
-      if (localProj) {
-        const localItemMap = new Map((localProj.items || []).map(i => [i.id, i]));
-        const cloudItemMap = new Map((cp.items || []).map(i => [i.id, i]));
-        cloudItemMap.forEach((ci, id) => localItemMap.set(id, _restoreItemPhotos(ci)));
-        const mergedProj = Object.assign({}, cp);
-        if (localPhotos['cover_' + cp.id]) mergedProj.coverPhoto = localPhotos['cover_' + cp.id];
-        mergedProj.items = [...localItemMap.values()];
-        mergedMap.set(cp.id, mergedProj);
-      } else {
-        mergedMap.set(cp.id, _restoreProjectPhotos(cp));
-      }
-    });
-
-    // Apply non-project fields from cloud
-    if (cloudData.settings) store.settings = cloudData.settings;
-    if (cloudData.folders)  store.folders  = cloudData.folders;
-    if (cloudData.contacts) store.contacts = cloudData.contacts;
-    store.projects  = [...mergedMap.values()];
-    store._savedAt  = cloudData._savedAt;
-
+    await _mergeCloudIntoLocal(cloudData);
     await _idbSet('fap_v3', store);
     render();
     showToast('🔄 Updated from cloud', 'green');
