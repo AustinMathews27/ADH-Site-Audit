@@ -2046,9 +2046,11 @@ async function _initStore() {
   // Ensure new fields exist in migrated / old data
   if(!store.settings) store.settings = { isAdmin: false, theme: 'light' };
   if(store.settings.theme === undefined || store.settings.theme === 'default') store.settings.theme = 'light';
-  store.folders.forEach(f => { if(f.parentId === undefined) f.parentId = null; });
+  if(!store.folders)  store.folders  = [];
+  if(!store.projects) store.projects = [];
   if(!store.contacts) store.contacts = [];
   if(!store.pendingSync) store.pendingSync = [];
+  store.folders.forEach(f => { if(f.parentId === undefined) f.parentId = null; });
   store.contacts.forEach(c => { if(!c.project) c.project = 'Office'; });
 
   // Update branded folder icons to use theme variables for existing users
