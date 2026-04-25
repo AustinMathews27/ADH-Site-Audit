@@ -2085,13 +2085,15 @@ async function _initStore() {
 
   // Start polling for remote changes every 15 seconds
   _startPolling();
+    if (navigator.onLine && (_dirtyItems.size > 0 || _dirtyProjects.size > 0 || _dirtyStore)) syncChanges(true);
+  
 
   // Auto-sync local changes to cloud every 2 minutes (if online and dirty)
   setInterval(() => {
     if (navigator.onLine && store.pendingSync && store.pendingSync.length > 0) {
       syncChanges(true);
     }
-  }, 120000); // 2 minutes
+  }, 30000); // 30 seconds
 
   // Pause polling when tab is hidden, resume + immediate check when visible
   document.addEventListener('visibilitychange', () => {
