@@ -174,7 +174,7 @@ module.exports = async function (context, req) {
         ? { accessCondition: { type: "IfMatch", condition: etag } }
         : {};
 
-      const { resource: saved } = await container.items.upsert(updated, writeOpts);
+      const { resource: saved } = await container.items.upsert(updated, writeOpts);updated.id = DOC_ID;
 
       context.res.status = 200;
       context.res.body   = { ok: true, _savedAt: saved._savedAt, _ts: saved._ts };
