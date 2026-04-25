@@ -1630,9 +1630,12 @@ async function syncChanges(isAuto = false) {
   const syncBtn = document.getElementById('sync-btn');
   if (syncBtn) { syncBtn.style.opacity = '0.5'; syncBtn.classList.add('spinning'); }
 
-  // Build full-store payload — strip photos to stay under Cosmos 2 MB item limit
-  // Photos are kept in local IndexedDB only
-  const payload = Object.assign({}, JSON.parse(JSON.stringify(store)), {
+  // Build the patch payload — strip photos to stay under Cosmos 2 MB item limit.
+  // Photos stay in local IndexedDB only.
+  // We send the FULL store as the patch object so patchAudit deep-merges it
+  // onto whatever is currently in Cosmos — other users' changes to fields
+  // we didn't touch are preserved.
+  const patch = Object.assign({}, JSON.parse(JSON.stringify(store)), {
     id: 'adh-store-v1',
     _savedAt: Date.now(),
     projects: store.projects.map(p => Object.assign({}, p, {
@@ -1642,10 +1645,12 @@ async function syncChanges(isAuto = false) {
   });
 
   try {
-    const success = await saveAuditToDatabase(payload);
-    if (success) {
-      store._savedAt = payload._savedAt;
+    const result = await patchAuditToDatabase(patch);
+    if (result.ok) {
+      store._savedAt = patch._savedAt;
       store.pendingSync = [];
+      // Remember the Cosmos _ts so our poll doesn't fire onChange for our own save
+      _lastRemoteTs = result._ts || _lastRemoteTs;
       save();
       if (!isAuto) showToast('✓ Synced to cloud', 'green');
     } else {
@@ -1659,20 +1664,28 @@ async function syncChanges(isAuto = false) {
   }
 }
 
-async function saveAuditToDatabase(data) {
+// ── patchAuditToDatabase: deep-merge (NOT full overwrite) ──────────────────
+// Uses /api/patchAudit which handles ETag-based optimistic concurrency.
+// Returns { ok, _ts } on success, { ok: false } on failure.
+async function patchAuditToDatabase(patch) {
   try {
-    const response = await fetch('/api/saveAudit', {
+    const response = await fetch('/api/patchAudit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
+      body: JSON.stringify({ patch })
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const result = await response.json();
-    return result.ok === true;
+    return await response.json(); // { ok, _savedAt, _ts }
   } catch (err) {
-    console.warn('[Sync] Cloud save failed:', err.message);
-    return false;
+    console.warn('[Sync] Cloud patch failed:', err.message);
+    return { ok: false };
   }
+}
+
+// Keep saveAuditToDatabase as an alias so nothing else breaks
+async function saveAuditToDatabase(data) {
+  const result = await patchAuditToDatabase(data);
+  return result.ok === true;
 }
 
 async function loadFromDatabase() {
@@ -1685,6 +1698,67 @@ async function loadFromDatabase() {
     console.warn('[Sync] Cloud load failed:', err.message);
     return null;
   }
+}
+
+// ── Remote-change polling ──────────────────────────────────────────────────
+// Tracks the Cosmos _ts (server-side Unix timestamp) of the last document
+// we know about. If a poll returns a higher _ts, someone else saved — we
+// reload from cloud and re-render so this user sees the changes.
+let _lastRemoteTs   = 0;
+let _pollIntervalId = null;
+const POLL_MS = 15000; // check every 15 seconds
+
+async function _pollForRemoteChanges() {
+  if (!navigator.onLine) return;
+  try {
+    const cloudData = await loadFromDatabase();
+    if (!cloudData) return;
+
+    const remoteTs = cloudData._ts || 0;
+    if (remoteTs > _lastRemoteTs) {
+      _lastRemoteTs = remoteTs;
+
+      // Only update if remote is actually newer than what we have locally
+      if ((cloudData._savedAt || 0) > (store._savedAt || 0)) {
+        console.log('[ADH] Remote change detected — reloading from cloud');
+
+        // Preserve local photos (they are never uploaded to cloud)
+        const localPhotos = {};
+        (store.projects || []).forEach(p => {
+          if (p.coverPhoto) localPhotos['cover_' + p.id] = p.coverPhoto;
+          (p.items || []).forEach(i => {
+            if (i.photos && i.photos.length) localPhotos[i.id] = i.photos;
+          });
+        });
+
+        store = cloudData;
+
+        // Restore local photos into freshly loaded data
+        (store.projects || []).forEach(p => {
+          if (localPhotos['cover_' + p.id]) p.coverPhoto = localPhotos['cover_' + p.id];
+          (p.items || []).forEach(i => {
+            if (localPhotos[i.id]) i.photos = localPhotos[i.id];
+          });
+        });
+
+        await _idbSet('fap_v3', store);
+        render();
+        showToast('🔄 Updated from cloud', 'green');
+      }
+    }
+  } catch (e) {
+    console.warn('[Poll] Error:', e.message);
+  }
+}
+
+function _startPolling() {
+  if (_pollIntervalId) return;
+  _pollIntervalId = setInterval(_pollForRemoteChanges, POLL_MS);
+}
+
+function _stopPolling() {
+  clearInterval(_pollIntervalId);
+  _pollIntervalId = null;
 }
 
 // ── Migrate any existing localStorage data once, then delete it ──
@@ -1728,6 +1802,8 @@ async function _initStore() {
             (p.items || []).forEach(i => { if (localPhotos[i.id]) i.photos = localPhotos[i.id]; });
           });
           await _idbSet('fap_v3', store);
+          // Record the _ts so polling doesn't re-trigger for this load
+          if (cloudData._ts) _lastRemoteTs = cloudData._ts;
           console.log('[ADH] Loaded newer data from cloud (_savedAt:', new Date(store._savedAt).toISOString(), ')');
         }
       } catch (e) {
@@ -1791,14 +1867,44 @@ async function _initStore() {
 
   render();
 
-  // Start background auto-sync every 5 minutes if online
+  // Remember the _ts of the cloud data we just loaded so polling
+  // doesn't immediately fire onChange for our own initial load
+  if (navigator.onLine) {
+    try {
+      const initial = await loadFromDatabase();
+      if (initial && initial._ts) _lastRemoteTs = initial._ts;
+    } catch(e) {}
+  }
+
+  // Start polling for remote changes every 15 seconds
+  _startPolling();
+
+  // Auto-sync local changes to cloud every 2 minutes (if online and dirty)
   setInterval(() => {
-    if (navigator.onLine) syncChanges(true);
-  }, 300000); // 300,000ms = 5 minutes
+    if (navigator.onLine && store.pendingSync && store.pendingSync.length > 0) {
+      syncChanges(true);
+    }
+  }, 120000); // 2 minutes
+
+  // Pause polling when tab is hidden, resume + immediate check when visible
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      _stopPolling();
+    } else {
+      _startPolling();
+      _pollForRemoteChanges(); // check immediately on tab focus
+    }
+  });
 
   // Handle online/offline status changes
   function updateOnlineStatus() {
     document.body.classList.toggle('is-offline', !navigator.onLine);
+    if (navigator.onLine) {
+      _startPolling();
+      _pollForRemoteChanges();
+    } else {
+      _stopPolling();
+    }
   }
   window.addEventListener('online',  updateOnlineStatus);
   window.addEventListener('offline', updateOnlineStatus);
