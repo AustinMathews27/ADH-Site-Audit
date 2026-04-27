@@ -1372,6 +1372,58 @@ input[type="radio"] {
 @keyframes spin { to { transform:rotate(360deg); } }
 
 /* AI Assistant Styles */
+/* ── SCHEDULE GRID v2.0 ── */
+.sched-cell {
+  padding: 7px 9px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+  min-height: 38px;
+  box-sizing: border-box;
+}
+.sched-si-col {
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  background: var(--surface) !important;
+  border-right: 2px solid var(--border2) !important;
+  box-shadow: 2px 0 8px rgba(0,0,0,0.08);
+}
+.sched-week-header {
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: var(--text3);
+  text-transform: uppercase;
+  text-align: center;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border2);
+}
+.sched-current-week {
+  background: rgba(37,99,235,0.06) !important;
+  border-right: 1px solid rgba(37,99,235,0.2) !important;
+}
+body.theme-dark .sched-current-week {
+  background: rgba(249,115,22,0.06) !important;
+  border-right: 1px solid rgba(249,115,22,0.2) !important;
+}
+.sched-past-week {
+  opacity: 0.75;
+}
+.sched-editable-cell {
+  cursor: text;
+  transition: background 0.1s;
+}
+.sched-editable-cell:hover {
+  background: var(--surface3) !important;
+}
+.sched-editable-cell input[type="text"]:focus {
+  background: var(--accent-dim) !important;
+  border-radius: 4px;
+}
+
 .btn-ai {
   display: flex; align-items: center; gap: 5px;
   padding: 4px 10px; border-radius: 6px;
@@ -3642,42 +3694,253 @@ function showRenameSINumModal(pid, sid) {
   document.getElementById('rename-si-modal-input')?.select();
 }
 // ══════════════════════════════════════════
-// 6-WEEK LOOK AHEAD SCHEDULE
+// 6-WEEK LOOK AHEAD SCHEDULE  v2.0
+// — Absolute ISO week keys (YYYY-Www)
+// — Full Timeline + 6-Week window toggle
+// — Sliding window navigation
+// — Export range modal
 // ══════════════════════════════════════════
+
+// ── ISO week helpers ─────────────────────
+
+/** Returns ISO week string "YYYY-Www" for a given Date */
+function isoWeekKey(d) {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const day = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2,'0')}`;
+}
+
+/** Returns Monday Date for an ISO week key "YYYY-Www" */
+function isoWeekMonday(key) {
+  const [year, wPart] = key.split('-W');
+  const y = parseInt(year), w = parseInt(wPart);
+  // Jan 4 is always in week 1
+  const jan4 = new Date(Date.UTC(y, 0, 4));
+  const jan4Day = jan4.getUTCDay() || 7;
+  const monday = new Date(jan4);
+  monday.setUTCDate(jan4.getUTCDate() - (jan4Day - 1) + (w - 1) * 7);
+  return monday;
+}
+
+/** Format date as M/D */
+function fmtMD(d) { return `${d.getUTCMonth()+1}/${d.getUTCDate()}`; }
+
+/** Add weeks to an ISO key */
+function addWeeks(key, n) {
+  const mon = isoWeekMonday(key);
+  mon.setUTCDate(mon.getUTCDate() + n * 7);
+  return isoWeekKey(mon);
+}
+
+/** Compare two ISO week keys */
+function weekCmp(a, b) {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** Current ISO week key */
+function currentWeekKey() { return isoWeekKey(new Date()); }
+
+/** Array of N consecutive week keys starting from startKey */
+function weekRange(startKey, n) {
+  return Array.from({length: n}, (_, i) => addWeeks(startKey, i));
+}
+
+// ── Per-project schedule view state ──────
+const _schedState = {};
+function getSchedState(pid) {
+  if (!_schedState[pid]) {
+    _schedState[pid] = {
+      mode: '6week',          // '6week' | 'full'
+      windowStart: null,      // ISO key — null = auto (current week)
+    };
+  }
+  return _schedState[pid];
+}
+
+// ── Legacy key migration ──────────────────
+// Old keys: "${itemId}_w0" … "${itemId}_w5" (relative to some past Monday)
+// New keys: "${itemId}_YYYY-Www"
+// We migrate by assuming w0 = current week at time of migration (best guess).
+function _migrateLegacySchedule(proj) {
+  if (!proj.schedule) return;
+  const cur = currentWeekKey();
+  const newSched = {};
+  let migrated = 0;
+  Object.entries(proj.schedule).forEach(([key, val]) => {
+    const m = key.match(/^(.+)_(w\d)$/);
+    if (m) {
+      const itemId = m[1];
+      const wIdx = parseInt(m[2].slice(1));
+      const newKey = `${itemId}_${addWeeks(cur, wIdx)}`;
+      newSched[newKey] = val;
+      migrated++;
+    } else {
+      newSched[key] = val;
+    }
+  });
+  if (migrated > 0) {
+    proj.schedule = newSched;
+    console.log(`[ADH] Migrated ${migrated} legacy schedule keys to ISO format`);
+  }
+
+  // Also migrate laborLog
+  if (proj.laborLog) {
+    const newLog = {};
+    Object.entries(proj.laborLog).forEach(([key, val]) => {
+      const m = key.match(/^(.+)_(w\d)$/);
+      if (m) {
+        const itemId = m[1];
+        const wIdx = parseInt(m[2].slice(1));
+        newLog[`${itemId}_${addWeeks(cur, wIdx)}`] = val;
+      } else {
+        newLog[key] = val;
+      }
+    });
+    proj.laborLog = newLog;
+  }
+}
+
+// ── Compute full timeline extent ──────────
+function _getProjectWeekExtent(proj) {
+  const cur = currentWeekKey();
+  let earliest = cur, latest = addWeeks(cur, 5);
+
+  // Scan schedule keys
+  Object.keys(proj.schedule || {}).forEach(key => {
+    const m = key.match(/(\d{4}-W\d{2})$/);
+    if (!m) return;
+    const wk = m[1];
+    if (weekCmp(wk, earliest) < 0) earliest = wk;
+    if (weekCmp(wk, latest) > 0) latest = wk;
+  });
+
+  // Also check item planned dates
+  (proj.items || []).forEach(item => {
+    ['plannedStart','plannedCritical','deliveryDate'].forEach(field => {
+      const v = item[field];
+      if (!v) return;
+      try {
+        const d = new Date(v + 'T00:00:00');
+        if (!isNaN(d)) {
+          const wk = isoWeekKey(d);
+          if (weekCmp(wk, earliest) < 0) earliest = wk;
+          if (weekCmp(wk, latest) > 0) latest = wk;
+        }
+      } catch(e){}
+    });
+  });
+
+  // Ensure at least 6 weeks visible beyond current
+  if (weekCmp(addWeeks(cur, 5), latest) > 0) latest = addWeeks(cur, 5);
+  // Ensure earliest is at most 4 weeks before current for fresh projects
+  if (weekCmp(earliest, cur) > 0) earliest = cur;
+
+  return { earliest, latest };
+}
+
+// ── Build week column metadata ────────────
+function _buildWeekCols(weeks) {
+  return weeks.map(wk => {
+    const mon = isoWeekMonday(wk);
+    const sun = new Date(mon); sun.setUTCDate(mon.getUTCDate() + 6);
+    const isCurrent = wk === currentWeekKey();
+    const isPast = weekCmp(wk, currentWeekKey()) < 0;
+    return {
+      key: wk,
+      label: fmtMD(mon) + '–' + fmtMD(sun),
+      month: mon.toLocaleString('default', {month:'short', timeZone:'UTC'}),
+      isCurrent,
+      isPast,
+      mon, sun
+    };
+  });
+}
+
+// ── Group weeks by month for header ───────
+function _groupByMonth(weekCols) {
+  const groups = [];
+  weekCols.forEach(wc => {
+    const m = wc.month;
+    if (!groups.length || groups[groups.length-1].month !== m) {
+      groups.push({ month: m, count: 1 });
+    } else {
+      groups[groups.length-1].count++;
+    }
+  });
+  return groups;
+}
+
+// ── Phase color mapping (from Excel) ──────
+const PHASE_COLORS = {
+  'SDS':  { bg:'rgba(59,130,246,0.18)',  text:'#60a5fa', border:'rgba(59,130,246,0.35)' },
+  'FSS':  { bg:'rgba(59,130,246,0.18)',  text:'#60a5fa', border:'rgba(59,130,246,0.35)' },
+  'SDA':  { bg:'rgba(16,185,129,0.18)',  text:'#34d399', border:'rgba(16,185,129,0.35)' },
+  'FSA':  { bg:'rgba(16,185,129,0.18)',  text:'#34d399', border:'rgba(16,185,129,0.35)' },
+  'RTS':  { bg:'rgba(245,158,11,0.18)',  text:'#fbbf24', border:'rgba(245,158,11,0.35)' },
+  'DEL':  { bg:'rgba(249,115,22,0.22)',  text:'#fb923c', border:'rgba(249,115,22,0.4)'  },
+  'GLASS':{ bg:'rgba(167,139,250,0.18)', text:'#a78bfa', border:'rgba(167,139,250,0.35)'},
+  'MEP':  { bg:'rgba(239,68,68,0.15)',   text:'#f87171', border:'rgba(239,68,68,0.3)'  },
+  'TBD':  { bg:'rgba(100,116,139,0.15)', text:'#94a3b8', border:'rgba(100,116,139,0.3)'},
+  'DELAYED':{ bg:'rgba(239,68,68,0.12)',text:'#f87171', border:'rgba(239,68,68,0.25)' },
+};
+
+function _cellStyle(val) {
+  if (!val) return '';
+  const upper = val.toUpperCase().trim();
+  for (const [k, c] of Object.entries(PHASE_COLORS)) {
+    if (upper === k || upper.startsWith(k + ' ') || upper.includes(k)) {
+      return `background:${c.bg};color:${c.text};border:1px solid ${c.border};border-radius:5px;font-weight:600;font-size:9px;`;
+    }
+  }
+  return '';
+}
+
+// ── Main buildScheduleView ────────────────
 function buildScheduleView(pid) {
   const proj = getProject(pid); if(!proj) return;
   if(!proj.schedule) proj.schedule = {};
   if(!proj.laborSettings) proj.laborSettings = { show:false, workers:4, hoursPerDay:8, workDays:5 };
   if(!proj.laborLog) proj.laborLog = {};
+
+  // Migrate legacy keys on first open
+  _migrateLegacySchedule(proj);
+
   const ls = proj.laborSettings;
+  const state = getSchedState(pid);
+  const cur = currentWeekKey();
 
-  const el = document.getElementById('v-schedule');
+  // Determine which weeks to show
+  let weekKeys;
+  if (state.mode === 'full') {
+    const { earliest, latest } = _getProjectWeekExtent(proj);
+    weekKeys = [];
+    let wk = earliest;
+    while (weekCmp(wk, latest) <= 0) {
+      weekKeys.push(wk);
+      wk = addWeeks(wk, 1);
+    }
+  } else {
+    // 6-week sliding window
+    const windowStart = state.windowStart || cur;
+    weekKeys = weekRange(windowStart, 6);
+  }
+
+  const weekCols = _buildWeekCols(weekKeys);
+  const monthGroups = _groupByMonth(weekCols);
   const items = proj.items;
+  const el = document.getElementById('v-schedule');
 
-  function getMonday(d) {
-    const day = d.getDay(), diff = d.getDate() - day + (day===0?-6:1);
-    return new Date(d.setDate(diff));
-  }
-  const mon = getMonday(new Date());
-  const weeks = Array.from({length:6},(_,i)=>{
-    const d = new Date(mon); d.setDate(mon.getDate()+i*7);
-    const end = new Date(d); end.setDate(d.getDate()+6);
-    return { label:`Wk ${i+1}`, dates:`${d.getMonth()+1}/${d.getDate()} – ${end.getMonth()+1}/${end.getDate()}`, key:`w${i}` };
-  });
-
-  function statusDot(s) {
-    const c={completed:'#22c55e','punch-ongoing':'#a855f7','not-ready':'#ef4444','in-progress':'#fbbf24','on-hold':'#f97316',pending:'#4e5669'};
-    return `<span class="sched-status-dot" style="background:${c[s]||c.pending}"></span>`;
-  }
-
-  // Per-week labor totals
-  const weekLabor = weeks.map(w => {
+  // ── Per-week labor totals ─────────────
+  const weekLabor = weekCols.map(wc => {
     const scheduled = items.reduce((sum, item) => {
-      const hasCell = !!(proj.schedule[`${item.id}_${w.key}`] || '').trim();
+      const hasCell = !!(proj.schedule[`${item.id}_${wc.key}`] || '').trim();
       return sum + (hasCell && item.laborHours ? item.laborHours : 0);
     }, 0);
     const logged = items.reduce((sum, item) => {
-      const log = proj.laborLog[`${item.id}_${w.key}`] || {};
+      const log = proj.laborLog[`${item.id}_${wc.key}`] || {};
       return sum + (log.hours || 0);
     }, 0);
     const capacity = ls.workers * ls.hoursPerDay * ls.workDays;
@@ -3687,287 +3950,582 @@ function buildScheduleView(pid) {
     return { scheduled, logged, capacity, pct, barColor, display };
   });
 
-  const headerRow = `
-    <div class="week-cell header">SI Item</div>
-    ${weeks.map(w=>`<div class="week-cell header">${w.label}<span class="week-col-date">${w.dates}</span></div>`).join('')}`;
+  // ── Status dot helper ─────────────────
+  function statusDot(s) {
+    const c = { completed:'#22c55e','punch-ongoing':'#a855f7','not-ready':'#ef4444','in-progress':'#fbbf24','on-hold':'#f97316',pending:'#475569' };
+    return `<span class="sched-status-dot" style="background:${c[s]||c.pending}"></span>`;
+  }
 
-  const dataRows = items.map(item => {
-    const totalLogged = weeks.reduce((sum, w) => {
-      const log = proj.laborLog[`${item.id}_${w.key}`] || {};
+  // ── Column widths ─────────────────────
+  const SI_COL = 170; // px, fixed
+  const WEEK_COL = state.mode === 'full' ? Math.max(72, Math.min(110, Math.floor((window.innerWidth - SI_COL - 80) / weekCols.length))) : 110;
+
+  // ── Navigation controls ───────────────
+  const windowStart = state.windowStart || cur;
+  const prevStart = addWeeks(windowStart, -6);
+  const nextStart = addWeeks(windowStart, 6);
+
+  const navControlsHTML = state.mode === '6week' ? `
+    <div style="display:flex;align-items:center;gap:4px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:3px;flex-shrink:0">
+      <button class="sched-nav-btn" onclick="schedSlide('${pid}',-1)" title="Previous 6 weeks"
+        style="width:28px;height:28px;border-radius:6px;border:none;background:none;color:var(--text2);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all 0.12s"
+        onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background='none'">‹</button>
+      <button onclick="schedGoToday('${pid}')"
+        style="padding:4px 10px;border-radius:6px;border:none;background:none;color:var(--text3);font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:0.5px;cursor:pointer;transition:all 0.12s;white-space:nowrap"
+        onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text3)'">TODAY</button>
+      <button class="sched-nav-btn" onclick="schedSlide('${pid}',1)" title="Next 6 weeks"
+        style="width:28px;height:28px;border-radius:6px;border:none;background:none;color:var(--text2);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all 0.12s"
+        onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background='none'">›</button>
+    </div>` : '';
+
+  // ── Month header row ──────────────────
+  const monthHeaderHTML = `
+    <div class="sched-cell sched-si-col" style="background:var(--surface);border-bottom:1px solid var(--border);padding:6px 10px;font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:1px;color:var(--text3);text-transform:uppercase">SITE ITEM</div>
+    ${monthGroups.map(g => `
+      <div style="grid-column:span ${g.count};background:var(--surface);border-bottom:1px solid var(--border);border-left:1px solid var(--border2);padding:5px 10px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:0.8px;color:var(--text3);text-transform:uppercase;display:flex;align-items:center">
+        ${g.month.toUpperCase()}
+      </div>`).join('')}`;
+
+  // ── Week header row ───────────────────
+  const weekHeaderHTML = `
+    <div class="sched-cell sched-si-col" style="background:var(--surface);padding:0"></div>
+    ${weekCols.map(wc => `
+      <div class="sched-cell sched-week-header ${wc.isCurrent?'sched-current-week':''} ${wc.isPast?'sched-past-week':''}"
+        style="text-align:center;padding:5px 4px;">
+        <div style="font-family:var(--mono);font-size:8px;font-weight:700;color:${wc.isCurrent?'var(--accent)':wc.isPast?'var(--text3)':'var(--text2)'};letter-spacing:0.3px">${wc.label}</div>
+        ${wc.isCurrent ? `<div style="width:6px;height:6px;border-radius:50%;background:var(--accent);margin:3px auto 0;box-shadow:0 0 6px var(--accent)"></div>` : ''}
+      </div>`).join('')}`;
+
+  // ── Data rows ─────────────────────────
+  const dataRowsHTML = items.map(item => {
+    const totalLogged = weekCols.reduce((sum, wc) => {
+      const log = proj.laborLog[`${item.id}_${wc.key}`] || {};
       return sum + (log.hours || 0);
     }, 0);
     const remaining = (item.laborHours || 0) - totalLogged;
     const remPct = item.laborHours > 0 ? remaining / item.laborHours : 1;
-    const remClass = remaining <= 0 ? 'done' : remPct < 0.25 ? 'low' : '';
-    const remLabel = remaining <= 0 ? '✓ Fully logged' : `${remaining}h left`;
-    return `
-    <div class="week-cell si-label">
-      <span class="si-lbl-num">${statusDot(item.status)}${item.num}</span>
-      <span style="font-size:10px;line-height:1.3">${item.title}</span>
-      ${item.laborHours != null ? `<span style="font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:1px">⏱ ${item.laborHours}h est.</span>` : ''}
-      ${ls.show && item.laborHours ? `<span class="si-rem-hours ${remClass}">${remLabel}</span>` : ''}
-    </div>
-    ${weeks.map(w => {
-      const key = `${item.id}_${w.key}`;
-      const val = (proj.schedule[key] || '').replace(/'/g, '&#39;');
+    const remClass = remaining <= 0 ? '#22c55e' : remPct < 0.25 ? '#f97316' : 'var(--text3)';
+
+    const cells = weekCols.map(wc => {
+      const key = `${item.id}_${wc.key}`;
+      const val = (proj.schedule[key] || '');
+      const cStyle = _cellStyle(val);
       const log = proj.laborLog[key] || {};
-      return `<div class="week-cell editable">
-        <input type="text" value="${val}" placeholder="—"
-          onchange="saveScheduleCell('${pid}','${key}',this.value)"
+      const escaped = val.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+      return `<div class="sched-cell sched-editable-cell ${wc.isCurrent?'sched-current-week':''} ${wc.isPast?'sched-past-week':''}"
+        style="position:relative;min-height:38px;">
+        <input type="text" value="${escaped}" placeholder="—"
+          style="width:100%;background:transparent;border:none;outline:none;font-size:${cStyle?'9':'10'}px;color:${cStyle?'inherit':'var(--text)'};font-family:var(--sans);padding:2px 3px;${cStyle}"
+          onchange="saveScheduleCell('${pid}','${key}',this.value);this.style.cssText=this.style.cssText+_cellStyle(this.value)"
           onfocus="this.select()" />
         ${ls.show && item.laborHours ? `
-          <div class="cell-labor-inputs">
-            <div class="cell-labor-field">👷 <input type="number" class="cell-labor-inp" min="0" max="99"
-              value="${log.workers || ''}" placeholder="0"
-              onchange="saveLaborLog('${pid}','${key}','workers',+this.value||0)"
-              title="Workers on this item this week" /></div>
-            <div class="cell-labor-field">⏱ <input type="number" class="cell-labor-inp" min="0" max="9999"
-              value="${log.hours || ''}" placeholder="0h"
-              onchange="saveLaborLog('${pid}','${key}','hours',+this.value||0)"
-              title="Hours logged this week" /></div>
+          <div style="display:flex;gap:4px;margin-top:3px;padding-top:3px;border-top:1px solid var(--border);">
+            <input type="number" min="0" max="99" value="${log.workers||''}" placeholder="👷"
+              style="width:32px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:3px;font-size:8px;color:var(--text);text-align:center;outline:none;padding:1px;"
+              onchange="saveLaborLog('${pid}','${key}','workers',+this.value||0)" title="Workers" />
+            <input type="number" min="0" max="9999" value="${log.hours||''}" placeholder="⏱"
+              style="width:36px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:3px;font-size:8px;color:var(--text);text-align:center;outline:none;padding:1px;"
+              onchange="saveLaborLog('${pid}','${key}','hours',+this.value||0)" title="Hours" />
           </div>` : ''}
       </div>`;
-    }).join('')}
-  `;
+    }).join('');
+
+    return `
+      <div class="sched-cell sched-si-col" style="background:var(--surface);display:flex;flex-direction:column;gap:2px;min-height:38px;">
+        <span style="font-family:var(--mono);font-size:8px;color:var(--text3)">${statusDot(item.status)}${item.num}</span>
+        <span style="font-size:10px;line-height:1.3;color:var(--text);font-weight:500">${item.title}</span>
+        ${item.laborHours != null ? `<span style="font-size:8px;font-family:var(--mono);color:${remClass}">⏱ ${item.laborHours}h ${ls.show && item.laborHours ? (remaining<=0?'✓ done':remaining+'h left') : ''}</span>` : ''}
+      </div>
+      ${cells}`;
   }).join('');
 
-  const laborRow = ls.show ? `
-    <div class="week-cell labor-row" style="justify-content:center">👷 LABOR</div>
-    ${weekLabor.map(wl=>`
-      <div class="week-cell labor-row">
-        <span style="color:#93c5fd;font-size:10px">${wl.logged > 0 ? wl.logged + 'h logged' : wl.scheduled + 'h est'} <span style="color:#475569;font-size:9px">/ ${wl.capacity}h cap</span></span>
-        <span style="font-size:9px;color:${wl.barColor}">${wl.pct}% utilized</span>
-        <div class="labor-bar-wrap"><div class="labor-bar" style="width:${Math.min(wl.pct,100)}%;background:${wl.barColor}"></div></div>
-      </div>`).join('')}` : '';
+  // ── Labor summary row ─────────────────
+  const laborRowHTML = ls.show ? `
+    <div class="sched-cell sched-si-col" style="background:rgba(30,58,95,0.85);display:flex;align-items:center;padding:8px 10px;">
+      <span style="font-family:var(--mono);font-size:9px;font-weight:700;color:#93c5fd;letter-spacing:0.8px;text-transform:uppercase">👷 LABOR</span>
+    </div>
+    ${weekCols.map((wc, i) => {
+      const wl = weekLabor[i];
+      const barColor = wl.pct > 100 ? '#ef4444' : wl.pct >= 80 ? '#fbbf24' : '#22c55e';
+      return `<div class="sched-cell ${wc.isCurrent?'sched-current-week':''}"
+        style="background:rgba(30,58,95,0.7);padding:6px 8px;display:flex;flex-direction:column;gap:3px;">
+        <span style="font-family:var(--mono);font-size:9px;color:#93c5fd;font-weight:600">${wl.logged>0?wl.logged+'h logged':wl.scheduled+'h est'}</span>
+        <span style="font-size:8px;color:${barColor};font-family:var(--mono)">${wl.pct}% / ${wl.capacity}h cap</span>
+        <div style="height:3px;background:rgba(255,255,255,0.12);border-radius:2px;overflow:hidden">
+          <div style="height:100%;width:${Math.min(wl.pct,100)}%;background:${barColor};border-radius:2px;transition:width 0.3s"></div>
+        </div>
+      </div>`;
+    }).join('')}` : '';
 
-  const laborPanelHTML = `
-    <div class="labor-panel ${ls.show ? 'open' : ''}" id="labor-panel-${pid}">
+  // ── Legend HTML ───────────────────────
+  const legendHTML = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;padding:8px 0;border-top:1px solid var(--border)">
+      ${Object.entries(PHASE_COLORS).slice(0,7).map(([k,c]) => `
+        <div style="display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:9px;color:${c.text};
+          background:${c.bg};border:1px solid ${c.border};border-radius:4px;padding:2px 7px;">
+          ${k}
+        </div>`).join('')}
+      <span style="font-size:9px;color:var(--text3);font-family:var(--mono);margin-left:4px">— tap cell to enter phase / notes</span>
+    </div>`;
+
+  // ── Labor settings panel ──────────────
+  const laborPanelHTML = ls.show ? `
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:12px;padding:10px 14px;margin-bottom:10px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;font-size:11px;">
       <div style="display:flex;align-items:center;gap:6px">
-        <span class="labor-panel-label">Workers</span>
+        <span style="font-family:var(--mono);font-size:9px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Workers</span>
         <input type="number" class="labor-num-input" min="1" max="999" value="${ls.workers}"
           onchange="saveScheduleSetting('${pid}','workers',+this.value||1)" />
       </div>
       <div style="display:flex;align-items:center;gap:6px">
-        <span class="labor-panel-label">Hrs / Day</span>
+        <span style="font-family:var(--mono);font-size:9px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Hrs/Day</span>
         <input type="number" class="labor-num-input" min="1" max="24" value="${ls.hoursPerDay}"
           onchange="saveScheduleSetting('${pid}','hoursPerDay',+this.value||8)" />
       </div>
       <div style="display:flex;align-items:center;gap:8px">
-        <span class="labor-panel-label">Work Days</span>
-        <div class="workday-btns">
-          ${[5,6,7].map(d=>`<button class="workday-btn ${ls.workDays===d?'active':''}"
-            onclick="saveScheduleSetting('${pid}','workDays',${d})">${d}d</button>`).join('')}
+        <span style="font-family:var(--mono);font-size:9px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Work Days</span>
+        <div style="display:flex;gap:3px">
+          ${[5,6,7].map(d=>`<button onclick="saveScheduleSetting('${pid}','workDays',${d})"
+            style="padding:4px 9px;border-radius:6px;border:1px solid ${ls.workDays===d?'rgba(96,165,250,0.5)':'var(--border)'};
+            background:${ls.workDays===d?'rgba(96,165,250,0.15)':'var(--surface)'};
+            color:${ls.workDays===d?'#60a5fa':'var(--text3)'};font-family:var(--mono);font-size:10px;font-weight:700;cursor:pointer;">${d}d</button>`).join('')}
         </div>
       </div>
       <div style="margin-left:auto;font-size:10px;color:var(--text3);font-family:var(--mono)">
-        Capacity: ${ls.workers * ls.hoursPerDay * ls.workDays}h/wk per crew
+        Cap: ${ls.workers * ls.hoursPerDay * ls.workDays}h/wk
       </div>
-    </div>`;
+    </div>` : '';
 
-  el.innerHTML=`
+  // ── Assemble the grid ─────────────────
+  const gridCols = `${SI_COL}px repeat(${weekCols.length}, ${WEEK_COL}px)`;
+
+  el.innerHTML = `
     <div class="schedule-wrap">
-      <div class="schedule-header-row">
-        <div class="schedule-title">📅 6-Week Look Ahead
-          <span style="font-size:11px;color:var(--text3);font-weight:400;font-family:var(--mono)">${proj.name}</span>
+      <!-- Header row -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;flex-shrink:0">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div class="schedule-title">📅 Look Ahead
+            <span style="font-size:11px;color:var(--text3);font-weight:400;font-family:var(--mono)">${proj.name}</span>
+          </div>
+          ${navControlsHTML}
         </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <button class="labor-toggle-btn ${ls.show?'active':''}" onclick="saveScheduleSetting('${pid}','show',${!ls.show})">
+        <div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap">
+          <!-- Mode toggle -->
+          <div style="display:flex;background:var(--surface2);border:1px solid var(--border);border-radius:9px;overflow:hidden;flex-shrink:0">
+            <button onclick="schedSetMode('${pid}','6week')"
+              style="padding:7px 13px;border:none;background:${state.mode==='6week'?'var(--accent)':'none'};
+              color:${state.mode==='6week'?'#000':'var(--text2)'};font-family:var(--mono);font-size:10px;font-weight:700;cursor:pointer;transition:all 0.15s;white-space:nowrap">
+              6-WEEK
+            </button>
+            <button onclick="schedSetMode('${pid}','full')"
+              style="padding:7px 13px;border:none;background:${state.mode==='full'?'var(--accent)':'none'};
+              color:${state.mode==='full'?'#000':'var(--text2)'};font-family:var(--mono);font-size:10px;font-weight:700;cursor:pointer;transition:all 0.15s;white-space:nowrap">
+              FULL TIMELINE
+            </button>
+          </div>
+          <button class="labor-toggle-btn ${ls.show?'active':''}" onclick="saveScheduleSetting('${pid}','show',${!ls.show})"
+            style="padding:7px 13px;white-space:nowrap">
             👷 Manpower
           </button>
-          <button class="schedule-export-btn" onclick="exportSchedulePDF('${pid}')">
-            ⬇ Export Schedule PDF
+          <button class="schedule-export-btn" onclick="showScheduleExportModal('${pid}')">
+            ⬇ Export PDF
           </button>
         </div>
       </div>
 
-      ${ls.show ? laborPanelHTML : ''}
+      ${laborPanelHTML}
 
-      ${items.length===0?`
-        <div style="text-align:center;padding:48px;color:var(--text3)">
-          <div style="font-size:36px;opacity:0.2;margin-bottom:12px">📅</div>
+      ${items.length === 0 ? `
+        <div style="text-align:center;padding:60px;color:var(--text3)">
+          <div style="font-size:40px;opacity:0.18;margin-bottom:12px">📅</div>
           <div style="font-size:14px;font-weight:600;color:var(--text2);margin-bottom:6px">No site items yet</div>
-          <div style="font-size:12px">Add SI items to the project first, then schedule them here.</div>
+          <div style="font-size:12px">Add SI items to the project first.</div>
         </div>
-      `:`
-        <div style="overflow-x:auto;">
-          <div class="week-grid" style="min-width:700px">
-            ${headerRow}
-            ${dataRows}
-            ${laborRow}
+      ` : `
+        <div style="overflow-x:auto;flex:1;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+          <div id="sched-grid-inner" style="display:grid;grid-template-columns:${gridCols};min-width:${SI_COL + weekCols.length * WEEK_COL}px">
+            ${monthHeaderHTML}
+            ${weekHeaderHTML}
+            ${dataRowsHTML}
+            ${laborRowHTML}
           </div>
         </div>
-        <div style="font-size:11px;color:var(--text3);margin-top:10px;font-family:var(--mono)">
-          💡 Tap any cell to enter planned activity. Schedule exports separately from the audit PDF.
-        </div>
+        ${legendHTML}
       `}
     </div>`;
+
+  // Scroll to current week in full timeline mode
+  if (state.mode === 'full') {
+    setTimeout(() => {
+      const grid = document.getElementById('sched-grid-inner');
+      if (!grid) return;
+      const curIdx = weekCols.findIndex(w => w.isCurrent);
+      if (curIdx > 0) {
+        const scrollTarget = SI_COL + (curIdx - 1) * WEEK_COL;
+        grid.parentElement.scrollLeft = Math.max(0, scrollTarget - 20);
+      }
+    }, 60);
+  }
 }
 
-window.saveScheduleCell=function(pid,key,val){
-  const proj=getProject(pid); if(!proj) return;
-  if(!proj.schedule) proj.schedule={};
-  if(val.trim()) proj.schedule[key]=val.trim();
+// ── Schedule action handlers ──────────────
+window.schedSetMode = function(pid, mode) {
+  const state = getSchedState(pid);
+  state.mode = mode;
+  if (mode === '6week') state.windowStart = null; // reset to current
+  buildScheduleView(pid);
+};
+
+window.schedSlide = function(pid, dir) {
+  const state = getSchedState(pid);
+  const cur = currentWeekKey();
+  const base = state.windowStart || cur;
+  state.windowStart = addWeeks(base, dir * 6);
+  buildScheduleView(pid);
+};
+
+window.schedGoToday = function(pid) {
+  const state = getSchedState(pid);
+  state.windowStart = null;
+  buildScheduleView(pid);
+};
+
+window.saveScheduleCell = function(pid, key, val) {
+  const proj = getProject(pid); if(!proj) return;
+  if(!proj.schedule) proj.schedule = {};
+  if(val.trim()) proj.schedule[key] = val.trim();
   else delete proj.schedule[key];
   markProjectDirty(pid); save();
 };
 
-window.saveScheduleSetting=function(pid,field,value){
-  const proj=getProject(pid); if(!proj) return;
-  if(!proj.laborSettings) proj.laborSettings={show:false,workers:4,hoursPerDay:8,workDays:5};
-  proj.laborSettings[field]=value;
+window.saveScheduleSetting = function(pid, field, value) {
+  const proj = getProject(pid); if(!proj) return;
+  if(!proj.laborSettings) proj.laborSettings = {show:false,workers:4,hoursPerDay:8,workDays:5};
+  proj.laborSettings[field] = value;
   markProjectDirty(pid); save();
   buildScheduleView(pid);
 };
 
-window.saveLaborLog=function(pid,key,field,value){
-  const proj=getProject(pid); if(!proj) return;
-  if(!proj.laborLog) proj.laborLog={};
-  if(!proj.laborLog[key]) proj.laborLog[key]={workers:0,hours:0};
-  proj.laborLog[key][field]=value;
+window.saveLaborLog = function(pid, key, field, value) {
+  const proj = getProject(pid); if(!proj) return;
+  if(!proj.laborLog) proj.laborLog = {};
+  if(!proj.laborLog[key]) proj.laborLog[key] = {workers:0,hours:0};
+  proj.laborLog[key][field] = value;
   if(!proj.laborLog[key].workers && !proj.laborLog[key].hours) delete proj.laborLog[key];
   markProjectDirty(pid); save();
-  buildScheduleView(pid);
 };
 
-async function exportSchedulePDF(pid) {
-  const proj=getProject(pid); if(!proj) return;
+// ── Export modal ──────────────────────────
+window.showScheduleExportModal = function(pid) {
+  const proj = getProject(pid); if(!proj) return;
+  const cur = currentWeekKey();
+  const { earliest, latest } = _getProjectWeekExtent(proj);
 
-  // Wait for jsPDF
-  let attempts=0;
-  while(typeof window.jspdf==='undefined'&&attempts<32){
-    await new Promise(r=>setTimeout(r,250)); attempts++;
+  // Presets
+  const presets = [
+    { label: 'Current 6 Weeks', from: cur, to: addWeeks(cur, 5) },
+    { label: 'Past 4 + Next 8',  from: addWeeks(cur, -4), to: addWeeks(cur, 7) },
+    { label: 'Full Project',      from: earliest, to: latest },
+  ];
+
+  function weekCount(from, to) {
+    let n = 0, wk = from;
+    while (weekCmp(wk, to) <= 0 && n < 200) { n++; wk = addWeeks(wk, 1); }
+    return n;
   }
-  if(typeof window.jspdf==='undefined') return showToast('PDF library not loaded');
 
-  showPDFProgress('Building Schedule PDF…',0);
-  const {jsPDF}=window.jspdf;
-  const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
-  const PW=297,PH=210;
+  function fmtKey(k) {
+    const mon = isoWeekMonday(k);
+    return mon.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric', timeZone:'UTC'});
+  }
 
-  // Colors
-  const BG='#1e3a5f', FG='#ffffff', ROW1='#f8fafc', ROW2='#eef2f7', BORDER='#cbd5e1';
-  function h2r(h){ return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)]; }
+  makeModal('Export Schedule PDF', `
+    <div style="margin-bottom:14px">
+      <div class="share-section-label">Quick Presets</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        ${presets.map((p,i) => `
+          <div class="action-row" onclick="applySchedPreset(${i})"
+            style="padding:10px 13px;cursor:pointer" id="sched-preset-${i}">
+            <div style="flex:1">
+              <div style="font-size:13px;font-weight:500">${p.label}</div>
+              <div style="font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:2px">
+                ${fmtKey(p.from)} → ${fmtKey(p.to)} · ${weekCount(p.from,p.to)} weeks
+              </div>
+            </div>
+            <div class="action-arrow">›</div>
+          </div>`).join('')}
+      </div>
+    </div>
 
-  // Header
-  doc.setFillColor(...h2r(BG)); doc.rect(0,0,PW,22,'F');
-  doc.setFontSize(14); doc.setFont('helvetica','bold'); doc.setTextColor(...h2r(FG));
-  doc.text('6-WEEK LOOK AHEAD',14,10);
-  doc.setFontSize(9); doc.setFont('helvetica','normal');
-  doc.text(proj.name+'  ·  Auditor: '+(proj.auditor||'—')+'  ·  Generated: '+new Date().toLocaleDateString(),14,17);
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+      <div class="field-group" style="margin-bottom:0">
+        <div class="field-label">From Week</div>
+        <input type="week" class="field-input" id="exp-from" value="${cur.replace('W','W').replace('-W','-W')}"
+          style="padding:8px 10px;font-size:12px" oninput="updateSchedPageCount('${pid}')" />
+      </div>
+      <div class="field-group" style="margin-bottom:0">
+        <div class="field-label">To Week</div>
+        <input type="week" class="field-input" id="exp-to" value="${addWeeks(cur,5).replace('-W','-W')}"
+          style="padding:8px 10px;font-size:12px" oninput="updateSchedPageCount('${pid}')" />
+      </div>
+    </div>
 
-  // Week headers
-  function getMonday(d){const day=d.getDay(),diff=d.getDate()-day+(day===0?-6:1);return new Date(d.setDate(diff));}
-  const mon=getMonday(new Date());
-  const weeks=Array.from({length:6},(_,i)=>{
-    const d=new Date(mon); d.setDate(mon.getDate()+i*7);
-    const e=new Date(d); e.setDate(d.getDate()+6);
-    return {label:`Week ${i+1}`,dates:`${d.getMonth()+1}/${d.getDate()}–${e.getMonth()+1}/${e.getDate()}`,key:`w${i}`};
+    <div id="exp-page-count" style="padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:11px;font-family:var(--mono);color:var(--text2);margin-bottom:14px">
+      — select range above —
+    </div>
+
+    <div class="export-opt-row">
+      <span class="export-opt-label">Include manpower row</span>
+      <div class="export-check ${ls.show?'checked':''}" id="exp-labor" onclick="toggleCheck('exp-labor')">${ls.show?'✓':''}</div>
+    </div>
+  `, () => {
+    const fromEl = document.getElementById('exp-from');
+    const toEl   = document.getElementById('exp-to');
+    if(!fromEl||!toEl) return;
+    // Convert <input type="week"> value "YYYY-Www" to our key format
+    const fromKey = fromEl.value; // browser gives YYYY-Www already
+    const toKey   = toEl.value;
+    if(!fromKey||!toKey) return showToast('Select a date range','red');
+    const inclLabor = document.getElementById('exp-labor')?.classList.contains('checked');
+    closeModal();
+    exportSchedulePDF(pid, fromKey, toKey, inclLabor);
   });
 
-  const colW=(PW-14-80)/6;
-  const rowH=10;
-  const startY=26;
-  const siColW=80;
-
-  // Column headers
-  doc.setFillColor(...h2r(BG)); doc.rect(14,startY,siColW,8,'F');
-  doc.setFontSize(7); doc.setFont('helvetica','bold'); doc.setTextColor(...h2r(FG));
-  doc.text('SITE ITEM',16,startY+5.5);
-  weeks.forEach((w,i)=>{
-    const x=14+siColW+i*colW;
-    doc.setFillColor(...h2r(BG)); doc.rect(x,startY,colW,8,'F');
-    doc.setTextColor(...h2r(FG)); doc.text(w.label,x+2,startY+4,{maxWidth:colW-4});
-    doc.setFontSize(6); doc.setFont('helvetica','normal'); doc.setTextColor(180,200,220);
-    doc.text(w.dates,x+2,startY+7.5,{maxWidth:colW-4});
-    doc.setFontSize(7); doc.setFont('helvetica','bold');
-  });
-
-  // Rows
-  let y=startY+8;
-  proj.items.forEach((item,ri)=>{
-    if(y+rowH>PH-10){
-      doc.addPage();
-      y=14;
-    }
-    const bg=ri%2===0?ROW1:ROW2;
-    doc.setFillColor(...h2r(bg)); doc.rect(14,y,PW-28,rowH,'F');
-    doc.setDrawColor(...h2r(BORDER)); doc.setLineWidth(0.2);
-    doc.rect(14,y,PW-28,rowH,'S');
-
-    doc.setFontSize(7.5); doc.setFont('helvetica','bold'); doc.setTextColor(30,58,95);
-    doc.text(item.num,16,y+4);
-    doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(50,70,100);
-    doc.text(item.title,16,y+8,{maxWidth:siColW-4});
-
-    weeks.forEach((w,i)=>{
-      const x=14+siColW+i*colW;
-      const val=proj.schedule?.[`${item.id}_${w.key}`]||'';
-      doc.setFontSize(7); doc.setFont('helvetica','normal'); doc.setTextColor(50,70,100);
-      if(val) doc.text(val,x+2,y+6,{maxWidth:colW-4});
+  // Attach preset appliers
+  window.applySchedPreset = function(i) {
+    const p = presets[i];
+    const fromEl = document.getElementById('exp-from');
+    const toEl   = document.getElementById('exp-to');
+    if(fromEl) fromEl.value = p.from;
+    if(toEl)   toEl.value   = p.to;
+    updateSchedPageCount(pid);
+    document.querySelectorAll('[id^=sched-preset-]').forEach(el => {
+      el.style.borderColor = '';
+      el.style.background  = '';
     });
-    y+=rowH;
+    const sel = document.getElementById('sched-preset-' + i);
+    if(sel) { sel.style.borderColor = 'var(--accent)'; sel.style.background = 'var(--accent-dim)'; }
+  };
+
+  window.updateSchedPageCount = function(pid_) {
+    const fromEl = document.getElementById('exp-from');
+    const toEl   = document.getElementById('exp-to');
+    const el     = document.getElementById('exp-page-count');
+    if(!fromEl||!toEl||!el) return;
+    const from = fromEl.value, to = toEl.value;
+    if(!from||!to) { el.textContent = '— select range above —'; return; }
+    if(weekCmp(from, to) > 0) { el.textContent = '⚠ "From" must be before "To"'; el.style.color = 'var(--red)'; return; }
+    el.style.color = 'var(--text2)';
+    const n = weekCount(from, to);
+    const proj_ = getProject(pid_);
+    const items_ = proj_?.items?.length || 0;
+    // Rough estimate: ~3 rows per page in landscape at rowH=10
+    const rowsPerPage = Math.floor((210 - 36) / 10);
+    const pages = Math.ceil(items_ / rowsPerPage) + 1;
+    el.textContent = `${n} weeks · ~${items_} SI items · Est. ${pages} page${pages!==1?'s':''}`;
+  };
+
+  // Initialize page count
+  setTimeout(() => updateSchedPageCount(pid), 50);
+};
+
+// ── PDF export with range ─────────────────
+async function exportSchedulePDF(pid, fromKey, toKey, inclLabor) {
+  const proj = getProject(pid); if(!proj) return;
+
+  let attempts = 0;
+  while(typeof window.jspdf === 'undefined' && attempts < 32) {
+    await new Promise(r => setTimeout(r, 250)); attempts++;
+  }
+  if(typeof window.jspdf === 'undefined') return showToast('PDF library not loaded');
+
+  showPDFProgress('Building Schedule PDF…', 0);
+  const {jsPDF} = window.jspdf;
+  const doc = new jsPDF({orientation:'landscape', unit:'mm', format:'a4'});
+  const PW = 297, PH = 210;
+
+  function h2r(h) { return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)]; }
+  const BG = '#1e3a5f', FG = '#ffffff';
+  const ls = proj.laborSettings || {show:false,workers:4,hoursPerDay:8,workDays:5};
+
+  // Build week list for export
+  const exportWeeks = [];
+  let wk = fromKey;
+  while(weekCmp(wk, toKey) <= 0 && exportWeeks.length < 100) {
+    exportWeeks.push(wk);
+    wk = addWeeks(wk, 1);
+  }
+
+  const curKey = currentWeekKey();
+  const siColW = 72;
+  const weekColW = Math.min(28, Math.floor((PW - 14 - siColW) / exportWeeks.length));
+  const rowH = 10;
+
+  // ── Header band ──────────────────────
+  doc.setFillColor(...h2r(BG)); doc.rect(0,0,PW,22,'F');
+  doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.setTextColor(...h2r(FG));
+  doc.text('LOOK AHEAD SCHEDULE', 14, 10);
+  doc.setFontSize(8); doc.setFont('helvetica','normal');
+  doc.text(`${proj.name}  ·  ${fmtKey(fromKey)} – ${fmtKey(toKey)}  ·  Generated: ${new Date().toLocaleDateString()}`, 14, 17);
+
+  function fmtKey(k) {
+    const mon = isoWeekMonday(k);
+    return mon.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'2-digit', timeZone:'UTC'});
+  }
+
+  const startY = 26;
+
+  // ── Month grouping header ─────────────
+  const months = _groupByMonth(_buildWeekCols(exportWeeks));
+  let mx = 14 + siColW;
+  months.forEach(mg => {
+    const colSpanW = mg.count * weekColW;
+    doc.setFillColor(...h2r('#1e293b')); doc.rect(mx, startY, colSpanW, 5, 'F');
+    doc.setFontSize(5.5); doc.setFont('helvetica','bold'); doc.setTextColor(150,180,210);
+    doc.text(mg.month.toUpperCase(), mx + colSpanW/2, startY + 3.8, {align:'center'});
+    mx += colSpanW;
   });
 
-  // Labor row (if manpower panel was on)
-  const ls = proj.laborSettings;
-  if(ls && ls.show) {
-    if(y+rowH>PH-10){ doc.addPage(); y=14; }
-    doc.setFillColor(...h2r(BG)); doc.rect(14,y,PW-28,rowH+2,'F');
-    doc.setFontSize(7); doc.setFont('helvetica','bold'); doc.setTextColor(...h2r(FG));
-    doc.text('👷 LABOR',16,y+6);
-    weeks.forEach((w,i)=>{
-      const x=14+siColW+i*colW;
+  // ── Week column headers ───────────────
+  doc.setFillColor(...h2r(BG)); doc.rect(14, startY, siColW, 8, 'F');
+  doc.setFontSize(6); doc.setFont('helvetica','bold'); doc.setTextColor(...h2r(FG));
+  doc.text('SITE ITEM', 16, startY + 5.5);
+
+  exportWeeks.forEach((w, i) => {
+    const x = 14 + siColW + i * weekColW;
+    const isCur = w === curKey;
+    doc.setFillColor(...h2r(isCur ? '#2563eb' : BG));
+    doc.rect(x, startY, weekColW, 8, 'F');
+    const mon = isoWeekMonday(w);
+    const label = `${mon.getUTCMonth()+1}/${mon.getUTCDate()}`;
+    doc.setFontSize(5); doc.setFont('helvetica', isCur?'bold':'normal');
+    doc.setTextColor(isCur ? 255 : 180, isCur ? 255 : 200, isCur ? 255 : 220);
+    doc.text(label, x + weekColW/2, startY + 5.5, {align:'center', maxWidth: weekColW-2});
+  });
+
+  // ── Data rows ─────────────────────────
+  let y = startY + 8;
+  const BORDER = '#cbd5e1';
+
+  proj.items.forEach((item, ri) => {
+    if(y + rowH > PH - 12) {
+      doc.addPage();
+      y = 14;
+      // Re-draw compact header on continuation pages
+      doc.setFillColor(...h2r(BG)); doc.rect(14, y, siColW + exportWeeks.length*weekColW, 6, 'F');
+      doc.setFontSize(6); doc.setFont('helvetica','bold'); doc.setTextColor(...h2r(FG));
+      doc.text('SITE ITEM', 16, y+4.5);
+      exportWeeks.forEach((w,i) => {
+        const x = 14 + siColW + i*weekColW;
+        const mon = isoWeekMonday(w);
+        doc.text(`${mon.getUTCMonth()+1}/${mon.getUTCDate()}`, x+weekColW/2, y+4.5, {align:'center', maxWidth:weekColW-1});
+      });
+      y += 6;
+    }
+
+    const bg = ri%2===0 ? '#f8fafc' : '#eef2f7';
+    doc.setFillColor(...h2r(bg)); doc.rect(14, y, siColW + exportWeeks.length*weekColW, rowH, 'F');
+    doc.setDrawColor(...h2r(BORDER)); doc.setLineWidth(0.15);
+    doc.rect(14, y, siColW + exportWeeks.length*weekColW, rowH, 'S');
+
+    // Status dot
+    const dotColors = {completed:'#22c55e','punch-ongoing':'#a855f7','not-ready':'#ef4444','in-progress':'#fbbf24','on-hold':'#f97316',pending:'#94a3b8'};
+    const dc = dotColors[item.status] || dotColors.pending;
+    doc.setFillColor(...h2r(dc));
+    doc.circle(17, y+5, 1.5, 'F');
+
+    doc.setFontSize(6.5); doc.setFont('helvetica','bold'); doc.setTextColor(30,58,95);
+    doc.text(item.num, 20, y+4.5, {maxWidth: siColW-8});
+    doc.setFont('helvetica','normal'); doc.setFontSize(6); doc.setTextColor(50,70,100);
+    doc.text(item.title, 20, y+8.5, {maxWidth: siColW-8});
+
+    // Week cells
+    exportWeeks.forEach((w, i) => {
+      const x = 14 + siColW + i*weekColW;
+      const val = (proj.schedule[`${item.id}_${w}`] || '').trim();
+      if(!val) return;
+
+      // Phase color background
+      const upper = val.toUpperCase();
+      let phBg = null, phText = [50,70,100];
+      for(const [k,c] of Object.entries(PHASE_COLORS)) {
+        if(upper === k || upper.startsWith(k+' ') || upper.includes(k)) {
+          const rgb = h2r(c.text);
+          phBg = rgb; phText = rgb;
+          doc.setFillColor(rgb[0], rgb[1], rgb[2], 0.15);
+          doc.setFillColor(phBg[0]*0.3+220, phBg[1]*0.3+220, phBg[2]*0.3+220);
+          doc.rect(x+0.5, y+0.5, weekColW-1, rowH-1, 'F');
+          break;
+        }
+      }
+      doc.setFontSize(5.5); doc.setFont('helvetica','bold');
+      doc.setTextColor(...phText);
+      doc.text(val, x+weekColW/2, y+5.5, {align:'center', maxWidth: weekColW-2});
+    });
+
+    y += rowH;
+  });
+
+  // ── Labor row ─────────────────────────
+  if(inclLabor && ls.show) {
+    if(y+rowH+2 > PH-12) { doc.addPage(); y=14; }
+    doc.setFillColor(...h2r(BG)); doc.rect(14, y, siColW + exportWeeks.length*weekColW, rowH+2, 'F');
+    doc.setFontSize(6.5); doc.setFont('helvetica','bold'); doc.setTextColor(...h2r(FG));
+    doc.text('MANPOWER', 16, y+7);
+
+    exportWeeks.forEach((w, i) => {
+      const x = 14 + siColW + i*weekColW;
       const scheduled = proj.items.reduce((sum,item)=>{
-        const hasCell=!!(proj.schedule?.[`${item.id}_${w.key}`]||'').trim();
+        const hasCell=!!(proj.schedule?.[`${item.id}_${w}`]||'').trim();
         return sum+(hasCell&&item.laborHours?item.laborHours:0);
       },0);
       const capacity = ls.workers*ls.hoursPerDay*ls.workDays;
       const pct = capacity>0?Math.round((scheduled/capacity)*100):0;
       const [r,g,b] = pct>100?[239,68,68]:pct>=80?[251,191,36]:[34,197,94];
-      doc.setFontSize(7); doc.setFont('helvetica','bold'); doc.setTextColor(147,197,253);
-      doc.text(`${scheduled}h / ${capacity}h`,x+2,y+5,{maxWidth:colW-4});
-      doc.setTextColor(r,g,b); doc.setFont('helvetica','normal'); doc.setFontSize(6.5);
-      doc.text(`${pct}% utilized`,x+2,y+9,{maxWidth:colW-4});
+      doc.setFontSize(5.5); doc.setFont('helvetica','bold'); doc.setTextColor(147,197,253);
+      doc.text(`${scheduled}h`, x+weekColW/2, y+5, {align:'center', maxWidth:weekColW-2});
+      doc.setTextColor(r,g,b); doc.setFont('helvetica','normal'); doc.setFontSize(5);
+      doc.text(`${pct}%`, x+weekColW/2, y+9, {align:'center', maxWidth:weekColW-2});
     });
-    y+=rowH+2;
+    y += rowH+2;
   }
 
-  // Footer
-  const pc=doc.getNumberOfPages();
+  // ── Footer on all pages ───────────────
+  const pc = doc.getNumberOfPages();
   for(let p=1;p<=pc;p++){
     doc.setPage(p);
     doc.setFillColor(...h2r(BG)); doc.rect(0,PH-8,PW,8,'F');
     doc.setFontSize(6); doc.setFont('helvetica','normal'); doc.setTextColor(...h2r(FG));
-    doc.text(proj.name,14,PH-3);
-    doc.text(`Page ${p} of ${pc}`,PW-14,PH-3,{align:'right'});
+    doc.text(proj.name, 14, PH-3);
+    doc.text(`${fmtKey(fromKey)} – ${fmtKey(toKey)}`, PW/2, PH-3, {align:'center'});
+    doc.text(`Page ${p} of ${pc}`, PW-14, PH-3, {align:'right'});
   }
 
-  updatePDFProgress('Saving…',95);
-  await new Promise(r=>setTimeout(r,80));
+  updatePDFProgress('Saving…', 95);
+  await new Promise(r => setTimeout(r, 80));
 
-  const filename=proj.name.replace(/[^a-z0-9]/gi,'_')+'_6week_schedule.pdf';
-  const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
+  const filename = proj.name.replace(/[^a-z0-9]/gi,'_') + '_schedule.pdf';
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
   hidePDFProgress();
 
   if(isIOS){
-    const blob=doc.output('blob');
-    const url=URL.createObjectURL(blob);
-    const ov=document.createElement('div');
-    ov.style.cssText='position:fixed;inset:0;z-index:700;background:rgba(0,0,0,0.8);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px;';
-    ov.innerHTML=`<div style="background:var(--surface);border:1px solid var(--border2);border-radius:16px;padding:24px;max-width:320px;text-align:center;">
+    const blob = doc.output('blob');
+    const url = URL.createObjectURL(blob);
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:700;background:rgba(0,0,0,0.8);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px';
+    ov.innerHTML=`<div style="background:var(--surface);border:1px solid var(--border2);border-radius:16px;padding:24px;max-width:320px;text-align:center">
       <div style="font-size:36px;margin-bottom:10px">📅</div>
       <div style="font-size:15px;font-weight:600;margin-bottom:8px">Schedule PDF Ready</div>
-      <div style="font-size:12px;color:var(--text2);margin-bottom:18px;line-height:1.6">Tap <strong style="color:var(--text)">Open PDF</strong> then Share ⬆ → Save to Files</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:18px;line-height:1.6">Tap <strong>Open PDF</strong> then Share ⬆ → Save to Files</div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <button onclick="window.open('${url}','_blank');this.closest('div[style]').remove();"
-          style="background:var(--green);color:#000;border:none;border-radius:10px;padding:12px;font-family:var(--mono);font-size:13px;font-weight:700;cursor:pointer;">Open PDF ↗</button>
-        <button onclick="this.closest('div[style]').remove();"
-          style="background:var(--surface2);color:var(--text2);border:1px solid var(--border);border-radius:10px;padding:10px;font-family:var(--mono);font-size:12px;cursor:pointer;">Cancel</button>
+        <button onclick="window.open('${url}','_blank');this.closest('div[style]').remove()"
+          style="background:var(--green);color:#000;border:none;border-radius:10px;padding:12px;font-family:var(--mono);font-size:13px;font-weight:700;cursor:pointer">Open PDF ↗</button>
+        <button onclick="this.closest('div[style]').remove()"
+          style="background:var(--surface2);color:var(--text2);border:1px solid var(--border);border-radius:10px;padding:10px;font-family:var(--mono);font-size:12px;cursor:pointer">Cancel</button>
       </div></div>`;
     document.body.appendChild(ov);
   } else {
     doc.save(filename);
-    showToast('✓ Schedule PDF Downloaded','green');
+    showToast('✓ Schedule PDF Downloaded', 'green');
   }
 }
 
