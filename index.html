@@ -3804,39 +3804,33 @@ function _migrateLegacySchedule(proj) {
 }
 
 // ── Compute full timeline extent ──────────
+// ONLY uses actual schedule entries — never item date fields
+// (those can be years out from work order imports and cause infinite loops)
+// Hard cap: max 52 weeks before current, max 26 weeks after current
 function _getProjectWeekExtent(proj) {
   const cur = currentWeekKey();
+  const hardEarliest = addWeeks(cur, -52); // never go more than 1 year back
+  const hardLatest   = addWeeks(cur, 26);  // never go more than 6 months forward
   let earliest = cur, latest = addWeeks(cur, 5);
 
-  // Scan schedule keys
+  // Only scan actual entered schedule cells — not item metadata dates
   Object.keys(proj.schedule || {}).forEach(key => {
     const m = key.match(/(\d{4}-W\d{2})$/);
     if (!m) return;
     const wk = m[1];
+    // Ignore any key outside the hard caps (safety guard)
+    if (weekCmp(wk, hardEarliest) < 0 || weekCmp(wk, hardLatest) > 0) return;
     if (weekCmp(wk, earliest) < 0) earliest = wk;
     if (weekCmp(wk, latest) > 0) latest = wk;
   });
 
-  // Also check item planned dates
-  (proj.items || []).forEach(item => {
-    ['plannedStart','plannedCritical','deliveryDate'].forEach(field => {
-      const v = item[field];
-      if (!v) return;
-      try {
-        const d = new Date(v + 'T00:00:00');
-        if (!isNaN(d)) {
-          const wk = isoWeekKey(d);
-          if (weekCmp(wk, earliest) < 0) earliest = wk;
-          if (weekCmp(wk, latest) > 0) latest = wk;
-        }
-      } catch(e){}
-    });
-  });
-
   // Ensure at least 6 weeks visible beyond current
   if (weekCmp(addWeeks(cur, 5), latest) > 0) latest = addWeeks(cur, 5);
-  // Ensure earliest is at most 4 weeks before current for fresh projects
+  // Never go earlier than hard cap
+  if (weekCmp(earliest, hardEarliest) < 0) earliest = hardEarliest;
+  // If no schedule entries exist yet, default to current + 11 weeks
   if (weekCmp(earliest, cur) > 0) earliest = cur;
+  if (weekCmp(latest, addWeeks(cur, 11)) < 0) latest = addWeeks(cur, 11);
 
   return { earliest, latest };
 }
@@ -3918,9 +3912,11 @@ function buildScheduleView(pid) {
     const { earliest, latest } = _getProjectWeekExtent(proj);
     weekKeys = [];
     let wk = earliest;
-    while (weekCmp(wk, latest) <= 0) {
+    let safety = 0;
+    while (weekCmp(wk, latest) <= 0 && safety < 80) { // hard cap: 80 weeks max
       weekKeys.push(wk);
       wk = addWeeks(wk, 1);
+      safety++;
     }
   } else {
     // 6-week sliding window
@@ -4528,6 +4524,7 @@ async function exportSchedulePDF(pid, fromKey, toKey, inclLabor) {
     showToast('✓ Schedule PDF Downloaded', 'green');
   }
 }
+
 
 // ══════════════════════════════════════════
 // ENVIRONMENTAL CONDITIONS VIEW
