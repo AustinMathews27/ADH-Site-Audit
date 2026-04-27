@@ -1955,6 +1955,7 @@ async function _mergeCloudIntoLocal(cloudData) {
       store.contacts = [...mergedIds].map(id => localById.get(id) || cloudById.get(id));
     }
   }
+} 
 async function _pollForRemoteChanges() {
   if (!navigator.onLine) return;
   try {
