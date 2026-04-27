@@ -1372,6 +1372,33 @@ input[type="radio"] {
 @keyframes spin { to { transform:rotate(360deg); } }
 
 /* AI Assistant Styles */
+/* ── MANPOWER TRACKING v1.0 ── */
+
+/* Labor log panel inside SI editor */
+#labor-log-panel { margin-top: 4px; }
+
+/* Manpower dashboard column header alignment */
+.mp-table-header {
+  display: grid;
+  grid-template-columns: 100px 1fr 80px 80px 80px 140px 36px;
+  background: var(--surface2);
+  border-bottom: 2px solid var(--border);
+}
+
+/* Number inputs in labor log form — hide spinners for cleaner look */
+input[type="number"].mp-input::-webkit-inner-spin-button,
+input[type="number"].mp-input::-webkit-outer-spin-button {
+  opacity: 0.4;
+}
+
+/* Burn bar animation */
+@keyframes burnBarIn {
+  from { width: 0%; }
+}
+.mp-burn-bar {
+  animation: burnBarIn 0.5s ease;
+}
+
 /* ── SCHEDULE GRID v2.0 ── */
 .sched-cell {
   padding: 7px 9px;
@@ -1494,6 +1521,7 @@ body.theme-dark .sched-current-week {
     <div id="v-schedule" style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
     <div id="v-toolbox"  style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
     <div id="v-awi"      style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
+    <div id="v-manpower" style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
   </div>
 </div>
 
@@ -2125,7 +2153,7 @@ async function _initStore() {
     // Ensure towerWork field exists on all SI items
     (p.items || []).forEach(i => { if (!i.towerWork) i.towerWork = { enabled:false, rooms:[] }; });
   });
-
+_migrateManpower(store);
   window.contactCategoryFilter = 'All';
   window.contactProjectFilter  = 'All';
   window.importMenuOpen        = false;
@@ -2394,6 +2422,10 @@ function renderNavBar(r) {
     crumbs.push(`<span class="crumb-sep">›</span>`);
     crumbs.push(`<span class="crumb active">📅 6-Week Schedule</span>`);
   }
+  if (r.view==='manpower') {
+    crumbs.push(`<span class="crumb-sep">›</span>`);
+    crumbs.push(`<span class="crumb active">👷 Manpower</span>`);
+  }
   if (r.view==='contacts') {
     crumbs.push(`<span class="crumb-sep">›</span>`);
     crumbs.push(`<span class="crumb active">📇 Contact Book</span>`);
@@ -2544,6 +2576,7 @@ function renderRight(r) {
   else if (r.view==='awi')     { buildAWIView();     show('v-awi'); }
   else if (r.view==='env') { buildEnvView(r.projectId); show('v-env'); }
   else if (r.view==='schedule') { buildScheduleView(r.projectId); show('v-schedule'); }
+  else if (r.view==='manpower') { buildManpowerView(r.projectId); show('v-manpower'); }
   else if (r.view==='si') { buildSIEditor(r.projectId,r.siId); show('v-si'); }
   else if (r.view==='project'&&!r.siId&&!r.envMode) { buildProjectView(r.projectId); show('v-project'); }
   else if (r.view==='folder'&&!r.projectId) { buildFolderView(r.folderId); show('v-folder'); }
@@ -3407,6 +3440,11 @@ function buildProjectView(pid) {
         <div class="action-body"><div class="action-title">6-Week Look Ahead</div><div class="action-desc">Schedule & export separately from audit</div></div>
         <div class="action-arrow">›</div>
       </div>
+      <div class="action-row" onclick="navToManpower('${pid}')">
+        <div class="action-icon" style="background:rgba(34,197,94,0.1)">👷</div>
+        <div class="action-body"><div class="action-title">Manpower Tracking</div><div class="action-desc">Daily labor log & budget burn-down per SI</div></div>
+        <div class="action-arrow">›</div>
+      </div>
       <div class="action-row" onclick="navToEnv('${pid}')">
         <div class="action-icon" style="background:rgba(52,211,153,0.1)">🌡️</div>
         <div class="action-body"><div class="action-title">Environmental Conditions</div><div class="action-desc">Temperature & humidity charts from sensor data</div></div>
@@ -3604,6 +3642,12 @@ function buildSIEditor(pid,sid) {
         <div class="field-group">
             <div class="field-label">Due Date</div>
             <input class="field-input" id="due-input" type="date" value="${item.dueDate}" onchange="scheduleAutoSave('${pid}','${sid}')" />
+        </div>
+      </div>
+       <div class="field-group">
+        <div class="field-label">Labor Log</div>
+        <div id="labor-log-panel-${sid}">
+          ${_buildLaborLogPanelHTML(pid, sid)}
         </div>
       </div>
       <div class="field-group">
@@ -8000,6 +8044,596 @@ window.deleteTowerRoom = function(pid, sid, roomId) {
   markAsDirty(sid); save();
   _refreshTowerPanel(pid, sid);
 };
+// ══════════════════════════════════════════
+// MANPOWER TRACKING  v1.0
+// Option A — Daily log per SI (collapsible in SI editor)
+// Option C — Manpower dashboard (project-level view)
+// ══════════════════════════════════════════
+
+// ── DATA HELPERS ─────────────────────────
+
+/** Ensure laborEntries array exists on an item */
+function _mpEnsure(item) {
+  if (!item.laborEntries) item.laborEntries = [];
+}
+
+/** Total hours logged for an item */
+function _mpTotalLogged(item) {
+  _mpEnsure(item);
+  return item.laborEntries.reduce((sum, e) => sum + (e.hours || 0), 0);
+}
+
+/** Remaining hours for an item (null if no estimate) */
+function _mpRemaining(item) {
+  if (item.laborHours == null) return null;
+  return Math.max(0, item.laborHours - _mpTotalLogged(item));
+}
+
+/** Burn percent 0-100+ */
+function _mpBurnPct(item) {
+  if (!item.laborHours) return 0;
+  return Math.round((_mpTotalLogged(item) / item.laborHours) * 100);
+}
+
+/** Color based on burn % */
+function _mpColor(pct) {
+  if (pct >= 100) return '#ef4444';
+  if (pct >= 80)  return '#f97316';
+  if (pct >= 50)  return '#fbbf24';
+  return '#22c55e';
+}
+
+/** Today's date as YYYY-MM-DD */
+function _todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Format YYYY-MM-DD as M/D/YY */
+function _fmtDate(iso) {
+  if (!iso) return '—';
+  const [y, m, d] = iso.split('-');
+  return `${parseInt(m)}/${parseInt(d)}/${y.slice(2)}`;
+}
+
+// ── ENSURE FIELD ON ALL ITEMS (called in _initStore migration) ───
+function _migrateManpower(store) {
+  store.projects.forEach(p => {
+    (p.items || []).forEach(i => { _mpEnsure(i); });
+  });
+}
+
+// ══════════════════════════════════════════
+// OPTION A — COLLAPSIBLE LABOR LOG IN SI EDITOR
+// ══════════════════════════════════════════
+
+/** Build the collapsible labor log panel HTML */
+function _buildLaborLogPanelHTML(pid, sid) {
+  const item = getSI(pid, sid);
+  if (!item) return '';
+  _mpEnsure(item);
+
+  const logged    = _mpTotalLogged(item);
+  const remaining = _mpRemaining(item);
+  const pct       = _mpBurnPct(item);
+  const color     = _mpColor(pct);
+  const hasEst    = item.laborHours != null;
+  const entries   = [...item.laborEntries].sort((a, b) => b.date.localeCompare(a.date));
+  const isOpen    = item._laborLogOpen || false;
+
+  // Progress bar (only if estimate exists)
+  const progressHTML = hasEst ? `
+    <div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+        <span style="font-family:var(--mono);font-size:10px;color:var(--text2)">
+          <span style="color:${color};font-weight:700">${logged}h logged</span>
+          ${remaining !== null ? ` · <span style="color:var(--text3)">${remaining}h remaining</span>` : ''}
+          · ${item.laborHours}h estimated
+        </span>
+        <span style="font-family:var(--mono);font-size:10px;font-weight:700;color:${color}">${pct}%</span>
+      </div>
+      <div style="height:6px;background:var(--surface3);border-radius:3px;overflow:hidden">
+        <div style="height:100%;width:${Math.min(pct,100)}%;background:${color};border-radius:3px;transition:width 0.4s ease"></div>
+      </div>
+      ${pct >= 100 ? `<div style="font-family:var(--mono);font-size:9px;color:#ef4444;margin-top:4px">⚠ Budget exceeded by ${logged - item.laborHours}h</div>` : ''}
+    </div>` : `
+    <div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-bottom:10px">
+      No labor estimate set — edit SI to add estimated hours
+    </div>`;
+
+  // Log entries list
+  const entriesHTML = entries.length === 0
+    ? `<div style="text-align:center;padding:14px;font-size:11px;color:var(--text3)">No entries yet — log the first day below</div>`
+    : entries.map(e => {
+        const entryTotal = (e.workers || 0) * (e.hours || 0);
+        return `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:5px">
+          <div style="flex:0 0 60px;font-family:var(--mono);font-size:10px;color:var(--text3)">${_fmtDate(e.date)}</div>
+          <div style="flex:1;display:flex;gap:12px;align-items:center">
+            <span style="font-size:11px">👷 <strong>${e.workers}</strong> workers</span>
+            <span style="font-size:11px">⏱ <strong>${e.hours}h</strong>/each</span>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--accent);font-weight:700">= ${entryTotal}h</span>
+          </div>
+          ${e.note ? `<div style="font-size:10px;color:var(--text3);font-style:italic;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e.note}">"${e.note}"</div>` : ''}
+          <button onclick="deleteLaborEntry('${pid}','${sid}','${e.id}')"
+            style="width:22px;height:22px;border-radius:5px;border:none;background:none;color:var(--text3);cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.12s"
+            onmouseover="this.style.background='var(--red-dim)';this.style.color='var(--red)'"
+            onmouseout="this.style.background='none';this.style.color='var(--text3)'">✕</button>
+        </div>`;
+      }).join('');
+
+  // Quick-add form
+  const formHTML = `
+    <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:6px">
+      <div style="font-size:9px;font-family:var(--mono);color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Log a Day</div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:flex-end">
+        <div style="display:flex;flex-direction:column;gap:3px">
+          <label style="font-size:9px;font-family:var(--mono);color:var(--text3)">DATE</label>
+          <input type="date" id="mp-date-${sid}" value="${_todayISO()}"
+            style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:6px 9px;font-size:12px;color:var(--text);outline:none;width:140px"
+            onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'" />
+        </div>
+        <div style="display:flex;flex-direction:column;gap:3px">
+          <label style="font-size:9px;font-family:var(--mono);color:var(--text3)">WORKERS</label>
+          <input type="number" id="mp-workers-${sid}" min="1" max="99" placeholder="2"
+            style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:6px 9px;font-size:12px;color:var(--text);outline:none;width:76px;text-align:center"
+            onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'" />
+        </div>
+        <div style="display:flex;flex-direction:column;gap:3px">
+          <label style="font-size:9px;font-family:var(--mono);color:var(--text3)">HRS/WORKER</label>
+          <input type="number" id="mp-hours-${sid}" min="0.5" max="24" step="0.5" placeholder="8"
+            style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:6px 9px;font-size:12px;color:var(--text);outline:none;width:88px;text-align:center"
+            onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'" />
+        </div>
+        <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:100px">
+          <label style="font-size:9px;font-family:var(--mono);color:var(--text3)">NOTE (optional)</label>
+          <input type="text" id="mp-note-${sid}" placeholder="e.g. Framing complete"
+            style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:6px 9px;font-size:12px;color:var(--text);outline:none;"
+            onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
+            onkeydown="if(event.key==='Enter')addLaborEntry('${pid}','${sid}')" />
+        </div>
+        <button onclick="addLaborEntry('${pid}','${sid}')"
+          style="padding:7px 14px;background:var(--accent);color:#000;border:none;border-radius:7px;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;align-self:flex-end;transition:opacity 0.15s"
+          onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">＋ Log</button>
+      </div>
+      <div id="mp-preview-${sid}" style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:6px;min-height:16px"></div>
+    </div>`;
+
+  if (!isOpen) {
+    // Collapsed state — show summary badge
+    const badgeColor = hasEst ? _mpColor(pct) : 'var(--text3)';
+    const badgeText = hasEst
+      ? `${logged}h / ${item.laborHours}h · ${pct}%`
+      : `${logged}h logged · no estimate`;
+    return `
+      <button onclick="toggleLaborLog('${pid}','${sid}')"
+        style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;cursor:pointer;text-align:left;transition:all 0.15s"
+        onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+        <span style="font-size:14px">⏱</span>
+        <span style="font-family:var(--mono);font-size:11px;font-weight:700;color:var(--text2)">Labor Log</span>
+        ${entries.length > 0 ? `
+          <span style="font-family:var(--mono);font-size:9px;background:var(--surface3);border:1px solid var(--border);border-radius:4px;padding:1px 7px;color:${badgeColor};font-weight:600">${badgeText}</span>
+          ${hasEst ? `<div style="flex:1;max-width:120px;height:4px;background:var(--surface3);border-radius:2px;overflow:hidden"><div style="height:100%;width:${Math.min(pct,100)}%;background:${badgeColor};border-radius:2px"></div></div>` : ''}
+        ` : `<span style="font-size:10px;color:var(--text3)">No entries yet</span>`}
+        <span style="margin-left:auto;font-size:10px;color:var(--text3)">▼</span>
+      </button>`;
+  }
+
+  return `
+    <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">
+      <button onclick="toggleLaborLog('${pid}','${sid}')"
+        style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(37,99,235,0.08);border:none;cursor:pointer;text-align:left"
+        onmouseover="this.style.background='rgba(37,99,235,0.12)'" onmouseout="this.style.background='rgba(37,99,235,0.08)'">
+        <span style="font-size:14px">⏱</span>
+        <span style="font-family:var(--mono);font-size:11px;font-weight:700;color:var(--accent)">Labor Log</span>
+        <span style="font-family:var(--mono);font-size:9px;color:var(--text3)">${entries.length} entr${entries.length===1?'y':'ies'}</span>
+        <span style="margin-left:auto;font-size:10px;color:var(--text3)">▲</span>
+      </button>
+      <div style="padding:12px 14px;background:var(--surface)">
+        ${progressHTML}
+        <div id="mp-entries-${sid}">${entriesHTML}</div>
+        ${formHTML}
+      </div>
+    </div>`;
+}
+
+/** Toggle open/closed state */
+window.toggleLaborLog = function(pid, sid) {
+  const item = getSI(pid, sid); if(!item) return;
+  item._laborLogOpen = !item._laborLogOpen;
+  _refreshLaborLog(pid, sid);
+};
+
+/** Refresh just the labor log panel without rebuilding the whole SI editor */
+function _refreshLaborLog(pid, sid) {
+  const el = document.getElementById(`labor-log-panel-${sid}`);
+  if (el) el.innerHTML = _buildLaborLogPanelHTML(pid, sid);
+}
+
+/** Add a labor entry */
+window.addLaborEntry = function(pid, sid) {
+  const item = getSI(pid, sid); if(!item) return;
+  _mpEnsure(item);
+
+  const dateEl    = document.getElementById(`mp-date-${sid}`);
+  const workersEl = document.getElementById(`mp-workers-${sid}`);
+  const hoursEl   = document.getElementById(`mp-hours-${sid}`);
+  const noteEl    = document.getElementById(`mp-note-${sid}`);
+
+  const date    = dateEl?.value;
+  const workers = parseInt(workersEl?.value);
+  const hours   = parseFloat(hoursEl?.value);
+  const note    = noteEl?.value.trim() || '';
+
+  if (!date)          return showToast('Select a date', 'red');
+  if (!workers || workers < 1) return showToast('Enter number of workers', 'red');
+  if (!hours || hours <= 0)    return showToast('Enter hours per worker', 'red');
+
+  syncEditorToStore(pid, sid);
+
+  item.laborEntries.push({
+    id:      'lbr_' + Date.now() + '_' + Math.random().toString(36).slice(2,5),
+    date,
+    workers,
+    hours,
+    note,
+    total:   workers * hours
+  });
+
+  markAsDirty(sid); save();
+  _refreshLaborLog(pid, sid);
+  // Also refresh any open manpower dashboard
+  _refreshManpowerDashboardIfOpen(pid);
+
+  const total = workers * hours;
+  showToast(`✓ ${total}h logged (${workers} workers × ${hours}h)`, 'green');
+
+  // Clear inputs except date
+  if(workersEl) workersEl.value = '';
+  if(hoursEl)   hoursEl.value  = '';
+  if(noteEl)    noteEl.value   = '';
+};
+
+/** Delete a labor entry */
+window.deleteLaborEntry = function(pid, sid, entryId) {
+  const item = getSI(pid, sid); if(!item) return;
+  _mpEnsure(item);
+  syncEditorToStore(pid, sid);
+  item.laborEntries = item.laborEntries.filter(e => e.id !== entryId);
+  markAsDirty(sid); save();
+  _refreshLaborLog(pid, sid);
+  _refreshManpowerDashboardIfOpen(pid);
+  showToast('Entry deleted');
+};
+
+/** Live preview of hours total as user types */
+window.updateMPPreview = function(sid) {
+  const workers = parseFloat(document.getElementById(`mp-workers-${sid}`)?.value) || 0;
+  const hours   = parseFloat(document.getElementById(`mp-hours-${sid}`)?.value)   || 0;
+  const el      = document.getElementById(`mp-preview-${sid}`);
+  if(!el) return;
+  if(workers && hours) {
+    el.textContent = `= ${workers * hours}h total will be logged`;
+    el.style.color = 'var(--accent)';
+  } else {
+    el.textContent = '';
+  }
+};
+
+// ══════════════════════════════════════════
+// OPTION C — MANPOWER DASHBOARD VIEW
+// ══════════════════════════════════════════
+
+function navToManpower(pid) {
+  const cur = route();
+  stack = stack.filter(r => r.view !== 'manpower' && r.view !== 'si' && r.view !== 'env' && r.view !== 'schedule');
+  stack.push({ view: 'manpower', folderId: cur.folderId || '', projectId: pid });
+  render();
+}
+
+function buildManpowerView(pid) {
+  const proj = getProject(pid); if(!proj) return;
+  const el   = document.getElementById('v-manpower');
+
+  // Ensure all items have laborEntries
+  (proj.items || []).forEach(i => _mpEnsure(i));
+
+  // ── Project-wide totals ───────────────
+  const totalEst    = proj.items.reduce((s, i) => s + (i.laborHours || 0), 0);
+  const totalLogged = proj.items.reduce((s, i) => s + _mpTotalLogged(i), 0);
+  const totalRem    = Math.max(0, totalEst - totalLogged);
+  const projPct     = totalEst > 0 ? Math.round((totalLogged / totalEst) * 100) : 0;
+  const projColor   = _mpColor(projPct);
+
+  // ── Items sorted by most recently logged ──
+  const items = [...proj.items].sort((a, b) => {
+    const lastA = a.laborEntries?.slice().sort((x,y) => y.date.localeCompare(x.date))[0]?.date || '';
+    const lastB = b.laborEntries?.slice().sort((x,y) => y.date.localeCompare(x.date))[0]?.date || '';
+    return lastB.localeCompare(lastA);
+  });
+
+  // ── All entries across project (for activity feed) ──
+  const allEntries = [];
+  proj.items.forEach(item => {
+    (item.laborEntries || []).forEach(e => {
+      allEntries.push({ ...e, itemNum: item.num, itemTitle: item.title, itemId: item.id });
+    });
+  });
+  allEntries.sort((a, b) => b.date.localeCompare(a.date));
+  const recentEntries = allEntries.slice(0, 10);
+
+  // ── Stats summary strip ───────────────
+  const summaryHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:13px 14px">
+        <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--text)">${totalEst}h</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">Total Estimated</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:13px 14px">
+        <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:${projColor}">${totalLogged}h</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">Hours Logged</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:13px 14px">
+        <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--text3)">${totalRem}h</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">Remaining</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:13px 14px">
+        <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:${projColor}">${projPct}%</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">Budget Used</div>
+        <div style="height:4px;background:var(--surface3);border-radius:2px;overflow:hidden;margin-top:6px">
+          <div style="height:100%;width:${Math.min(projPct,100)}%;background:${projColor};border-radius:2px"></div>
+        </div>
+      </div>
+    </div>`;
+
+  // ── SI table ──────────────────────────
+  const tableRowsHTML = items.map(item => {
+    const logged  = _mpTotalLogged(item);
+    const pct     = _mpBurnPct(item);
+    const color   = _mpColor(pct);
+    const hasEst  = item.laborHours != null;
+    const rem     = _mpRemaining(item);
+    const entries = item.laborEntries || [];
+    const lastEntry = entries.slice().sort((a,b) => b.date.localeCompare(a.date))[0];
+
+    return `
+      <div style="display:grid;grid-template-columns:100px 1fr 80px 80px 80px 140px 36px;gap:0;border-bottom:1px solid var(--border);align-items:center;min-height:48px;transition:background 0.1s"
+        onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+
+        <div style="padding:8px 12px;font-family:var(--mono);font-size:10px;font-weight:700;color:var(--accent)">${item.num}</div>
+
+        <div style="padding:8px 10px">
+          <div style="font-size:11px;font-weight:500;color:var(--text)">${item.title}</div>
+          ${lastEntry ? `<div style="font-size:9px;color:var(--text3);font-family:var(--mono);margin-top:1px">Last: ${_fmtDate(lastEntry.date)}</div>` : ''}
+        </div>
+
+        <div style="padding:8px 10px;font-family:var(--mono);font-size:11px;color:var(--text3);text-align:right">
+          ${hasEst ? item.laborHours+'h' : '—'}
+        </div>
+
+        <div style="padding:8px 10px;font-family:var(--mono);font-size:11px;font-weight:600;color:${logged>0?color:'var(--text3)'};text-align:right">
+          ${logged}h
+        </div>
+
+        <div style="padding:8px 10px;font-family:var(--mono);font-size:11px;color:${rem===0&&hasEst?'#ef4444':'var(--text3)'};text-align:right">
+          ${hasEst ? (rem+'h') : '—'}
+        </div>
+
+        <div style="padding:8px 12px">
+          ${hasEst ? `
+            <div style="display:flex;align-items:center;gap:6px">
+              <div style="flex:1;height:5px;background:var(--surface3);border-radius:3px;overflow:hidden">
+                <div style="height:100%;width:${Math.min(pct,100)}%;background:${color};border-radius:3px"></div>
+              </div>
+              <span style="font-family:var(--mono);font-size:9px;color:${color};font-weight:600;flex-shrink:0">${pct}%</span>
+            </div>` : `<span style="font-size:9px;color:var(--text3)">no estimate</span>`}
+        </div>
+
+        <div style="padding:4px 8px">
+          <button onclick="showQuickLogModal('${pid}','${item.id}')"
+            style="width:28px;height:28px;border-radius:7px;border:1px solid var(--border);background:var(--surface2);color:var(--accent);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all 0.12s"
+            title="Log hours for this SI"
+            onmouseover="this.style.background='var(--accent-dim)';this.style.borderColor='var(--accent)'"
+            onmouseout="this.style.background='var(--surface2)';this.style.borderColor='var(--border)'">＋</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  const noEstItems = proj.items.filter(i => i.laborHours == null).length;
+
+  // ── Recent activity feed ──────────────
+  const activityHTML = recentEntries.length === 0
+    ? `<div style="text-align:center;padding:20px;font-size:12px;color:var(--text3)">No labor logged yet on this project</div>`
+    : recentEntries.map(e => `
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--border)">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text3);flex-shrink:0;width:56px">${_fmtDate(e.date)}</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--accent);font-weight:700;flex-shrink:0;width:64px">${e.itemNum.replace(/^SI\s+/,'SI ')}</div>
+          <div style="font-size:11px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.itemTitle}</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
+            <span style="font-size:11px;color:var(--text2)">👷 ${e.workers}</span>
+            <span style="font-size:11px;color:var(--text2)">× ${e.hours}h</span>
+            <span style="font-family:var(--mono);font-size:10px;font-weight:700;color:var(--accent)">${e.total || e.workers*e.hours}h</span>
+          </div>
+          ${e.note ? `<div style="font-size:10px;color:var(--text3);font-style:italic;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">"${e.note}"</div>` : ''}
+          <button onclick="deleteAnyLaborEntry('${pid}','${e.itemId}','${e.id}')"
+            style="width:20px;height:20px;border-radius:4px;border:none;background:none;color:var(--text3);cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.12s"
+            onmouseover="this.style.background='var(--red-dim)';this.style.color='var(--red)'"
+            onmouseout="this.style.background='none';this.style.color='var(--text3)'">✕</button>
+        </div>`).join('');
+
+  el.innerHTML = `
+    <div style="flex:1;overflow-y:auto;padding:20px">
+
+      <!-- Header -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
+        <div style="font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px">
+          👷 Manpower Tracking
+          <span style="font-size:11px;color:var(--text3);font-weight:400;font-family:var(--mono)">${proj.name}</span>
+        </div>
+        <button onclick="showQuickLogModal('${pid}',null)"
+          style="display:flex;align-items:center;gap:6px;padding:8px 16px;background:var(--accent);color:#000;border:none;border-radius:9px;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;transition:opacity 0.15s"
+          onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+          ＋ Log Hours
+        </button>
+      </div>
+
+      <!-- Summary strip -->
+      ${summaryHTML}
+
+      ${noEstItems > 0 ? `
+        <div style="padding:8px 12px;background:var(--yellow-dim);border:1px solid rgba(217,119,6,0.3);border-radius:8px;font-size:11px;color:var(--yellow);margin-bottom:14px;display:flex;align-items:center;gap:8px">
+          <span>⚠</span> ${noEstItems} SI item${noEstItems!==1?'s':''} have no labor estimate set — edit those items to add estimated hours
+        </div>` : ''}
+
+      <!-- SI table -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:20px">
+        <!-- Table header -->
+        <div style="display:grid;grid-template-columns:100px 1fr 80px 80px 80px 140px 36px;background:var(--surface2);border-bottom:2px solid var(--border)">
+          ${['SI#','Description','Est.','Logged','Rem.','Progress',''].map((h,i) => `
+            <div style="padding:8px ${i===0?'12px':'10px'};font-size:8px;font-family:var(--mono);font-weight:700;letter-spacing:0.8px;color:var(--text3);text-transform:uppercase;${i>=2&&i<=4?'text-align:right':''}">${h}</div>`).join('')}
+        </div>
+        ${tableRowsHTML || `<div style="padding:24px;text-align:center;color:var(--text3);font-size:12px">No SI items on this project</div>`}
+      </div>
+
+      <!-- Recent activity -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden">
+        <div style="padding:10px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10px;font-family:var(--mono);font-weight:700;letter-spacing:0.8px;color:var(--text3);text-transform:uppercase">
+          Recent Activity ${allEntries.length > 10 ? `<span style="font-weight:400;color:var(--text3)">(showing last 10 of ${allEntries.length})</span>` : ''}
+        </div>
+        ${activityHTML}
+      </div>
+
+    </div>`;
+}
+
+/** Quick log modal — works from dashboard (any SI) or SI editor */
+window.showQuickLogModal = function(pid, preselectedSid) {
+  const proj = getProject(pid); if(!proj) return;
+
+  const siOptions = proj.items.map(i =>
+    `<option value="${i.id}" ${i.id===preselectedSid?'selected':''}>${i.num.replace(/^SI\s+/,'SI ')} — ${i.title}</option>`
+  ).join('');
+
+  makeModal('Log Labor Hours', `
+    <div class="field-group">
+      <div class="field-label">Site Item</div>
+      <select class="field-input" id="ql-si" onchange="updateQLEstimate('${pid}')">
+        ${preselectedSid ? '' : `<option value="">— Select SI —</option>`}
+        ${siOptions}
+      </select>
+    </div>
+    <div class="field-row">
+      <div class="field-group">
+        <div class="field-label">Date</div>
+        <input type="date" class="field-input" id="ql-date" value="${_todayISO()}" />
+      </div>
+      <div class="field-group">
+        <div class="field-label">Workers</div>
+        <input type="number" class="field-input" id="ql-workers" min="1" max="99" placeholder="2"
+          oninput="updateQLPreview()" />
+      </div>
+      <div class="field-group">
+        <div class="field-label">Hrs / Worker</div>
+        <input type="number" class="field-input" id="ql-hours" min="0.5" max="24" step="0.5" placeholder="8"
+          oninput="updateQLPreview()" />
+      </div>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Note (optional)</div>
+      <input type="text" class="field-input" id="ql-note" placeholder="e.g. Framing, blocking, trim..." />
+    </div>
+    <div id="ql-preview" style="font-family:var(--mono);font-size:11px;color:var(--text2);padding:9px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;min-height:36px;margin-top:4px"></div>
+    <div id="ql-estimate" style="font-size:10px;color:var(--text3);margin-top:6px"></div>
+  `, () => {
+    const siId   = document.getElementById('ql-si')?.value;
+    const date   = document.getElementById('ql-date')?.value;
+    const workers = parseInt(document.getElementById('ql-workers')?.value);
+    const hours  = parseFloat(document.getElementById('ql-hours')?.value);
+    const note   = document.getElementById('ql-note')?.value.trim() || '';
+
+    if (!siId)              return showToast('Select a site item', 'red');
+    if (!date)              return showToast('Select a date', 'red');
+    if (!workers || workers < 1) return showToast('Enter number of workers', 'red');
+    if (!hours || hours <= 0)    return showToast('Enter hours per worker', 'red');
+
+    const item = getSI(pid, siId); if(!item) return;
+    _mpEnsure(item);
+
+    item.laborEntries.push({
+      id:      'lbr_' + Date.now() + '_' + Math.random().toString(36).slice(2,5),
+      date,
+      workers,
+      hours,
+      note,
+      total:   workers * hours
+    });
+
+    markAsDirty(siId); save(); closeModal();
+
+    // Refresh whichever view is open
+    _refreshLaborLog(pid, siId);
+    _refreshManpowerDashboardIfOpen(pid);
+
+    showToast(`✓ ${workers * hours}h logged on ${item.num}`, 'green');
+  });
+
+  // Init preview
+  setTimeout(() => {
+    updateQLEstimate(pid);
+    document.getElementById('ql-workers')?.focus();
+  }, 100);
+};
+
+window.updateQLPreview = function() {
+  const w = parseFloat(document.getElementById('ql-workers')?.value) || 0;
+  const h = parseFloat(document.getElementById('ql-hours')?.value)   || 0;
+  const el = document.getElementById('ql-preview');
+  if (!el) return;
+  if (w && h) {
+    el.textContent = `${w} workers × ${h}h = ${w*h}h total logged`;
+    el.style.color = 'var(--accent)';
+  } else {
+    el.textContent = 'Enter workers and hours to see total';
+    el.style.color = 'var(--text3)';
+  }
+};
+
+window.updateQLEstimate = function(pid) {
+  const siId = document.getElementById('ql-si')?.value;
+  const el   = document.getElementById('ql-estimate');
+  if (!el || !siId) return;
+  const item = getSI(pid, siId); if(!item) return;
+  _mpEnsure(item);
+  if (item.laborHours == null) {
+    el.textContent = 'No estimate set on this SI';
+  } else {
+    const logged = _mpTotalLogged(item);
+    const rem    = Math.max(0, item.laborHours - logged);
+    const pct    = _mpBurnPct(item);
+    el.textContent = `SI budget: ${item.laborHours}h est · ${logged}h logged · ${rem}h remaining (${pct}% used)`;
+    el.style.color = _mpColor(pct);
+  }
+  updateQLPreview();
+};
+
+/** Delete from dashboard activity feed */
+window.deleteAnyLaborEntry = function(pid, siId, entryId) {
+  const item = getSI(pid, siId); if(!item) return;
+  _mpEnsure(item);
+  item.laborEntries = item.laborEntries.filter(e => e.id !== entryId);
+  markAsDirty(siId); save();
+  _refreshManpowerDashboardIfOpen(pid);
+  _refreshLaborLog(pid, siId);
+  showToast('Entry deleted');
+};
+
+/** Refresh dashboard if currently visible */
+function _refreshManpowerDashboardIfOpen(pid) {
+  const r = route();
+  if (r.view === 'manpower' && r.projectId === pid) {
+    buildManpowerView(pid);
+  }
+}
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // WORK ORDERS XLSX IMPORT  (v1.0)
