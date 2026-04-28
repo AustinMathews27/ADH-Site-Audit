@@ -274,6 +274,30 @@ body.is-offline .offline-banner { display: block; }
 .si-status.on-hold       { background:#f97316;         box-shadow:0 0 4px #f97316; }
 .si-status.out-of-scope  { background:var(--text3); opacity:0.45; }
 
+/* ── BULK ACTIONS ── */
+.si-row-check {
+  width:16px; height:16px; border-radius:4px;
+  border:1.5px solid var(--border); background:var(--surface2);
+  cursor:pointer; display:flex; align-items:center;
+  justify-content:center; font-size:10px; flex-shrink:0;
+  transition:all 0.1s; margin-right:2px;
+}
+.si-row-check.checked { background:var(--accent); border-color:var(--accent); color:#000; }
+.bulk-action-bar {
+  display:none; align-items:center; gap:8px; padding:8px 13px;
+  background:var(--accent-dim); border-top:1px solid var(--border);
+  flex-shrink:0; flex-wrap:wrap;
+}
+.bulk-action-bar.visible { display:flex; }
+.bulk-btn {
+  font-size:9px; font-family:var(--mono); font-weight:700;
+  padding:4px 8px; border-radius:6px; border:1px solid var(--border);
+  background:var(--surface); color:var(--text2); cursor:pointer;
+  transition:all 0.12s; white-space:nowrap;
+}
+.bulk-btn:hover { border-color:var(--accent); color:var(--accent); }
+.bulk-btn.danger:hover { border-color:var(--red); color:var(--red); }
+
 /* ── RIGHT PANEL ── */
 .right-panel { flex:1; display:flex; flex-direction:column; overflow:hidden; }
 
@@ -554,7 +578,81 @@ select.field-input { cursor:pointer; }
 }
 .modal-title { font-size:14px; font-weight:600; }
 .modal-body { padding:16px; max-height:80vh; overflow-y:auto; }
-.modal-footer { padding:10px 16px; border-top:1px solid var(--border); display:flex; gap:7px; }
+.modal-footer {
+  padding:10px 16px;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  border-top:1px solid var(--border); display:flex; gap:7px;
+}
+
+/* ── GLOBAL SEARCH ── */
+.global-search-overlay {
+  position:fixed; inset:0; z-index:900;
+  background:rgba(0,0,0,0.7); backdrop-filter:blur(6px);
+  display:flex; align-items:flex-start; justify-content:center;
+  padding-top:80px; padding:80px 20px 20px;
+}
+.global-search-box {
+  background:var(--surface); border:1px solid var(--border2);
+  border-radius:14px; width:100%; max-width:560px;
+  overflow:hidden; box-shadow:0 24px 60px rgba(0,0,0,0.5);
+}
+.global-search-input-wrap {
+  display:flex; align-items:center; gap:10px; padding:14px 16px;
+  border-bottom:1px solid var(--border);
+}
+.global-search-input-wrap input {
+  flex:1; background:none; border:none; outline:none;
+  font-size:16px; color:var(--text); font-family:var(--sans);
+}
+.global-search-input-wrap input::placeholder { color:var(--text3); }
+.global-search-results { max-height:420px; overflow-y:auto; }
+.gs-section-label {
+  font-size:9px; font-weight:700; letter-spacing:1.2px;
+  text-transform:uppercase; color:var(--text3); font-family:var(--mono);
+  padding:10px 16px 4px;
+}
+.gs-result-row {
+  display:flex; align-items:center; gap:10px;
+  padding:9px 16px; cursor:pointer; transition:background 0.1s;
+}
+.gs-result-row:hover, .gs-result-row.active { background:var(--accent-dim); }
+.gs-result-icon { font-size:16px; flex-shrink:0; width:24px; text-align:center; }
+.gs-result-main { flex:1; min-width:0; }
+.gs-result-title { font-size:13px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.gs-result-sub { font-size:10px; color:var(--text3); font-family:var(--mono); margin-top:1px; }
+.gs-result-badge { font-size:9px; font-family:var(--mono); padding:2px 7px; border-radius:4px; background:var(--surface2); border:1px solid var(--border); color:var(--text3); flex-shrink:0; }
+.gs-empty { padding:32px; text-align:center; color:var(--text3); font-size:13px; }
+.gs-shortcut { font-family:var(--mono); font-size:10px; color:var(--text3); background:var(--surface2); border:1px solid var(--border); border-radius:5px; padding:2px 7px; }
+
+/* ── ANNOTATION ── */
+.annotation-overlay {
+  position:fixed; inset:0; z-index:950;
+  background:#000; display:flex; flex-direction:column;
+}
+.annotation-toolbar {
+  display:flex; align-items:center; gap:8px; padding:10px 14px;
+  background:#1a1a1a; border-bottom:1px solid #333; flex-shrink:0; flex-wrap:wrap;
+}
+.ann-tool-btn {
+  display:flex; align-items:center; gap:5px;
+  padding:6px 12px; border-radius:8px; border:1px solid #444;
+  background:#2a2a2a; color:#e4e7ef; font-size:11px; font-weight:600;
+  font-family:var(--mono); cursor:pointer; transition:all 0.12s; white-space:nowrap;
+}
+.ann-tool-btn:hover { border-color:#3db8f5; color:#3db8f5; }
+.ann-tool-btn.active { background:rgba(61,184,245,0.2); border-color:#3db8f5; color:#3db8f5; }
+.ann-color-btn {
+  width:26px; height:26px; border-radius:50%; border:2px solid transparent;
+  cursor:pointer; transition:all 0.12s; flex-shrink:0;
+}
+.ann-color-btn.active { border-color:#fff; transform:scale(1.2); }
+.ann-canvas-wrap { flex:1; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+#ann-canvas { cursor:crosshair; touch-action:none; max-width:100%; max-height:100%; }
+.ann-text-input {
+  position:absolute; background:rgba(0,0,0,0.7); border:1px solid #3db8f5;
+  color:#fff; font-size:16px; padding:4px 8px; outline:none; border-radius:4px;
+  font-family:var(--sans); min-width:120px;
+}
 
 /* ── SHARE / PDF PANEL ── */
 .share-two-col { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
@@ -982,7 +1080,12 @@ input[type="radio"] {
   .env-threshold-bar { flex-wrap:wrap; gap:8px; }
   .env-threshold-inputs { flex-wrap:wrap; }
   .field-row { flex-direction:column; gap:0; }
-  .modal { max-width:100%; margin:0; border-radius:16px 16px 0 0; }
+  .modal {
+    max-width:100%; margin:0;
+    border-radius:16px 16px 0 0;
+    max-height:92dvh;
+    overflow-y:auto;
+  }
   .modal-overlay { align-items:flex-end; padding:0; }
   .status-pills { flex-wrap:wrap; gap:4px; }
   .edit-header { padding:10px 12px; }
@@ -1481,6 +1584,7 @@ body.theme-dark .sched-current-week {
     <span class="crumb active" onclick="navToRoot()"><img src="logo.png" alt="ADH Audit" class="nav-logo" id="main-logo"></span>
   </div>
   <div class="nav-actions">
+    <div class="btn-icon" onclick="openGlobalSearch()" title="Global Search (⌘K)">⌕</div>
     <div class="btn-icon" onclick="syncChanges()" title="Sync Changes" id="sync-btn">🔄</div>
     <div class="btn-icon" onclick="showThemeModal()" title="Themes">🎨</div>
     <div class="btn-icon" onclick="showShareModal()" title="Share">📤</div>
@@ -1504,6 +1608,15 @@ body.theme-dark .sched-current-week {
       </div>
     </div>
     <div class="list-scroll" id="list-scroll"></div>
+    <div class="bulk-action-bar" id="bulk-bar">
+      <span style="font-family:var(--mono);font-size:9px;color:var(--accent);font-weight:700" id="bulk-count">0 selected</span>
+      <button class="bulk-btn" onclick="bulkSetStatus('completed')">✓ Done</button>
+      <button class="bulk-btn" onclick="bulkSetStatus('not-ready')">✕ Not Ready</button>
+      <button class="bulk-btn" onclick="bulkSetStatus('in-progress')">◑ In Progress</button>
+      <button class="bulk-btn" onclick="bulkSetStatus('punch-ongoing')">◈ Punch</button>
+      <button class="bulk-btn" onclick="bulkSetStatus('pending')">◌ Pending</button>
+      <button class="bulk-btn danger" onclick="clearBulkSelection()">✕ Clear</button>
+    </div>
   </div>
 
   <!-- RIGHT PANEL -->
@@ -1555,6 +1668,69 @@ body.theme-dark .sched-current-week {
 </div>
 
 <script>
+// ── BULK SELECTION ────────────────────
+window._bulkSelected = new Set();
+
+window.toggleBulkSelect = function(pid, siId, e) {
+  e.stopPropagation();
+  if(window._bulkSelected.has(siId)) window._bulkSelected.delete(siId);
+  else window._bulkSelected.add(siId);
+  updateBulkBar();
+  renderLeft(route());
+};
+
+function updateBulkBar() {
+  const bar = document.getElementById('bulk-bar');
+  const cnt = document.getElementById('bulk-count');
+  if(!bar) return;
+  const n = window._bulkSelected.size;
+  bar.classList.toggle('visible', n > 0);
+  if(cnt) cnt.textContent = n + ' selected';
+}
+
+window.bulkSetStatus = function(status) {
+  if(!window._bulkSelected.size) return;
+  const r = route();
+  if(!r.projectId) return;
+  const proj = getProject(r.projectId);
+  if(!proj) return;
+  window._bulkSelected.forEach(siId => {
+    const item = proj.items.find(i => i.id === siId);
+    if(item) { item.status = status; markAsDirty(siId); }
+  });
+  save();
+  window._bulkSelected.clear();
+  updateBulkBar();
+  renderLeft(route());
+  const cur = route();
+  if(cur.view === 'si' && window._bulkSelected.has(cur.siId)) buildSIEditor(cur.projectId, cur.siId);
+  showToast(`✓ ${status} applied`, 'green');
+};
+
+window.clearBulkSelection = function() {
+  window._bulkSelected.clear();
+  updateBulkBar();
+  renderLeft(route());
+};
+
+  // ══════════════════════════════════════════
+//Re-order SI
+// ══════════════════════════════════════════
+window.reorderSI = function(pid, sectionId, siId, dir) {
+  const proj = getProject(pid); if(!proj) return;
+  const sectionItems = proj.items.filter(i => i.sectionId === sectionId);
+  const globalIdx = proj.items.findIndex(i => i.id === siId);
+  const sectionIdx = sectionItems.findIndex(i => i.id === siId);
+  const targetSectionIdx = sectionIdx + dir;
+  if(targetSectionIdx < 0 || targetSectionIdx >= sectionItems.length) return;
+  const targetItem = sectionItems[targetSectionIdx];
+  const targetGlobalIdx = proj.items.findIndex(i => i.id === targetItem.id);
+  // Swap in the main array
+  [proj.items[globalIdx], proj.items[targetGlobalIdx]] = [proj.items[targetGlobalIdx], proj.items[globalIdx]];
+  markProjectDirty(pid); save();
+  renderLeft(route());
+};
+
 // ══════════════════════════════════════════
 // DATA
 // ══════════════════════════════════════════
@@ -2396,7 +2572,7 @@ function renderNavBar(r) {
     }
     path.forEach((f, idx) => {
       crumbs.push(`<span class="crumb-sep">›</span>`);
-      crumbs.push(`<span class="crumb ${r.view==='folder' && idx === path.length-1 ? 'active':''}" onclick="navToFolder('${f.id}')">${f.icon} ${f.name}</span>`);
+      crumbs.push(`<span class="crumb ${r.view==='folder' && idx === path.length-1 ? 'active':''}" onclick="navToFolder('${f.id}')" title="${f.name}">${f.icon} ${f.name}</span>`);
     });
   }
   if (r.projectId) {
@@ -2404,14 +2580,14 @@ function renderNavBar(r) {
     if (p) {
       const isLast = r.view==='project';
       crumbs.push(`<span class="crumb-sep">›</span>`);
-      crumbs.push(`<span class="crumb ${isLast?'active':''}" onclick="navToProject('${p.id}','${r.folderId||''}')">${p.name}</span>`);
+      crumbs.push(`<span class="crumb ${isLast?'active':''}" onclick="navToProject('${p.id}','${r.folderId||''}')" title="${p.name}">${p.name}</span>`);
     }
   }
   if (r.siId) {
     const si = getSI(r.projectId,r.siId);
     if (si) {
       crumbs.push(`<span class="crumb-sep">›</span>`);
-      crumbs.push(`<span class="crumb active">${si.num}</span>`);
+      crumbs.push(`<span class="crumb active" title="${si.num}">${si.num}</span>`);
     }
   }
   if (r.view==='env') {
@@ -2547,7 +2723,11 @@ function renderLeft(r) {
         const twDone = twEnabled ? tw.rooms.filter(r=>r.status==='completed').length : 0;
         const twTotal = twEnabled ? tw.rooms.length : 0;
         const twAllDone = twEnabled && twDone === twTotal;
+        const allItems = proj.items.filter(i=>i.sectionId===item.sectionId);
+        const idx = allItems.findIndex(i=>i.id===item.id);
         html+=`<div class="si-row ${r.siId===item.id?'active':''}" onclick="navToSI('${proj.id}','${item.id}')">
+          <div class="si-row-check ${window._bulkSelected?.has(item.id)?'checked':''}"
+            onclick="toggleBulkSelect('${proj.id}','${item.id}',event)">${window._bulkSelected?.has(item.id)?'✓':''}</div>
           <div class="si-thumb">${thumb}</div>
           <div class="si-info">
             <div class="si-num">
@@ -2555,6 +2735,14 @@ function renderLeft(r) {
               ${twEnabled ? `<span class="tw-badge ${twAllDone?'done':''}" style="margin-left:4px">🏢 ${twDone}/${twTotal}</span>` : ''}
             </div>
             <div class="si-title">${item.title}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px;align-items:center;flex-shrink:0">
+            <button onclick="event.stopPropagation();reorderSI('${proj.id}','${item.sectionId}','${item.id}',-1)"
+              style="width:18px;height:18px;border-radius:4px;border:1px solid var(--border);background:var(--surface2);color:var(--text3);cursor:pointer;font-size:10px;display:flex;align-items:center;justify-content:center;transition:all 0.1s;${idx===0?'opacity:0.25;pointer-events:none':''}"
+              ${idx===0?'disabled':''}>↑</button>
+            <button onclick="event.stopPropagation();reorderSI('${proj.id}','${item.sectionId}','${item.id}',1)"
+              style="width:18px;height:18px;border-radius:4px;border:1px solid var(--border);background:var(--surface2);color:var(--text3);cursor:pointer;font-size:10px;display:flex;align-items:center;justify-content:center;transition:all 0.1s;${idx===allItems.length-1?'opacity:0.25;pointer-events:none':''}"
+              ${idx===allItems.length-1?'disabled':''}>↓</button>
           </div>
           <div class="si-status ${item.status}"></div>
         </div>`;
@@ -3527,7 +3715,11 @@ function buildSIEditor(pid,sid) {
           <img src="${p.data}" />
           <div class="photo-card-overlay">
             <span class="photo-num">${i+1}</span>
-            <button class="photo-del" onclick="event.stopPropagation();deletePhoto('${pid}','${sid}',${i})">✕</button>
+            <div style="display:flex;gap:3px">
+              <button class="photo-del" style="background:rgba(61,184,245,0.55);font-size:8px" 
+                onclick="event.stopPropagation();openAnnotation('${pid}','${sid}',${i})" title="Annotate">✏</button>
+              <button class="photo-del" onclick="event.stopPropagation();deletePhoto('${pid}','${sid}',${i})">✕</button>
+            </div>
           </div>
           ${ts}
         </div>`;
@@ -3573,9 +3765,10 @@ function buildSIEditor(pid,sid) {
       </div>
     </div>
     <div class="edit-body" id="edit-body">
-      <button class="btn-ai" id="ai-assist-btn" onclick="runAIAssistant('${pid}','${sid}')">
-        ✨ AI Professionalize Notes
-      </button>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <button class="btn-ai" id="ai-assist-btn" onclick="runAIAssistant('${pid}','${sid}')">✨ AI Professionalize Notes</button>
+        <button class="btn-ai" onclick="showTemplatesPanel('${pid}','${sid}')" style="background:linear-gradient(135deg,#7c3aed,#a855f7)">📋 Templates</button>
+      </div>
       <div class="field-group">
         <div class="field-label">Field Photos (${item.photos.length})</div>
         <div class="photo-actions">
@@ -5343,7 +5536,7 @@ function scheduleAutoSave(pid, sid) {
       setTimeout(() => {
         const ind3 = document.getElementById('autosave-ind');
         if(ind3) { ind3.textContent = '✦ auto-save'; ind3.className = 'autosave-indicator'; }
-      }, 1800);
+      }, 3500);
     }
   }, 800);
 }
