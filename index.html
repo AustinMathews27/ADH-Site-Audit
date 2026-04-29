@@ -252,6 +252,23 @@ body.is-offline .offline-banner { display: block; }
   content:''; position:absolute; left:0; top:4px; bottom:4px;
   width:3px; background:var(--accent); border-radius:0 2px 2px 0;
 }
+.si-drag-handle {
+  display:flex; align-items:center; justify-content:center;
+  width:20px; height:32px; flex-shrink:0;
+  color:var(--text3); font-size:14px; cursor:grab;
+  opacity:0.45; transition:opacity 0.15s; touch-action:none;
+  user-select:none; -webkit-user-select:none;
+}
+.si-drag-handle:hover { opacity:1; color:var(--accent); }
+.si-drag-handle:active { cursor:grabbing; }
+.si-row.dragging {
+  opacity:0.35; background:var(--accent-dim) !important;
+  border-left:3px solid var(--accent);
+}
+.si-row.drag-over {
+  border-top:2px solid var(--accent);
+  background:var(--surface2) !important;
+}
 .si-thumb {
   width:42px; height:32px; border-radius:6px;
   background:var(--surface3); overflow:hidden; flex-shrink:0;
@@ -2723,9 +2740,11 @@ function renderLeft(r) {
         const twDone = twEnabled ? tw.rooms.filter(r=>r.status==='completed').length : 0;
         const twTotal = twEnabled ? tw.rooms.length : 0;
         const twAllDone = twEnabled && twDone === twTotal;
-        const allItems = proj.items.filter(i=>i.sectionId===item.sectionId);
-        const idx = allItems.findIndex(i=>i.id===item.id);
-        html+=`<div class="si-row ${r.siId===item.id?'active':''}" onclick="navToSI('${proj.id}','${item.id}')">
+        html+=`<div class="si-row ${r.siId===item.id?'active':''}"
+          data-sid="${item.id}" data-pid="${proj.id}" data-secid="${item.sectionId}"
+          draggable="true"
+          onclick="navToSI('${proj.id}','${item.id}')">
+          <div class="si-drag-handle" title="Drag to reorder">⠿</div>
           <div class="si-row-check ${window._bulkSelected?.has(item.id)?'checked':''}"
             onclick="toggleBulkSelect('${proj.id}','${item.id}',event)">${window._bulkSelected?.has(item.id)?'✓':''}</div>
           <div class="si-thumb">${thumb}</div>
@@ -2736,15 +2755,9 @@ function renderLeft(r) {
             </div>
             <div class="si-title">${item.title}</div>
           </div>
-          <div style="display:flex;flex-direction:column;gap:2px;align-items:center;flex-shrink:0">
-            <button onclick="event.stopPropagation();reorderSI('${proj.id}','${item.sectionId}','${item.id}',-1)"
-              style="width:18px;height:18px;border-radius:4px;border:1px solid var(--border);background:var(--surface2);color:var(--text3);cursor:pointer;font-size:10px;display:flex;align-items:center;justify-content:center;transition:all 0.1s;${idx===0?'opacity:0.25;pointer-events:none':''}"
-              ${idx===0?'disabled':''}>↑</button>
-            <button onclick="event.stopPropagation();reorderSI('${proj.id}','${item.sectionId}','${item.id}',1)"
-              style="width:18px;height:18px;border-radius:4px;border:1px solid var(--border);background:var(--surface2);color:var(--text3);cursor:pointer;font-size:10px;display:flex;align-items:center;justify-content:center;transition:all 0.1s;${idx===allItems.length-1?'opacity:0.25;pointer-events:none':''}"
-              ${idx===allItems.length-1?'disabled':''}>↓</button>
+          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+            <div class="si-status ${item.status}"></div>
           </div>
-          <div class="si-status ${item.status}"></div>
         </div>`;
       });
     });
@@ -2753,6 +2766,198 @@ function renderLeft(r) {
 }
 
 function emptyMsg(t) { return `<div style="padding:20px;text-align:center;color:var(--text3);font-size:12px">${t}</div>`; }
+
+// ══════════════════════════════════════════
+// SI DRAG-TO-REORDER ENGINE
+// Works on both touch (iOS/Android) and mouse (desktop)
+// ══════════════════════════════════════════
+
+let _drag = {
+  el: null,
+  pid: null,
+  secId: null,
+  sid: null,
+  startY: 0,
+  currentOver: null,
+  ghost: null,
+  scrollEl: null,
+  scrollTimer: null,
+};
+
+function _siDragInit() {
+  const scroll = document.getElementById('list-scroll');
+  if (!scroll) return;
+  if (scroll._dragBound) return;
+  scroll._dragBound = true;
+
+  // ── Mouse drag ──────────────────────────
+  scroll.addEventListener('dragstart', e => {
+    const row = e.target.closest('.si-row[draggable]');
+    if (!row) return;
+    const handle = e.target.closest('.si-drag-handle');
+    if (!handle) { e.preventDefault(); return; }
+    _drag.el    = row;
+    _drag.pid   = row.dataset.pid;
+    _drag.secId = row.dataset.secid;
+    _drag.sid   = row.dataset.sid;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', _drag.sid);
+    setTimeout(() => row.classList.add('dragging'), 0);
+  });
+
+  scroll.addEventListener('dragend', e => {
+    const row = e.target.closest('.si-row[draggable]');
+    if (row) row.classList.remove('dragging');
+    _clearDragOver();
+    _drag.el = null;
+  });
+
+  scroll.addEventListener('dragover', e => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const target = e.target.closest('.si-row[draggable]');
+    if (!target || target === _drag.el) return;
+    if (target.dataset.secid !== _drag.secId) return;
+    _setDragOver(target);
+  });
+
+  scroll.addEventListener('dragleave', e => {
+    if (!scroll.contains(e.relatedTarget)) _clearDragOver();
+  });
+
+  scroll.addEventListener('drop', e => {
+    e.preventDefault();
+    if (!_drag.currentOver || !_drag.el) return;
+    _commitReorder(_drag.pid, _drag.secId, _drag.sid, _drag.currentOver.dataset.sid);
+    _clearDragOver();
+  });
+
+  // ── Touch drag ──────────────────────────
+  scroll.addEventListener('touchstart', e => {
+    const handle = e.target.closest('.si-drag-handle');
+    if (!handle) return;
+    const row = handle.closest('.si-row[draggable]');
+    if (!row) return;
+    e.preventDefault();
+
+    _drag.el    = row;
+    _drag.pid   = row.dataset.pid;
+    _drag.secId = row.dataset.secid;
+    _drag.sid   = row.dataset.sid;
+    _drag.startY = e.touches[0].clientY;
+    _drag.scrollEl = scroll;
+
+    const rect = row.getBoundingClientRect();
+    const ghost = row.cloneNode(true);
+    ghost.id = 'si-drag-ghost';
+    ghost.style.cssText = [
+      'position:fixed',
+      `left:${rect.left}px`,
+      `top:${rect.top}px`,
+      `width:${rect.width}px`,
+      'z-index:9999',
+      'pointer-events:none',
+      'opacity:0.85',
+      'border-radius:8px',
+      'background:var(--surface)',
+      'box-shadow:0 8px 28px rgba(0,0,0,0.45)',
+      'border:1px solid var(--accent)',
+      'transition:none',
+    ].join(';');
+    document.body.appendChild(ghost);
+    _drag.ghost = ghost;
+    row.classList.add('dragging');
+  }, { passive: false });
+
+  scroll.addEventListener('touchmove', e => {
+    if (!_drag.ghost) return;
+    e.preventDefault();
+
+    const touch = e.touches[0];
+    const dy = touch.clientY - _drag.startY;
+    const rect = _drag.el.getBoundingClientRect();
+    _drag.ghost.style.top = (rect.top + dy + scroll.scrollTop - scroll.getBoundingClientRect().top) + 'px';
+
+    _drag.ghost.style.display = 'none';
+    const elBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+    _drag.ghost.style.display = '';
+    const target = elBelow?.closest('.si-row[draggable]');
+    if (target && target !== _drag.el && target.dataset.secid === _drag.secId) {
+      _setDragOver(target);
+    } else {
+      _clearDragOver();
+    }
+
+    const scrollRect = scroll.getBoundingClientRect();
+    const ZONE = 60;
+    clearInterval(_drag.scrollTimer);
+    if (touch.clientY < scrollRect.top + ZONE) {
+      _drag.scrollTimer = setInterval(() => scroll.scrollBy(0, -6), 16);
+    } else if (touch.clientY > scrollRect.bottom - ZONE) {
+      _drag.scrollTimer = setInterval(() => scroll.scrollBy(0, 6), 16);
+    }
+  }, { passive: false });
+
+  scroll.addEventListener('touchend', e => {
+    clearInterval(_drag.scrollTimer);
+    if (_drag.ghost) { _drag.ghost.remove(); _drag.ghost = null; }
+    if (_drag.el) _drag.el.classList.remove('dragging');
+
+    if (_drag.currentOver && _drag.el) {
+      _commitReorder(_drag.pid, _drag.secId, _drag.sid, _drag.currentOver.dataset.sid);
+    }
+    _clearDragOver();
+    _drag.el = null;
+  }, { passive: true });
+}
+
+function _setDragOver(el) {
+  if (_drag.currentOver === el) return;
+  _clearDragOver();
+  _drag.currentOver = el;
+  el.classList.add('drag-over');
+}
+
+function _clearDragOver() {
+  if (_drag.currentOver) {
+    _drag.currentOver.classList.remove('drag-over');
+    _drag.currentOver = null;
+  }
+}
+
+function _commitReorder(pid, secId, draggedId, targetId) {
+  if (draggedId === targetId) return;
+  const proj = getProject(pid); if (!proj) return;
+
+  const secItems = proj.items.filter(i => i.sectionId === secId);
+  const fromIdx = secItems.findIndex(i => i.id === draggedId);
+  const toIdx   = secItems.findIndex(i => i.id === targetId);
+  if (fromIdx === -1 || toIdx === -1) return;
+
+  const [moved] = secItems.splice(fromIdx, 1);
+  secItems.splice(toIdx, 0, moved);
+
+  const sectionOrder = proj.sections.map(s => s.id);
+  const bySection = {};
+  sectionOrder.forEach(sid => {
+    bySection[sid] = proj.items.filter(i => i.sectionId === sid);
+  });
+  bySection[secId] = secItems;
+
+  proj.items = sectionOrder.flatMap(sid => bySection[sid] || []);
+
+  markProjectDirty(pid); save();
+  renderLeft(route());
+  if (navigator.vibrate) navigator.vibrate(18);
+  showToast('✓ Reordered', 'green');
+}
+
+// Hook into renderLeft to (re)bind the drag engine after each render.
+const _origRenderLeft = renderLeft;
+renderLeft = function(r) {
+  _origRenderLeft(r);
+  requestAnimationFrame(_siDragInit);
+};
 
 // ── RIGHT PANEL ──────────────────────────
 function renderRight(r) {
