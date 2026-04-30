@@ -671,188 +671,227 @@ select.field-input { cursor:pointer; }
   font-family:var(--sans); min-width:120px;
 }
 
-/* ── SHARE / PDF PANEL ── */
-.share-two-col { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-.share-section-label {
-  font-size:9px; font-weight:600; letter-spacing:1.2px;
-  text-transform:uppercase; color:var(--text3); font-family:var(--mono);
-  margin-bottom:8px;
+/* ── REPORT GENERATOR — SITE AUDIT PRO STYLE ── */
+.rg-overlay {
+  position:fixed; inset:0; z-index:500;
+  background:rgba(0,0,0,0.72); backdrop-filter:blur(4px);
+  display:flex; align-items:stretch; justify-content:center;
+  padding:0;
 }
-/* Template cards */
-.tpl-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
-.tpl-card {
-  border:2px solid var(--border); border-radius:10px;
-  cursor:pointer; overflow:hidden; transition:all 0.15s;
+.rg-shell {
+  display:flex; width:100%; max-width:1200px;
+  background:var(--bg); overflow:hidden;
+}
+.rg-sidebar {
+  width:240px; min-width:240px; flex-shrink:0;
+  background:var(--surface); border-right:1px solid var(--border);
+  display:flex; flex-direction:column; overflow-y:auto;
+}
+.rg-sidebar-topbar {
+  padding:11px 14px; border-bottom:1px solid var(--border);
+  font-size:12px; font-weight:700; color:var(--text);
+  flex-shrink:0; background:var(--surface);
+  display:flex; align-items:center; gap:8px;
+}
+.rg-filter-tabs {
+  display:flex; border-bottom:1px solid var(--border); flex-shrink:0;
+}
+.rg-tab {
+  flex:1; padding:8px 4px; font-size:11px; font-weight:600;
+  text-align:center; cursor:pointer; color:var(--text3);
+  border-bottom:2px solid transparent; transition:all 0.15s;
+  font-family:var(--mono);
+}
+.rg-tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+.rg-section {
+  border-bottom:1px solid var(--border); padding:0;
+}
+.rg-section-hdr {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 14px; cursor:pointer; user-select:none;
+  transition:background 0.1s;
+}
+.rg-section-hdr:hover { background:var(--surface2); }
+.rg-section-title {
+  display:flex; align-items:center; gap:7px;
+  font-size:11px; font-weight:700; color:var(--text);
+}
+.rg-section-dot {
+  width:14px; height:14px; border-radius:3px;
+  background:var(--accent); display:flex;
+  align-items:center; justify-content:center; flex-shrink:0;
+}
+.rg-section-dot svg { width:9px; height:9px; fill:#fff; }
+.rg-chevron { font-size:9px; color:var(--text3); transition:transform 0.2s; }
+.rg-chevron.open { transform:rotate(180deg); }
+.rg-section-body { padding:8px 14px 12px; }
+.rg-section-body.collapsed { display:none; }
+.rg-radio-group { display:flex; flex-direction:column; gap:5px; }
+.rg-radio-row {
+  display:flex; align-items:center; gap:7px;
+  font-size:11px; color:var(--text2); cursor:pointer;
+  padding:2px 0; transition:color 0.12s;
+}
+.rg-radio-row:hover { color:var(--text); }
+.rg-radio-row input[type=radio] { accent-color:var(--accent); width:13px; height:13px; }
+.rg-check-row {
+  display:flex; align-items:center; gap:7px;
+  font-size:11px; color:var(--text2); cursor:pointer;
+  padding:4px 0; transition:color 0.12s;
+}
+.rg-check-row:hover { color:var(--text); }
+.rg-check-row input[type=checkbox] { accent-color:var(--accent); width:13px; height:13px; }
+.rg-color-list { display:flex; flex-direction:column; gap:8px; }
+.rg-color-item {
+  display:flex; align-items:center; justify-content:space-between;
+  font-size:11px; color:var(--text2);
+}
+.rg-color-item input[type=color] {
+  width:26px; height:22px; border:1px solid var(--border);
+  border-radius:4px; padding:1px; cursor:pointer;
   background:var(--surface2);
 }
-.tpl-card:hover { border-color:var(--border2); transform:translateY(-1px); }
-.tpl-card.selected { border-color:var(--accent); }
-.tpl-preview {
-  height:90px; padding:6px; display:flex; flex-direction:column; gap:3px;
-  background:var(--surface3);
-}
-/* Template 1 — Classic */
-.tpl-preview.classic { background:#fff; gap:4px; padding:8px; }
-.tpl-classic-header { height:14px; background:#1e3a5f; border-radius:2px; }
-.tpl-classic-row { height:7px; background:#e2e8f0; border-radius:2px; }
-.tpl-classic-row.dark { background:#cbd5e1; width:70%; }
-.tpl-classic-img { flex:1; background:#e2e8f0; border-radius:2px; margin-top:2px; }
-/* Template 2 — Dark */
-.tpl-preview.dark-tpl { background:#0f172a; gap:3px; padding:6px; }
-.tpl-dark-bar { height:12px; background:#3db8f5; border-radius:2px; }
-.tpl-dark-row { height:6px; background:#1e293b; border-radius:2px; }
-.tpl-dark-img { flex:1; background:#1e293b; border-radius:2px; border:1px solid #334155; }
-/* Template 3 — Minimal */
-.tpl-preview.minimal { background:#fafafa; padding:8px; gap:3px; }
-.tpl-min-line { height:2px; background:#000; width:100%; border-radius:1px; margin-bottom:4px; }
-.tpl-min-row { height:5px; background:#d1d5db; border-radius:1px; }
-.tpl-min-row.sm { width:55%; }
-.tpl-min-img { flex:1; background:#e5e7eb; border-radius:2px; margin-top:3px; border:1px solid #d1d5db; }
-.tpl-name {
-  font-size:10px; font-weight:600; text-align:center;
-  padding:5px 4px; color:var(--text2); font-family:var(--mono);
-}
-.tpl-card.selected .tpl-name { color:var(--accent); }
 
-/* Quality slider */
-.quality-slider-wrap { margin-bottom:4px; }
-.quality-slider {
-  -webkit-appearance:none; appearance:none;
-  width:100%; height:4px; border-radius:2px;
-  background:var(--border); outline:none; cursor:pointer;
+/* ── REPORT GENERATOR MAIN AREA ── */
+.rg-main {
+  flex:1; display:flex; flex-direction:column; overflow:hidden;
+  background:var(--bg);
 }
-.quality-slider::-webkit-slider-thumb {
-  -webkit-appearance:none; width:16px; height:16px; border-radius:50%;
-  background:var(--accent); cursor:pointer; border:2px solid var(--bg);
-  box-shadow:0 0 0 1px var(--accent);
+.rg-topbar {
+  background:var(--surface); border-bottom:1px solid var(--border);
+  padding:10px 16px; display:flex; align-items:center; justify-content:space-between;
+  flex-shrink:0;
 }
-.quality-labels {
-  display:flex; justify-content:space-between;
-  font-size:9px; color:var(--text3); font-family:var(--mono); margin-top:4px;
+.rg-topbar-title { font-size:13px; font-weight:700; color:var(--text); }
+.rg-topbar-actions { display:flex; gap:7px; align-items:center; }
+.rg-btn-outline {
+  padding:6px 14px; border-radius:7px; font-size:11px; font-weight:700;
+  cursor:pointer; border:1px solid var(--border); background:var(--surface2);
+  color:var(--text2); font-family:var(--mono); transition:all 0.15s;
 }
+.rg-btn-outline:hover { border-color:var(--accent); color:var(--accent); }
+.rg-btn-primary {
+  padding:6px 16px; border-radius:7px; font-size:11px; font-weight:700;
+  cursor:pointer; border:none; background:var(--accent); color:#000;
+  font-family:var(--mono); transition:opacity 0.15s;
+}
+.rg-btn-primary:hover { opacity:0.88; }
+.rg-btn-close {
+  width:30px; height:30px; border-radius:7px; border:1px solid var(--border);
+  background:var(--surface2); color:var(--text2); cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  font-size:15px; transition:all 0.15s; margin-left:4px;
+}
+.rg-btn-close:hover { border-color:var(--red); color:var(--red); }
 
-/* File size indicator */
-.filesize-bar-wrap {
-  background:var(--surface2); border:1px solid var(--border);
-  border-radius:9px; padding:10px 12px; margin-top:12px;
+/* ── PREVIEW AREA ── */
+.rg-preview-wrap {
+  flex:1; overflow-y:auto; padding:24px;
+  background:#d0d0d0; display:flex;
+  flex-direction:column; align-items:center; gap:18px;
 }
-.filesize-row {
-  display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;
+body.theme-dark .rg-preview-wrap { background:#1a1a1a; }
+.rg-page {
+  background:#fff; width:100%; max-width:560px;
+  border-radius:4px; overflow:hidden; position:relative;
+  box-shadow:0 4px 16px rgba(0,0,0,0.25);
+  flex-shrink:0;
 }
-.filesize-label { font-size:11px; color:var(--text2); }
-.filesize-val {
-  font-family:var(--mono); font-size:12px; font-weight:600; color:var(--text);
-  transition:color 0.2s;
-}
-.filesize-val.warn { color:var(--red); }
-.filesize-track {
-  height:5px; background:var(--border); border-radius:3px; overflow:hidden;
-}
-.filesize-fill {
-  height:100%; border-radius:3px;
-  background:linear-gradient(90deg,var(--green),var(--accent));
-  transition:width 0.3s, background 0.3s;
-}
-.filesize-fill.warn { background:linear-gradient(90deg,var(--yellow),var(--red)); }
-.filesize-warning {
-  display:flex; align-items:center; gap:6px;
-  margin-top:8px; padding:7px 10px;
-  background:var(--red-dim); border:1px solid rgba(248,113,113,0.3);
-  border-radius:7px; font-size:11px; color:var(--red); display:none;
-}
-.filesize-warning.show { display:flex; }
-
-/* Export options */
-.export-opt-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
-.export-opt-label { font-size:12px; color:var(--text2); }
-.export-check {
-  width:18px; height:18px; border-radius:5px;
-  border:1px solid var(--border); background:var(--surface2);
-  cursor:pointer; display:flex; align-items:center; justify-content:center;
-  font-size:11px; transition:all 0.15s; flex-shrink:0;
-}
-.export-check.checked { background:var(--accent); border-color:var(--accent); color:#000; }
-
-/* Progress overlay */
-.pdf-progress-overlay {
-  position:fixed; inset:0; z-index:600;
-  background:rgba(0,0,0,0.8); backdrop-filter:blur(6px);
-  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px;
-}
-.pdf-progress-box {
-  background:var(--surface); border:1px solid var(--border2);
-  border-radius:14px; padding:28px 36px; text-align:center; min-width:280px;
-}
-.pdf-progress-title { font-size:15px; font-weight:600; margin-bottom:4px; }
-.pdf-progress-sub { font-size:12px; color:var(--text2); margin-bottom:18px; }
-.pdf-progress-track {
-  height:6px; background:var(--border); border-radius:3px; overflow:hidden;
-}
-.pdf-progress-fill {
-  height:100%; background:linear-gradient(90deg,var(--accent),var(--green));
-  border-radius:3px; transition:width 0.3s ease; width:0%;
+.rg-page-num {
+  position:absolute; top:7px; right:8px; z-index:20;
+  background:rgba(0,0,0,0.45); color:#fff;
+  font-size:9px; font-family:monospace;
+  padding:2px 6px; border-radius:10px; pointer-events:none;
 }
 
-/* ── SHARE PREVIEW PANEL ── */
-.share-layout { display:grid; grid-template-columns:1fr 220px; gap:16px; align-items:start; }
-.share-controls { min-width:0; }
-.share-preview-col { flex-shrink:0; }
-.preview-label {
-  font-size:9px; font-weight:600; letter-spacing:1.2px;
-  text-transform:uppercase; color:var(--text3); font-family:var(--mono);
-  margin-bottom:8px; text-align:center;
+/* Cover page */
+.rg-cover { position:relative; overflow:hidden; }
+.rg-cover-logo-strip {
+  padding:12px 16px; background:#fff;
+  border-bottom:1px solid #eee;
+  display:flex; align-items:center; gap:8px; flex-shrink:0;
 }
-.tpl-live-preview {
-  width:100%; aspect-ratio:210/297;
-  border-radius:8px; overflow:hidden;
-  border:1px solid var(--border2);
-  box-shadow:0 6px 20px rgba(0,0,0,0.4);
-  position:relative; cursor:pointer;
-  transition:box-shadow 0.2s;
+.rg-cover-overlay {
+  position:absolute; inset:0;
+  background:linear-gradient(to top, rgba(0,0,0,0.74) 50%, rgba(0,0,0,0.15) 100%);
+  pointer-events:none;
 }
-.tpl-live-preview:hover { box-shadow:0 10px 30px rgba(0,0,0,0.55); }
-/* Classic preview page */
-.prev-classic { background:#fff; display:flex; flex-direction:column; height:100%; }
-.prev-classic .ph { height:18%; background:#1e3a5f; padding:6% 8% 4%; display:flex; flex-direction:column; justify-content:flex-end; }
-.prev-classic .ph-title { font-size:5px; font-weight:700; color:#fff; letter-spacing:0.5px; margin-bottom:2px; }
-.prev-classic .ph-sub { font-size:3px; color:rgba(255,255,255,0.7); }
-.prev-classic .pb { padding:5% 8%; flex:1; display:flex; flex-direction:column; gap:4%; }
-.prev-classic .proj-name { font-size:6px; font-weight:700; color:#1e3a5f; }
-.prev-classic .item-card { background:#f8fafc; border:1px solid #cbd5e1; border-radius:3px; padding:3% 4%; display:flex; flex-direction:column; gap:2px; }
-.prev-classic .item-title { font-size:4px; font-weight:600; color:#1e3a5f; }
-.prev-classic .item-sub { font-size:3px; color:#64748b; }
-.prev-classic .item-img { height:22px; background:#e2e8f0; border-radius:2px; margin-top:2px; position:relative; overflow:hidden; }
-.prev-classic .ts-stamp { position:absolute; bottom:1px; right:2px; font-size:2.5px; color:#fff; background:rgba(0,0,0,0.55); padding:0.5px 1.5px; border-radius:0.5px; white-space:nowrap; }
-.prev-classic .pf { height:6%; background:#1e3a5f; display:flex; align-items:center; justify-content:space-between; padding:0 8%; }
-.prev-classic .pf-txt { font-size:2.5px; color:rgba(255,255,255,0.7); }
-/* Dark preview page */
-.prev-dark { background:#0f172a; display:flex; flex-direction:column; height:100%; }
-.prev-dark .ph { height:18%; background:#1e293b; padding:6% 8% 4%; display:flex; flex-direction:column; justify-content:flex-end; border-bottom:2px solid #3db8f5; }
-.prev-dark .ph-title { font-size:5px; font-weight:700; color:#3db8f5; letter-spacing:0.5px; margin-bottom:2px; }
-.prev-dark .ph-sub { font-size:3px; color:#64748b; }
-.prev-dark .pb { padding:5% 8%; flex:1; display:flex; flex-direction:column; gap:4%; }
-.prev-dark .proj-name { font-size:6px; font-weight:700; color:#e2e8f0; }
-.prev-dark .item-card { background:#1e293b; border:1px solid #334155; border-radius:3px; padding:3% 4%; display:flex; flex-direction:column; gap:2px; }
-.prev-dark .item-title { font-size:4px; font-weight:600; color:#e2e8f0; }
-.prev-dark .item-sub { font-size:3px; color:#64748b; }
-.prev-dark .item-img { height:22px; background:#0f172a; border-radius:2px; margin-top:2px; border:1px solid #334155; position:relative; overflow:hidden; }
-.prev-dark .ts-stamp { position:absolute; bottom:1px; right:2px; font-size:2.5px; color:#3db8f5; background:rgba(0,0,0,0.7); padding:0.5px 1.5px; border-radius:0.5px; white-space:nowrap; }
-.prev-dark .pf { height:6%; background:#1e293b; display:flex; align-items:center; justify-content:space-between; padding:0 8%; }
-.prev-dark .pf-txt { font-size:2.5px; color:#64748b; }
-/* Minimal preview page */
-.prev-minimal { background:#fff; display:flex; flex-direction:column; height:100%; }
-.prev-minimal .ph { height:18%; background:#fff; padding:6% 8% 2%; display:flex; flex-direction:column; justify-content:flex-end; border-bottom:1.5px solid #000; }
-.prev-minimal .ph-title { font-size:5px; font-weight:700; color:#000; letter-spacing:0.5px; margin-bottom:2px; }
-.prev-minimal .ph-sub { font-size:3px; color:#9ca3af; }
-.prev-minimal .pb { padding:5% 8%; flex:1; display:flex; flex-direction:column; gap:4%; }
-.prev-minimal .proj-name { font-size:6px; font-weight:700; color:#111827; }
-.prev-minimal .item-card { background:#fff; border:1px solid #e5e7eb; border-radius:3px; padding:3% 4%; display:flex; flex-direction:column; gap:2px; }
-.prev-minimal .item-title { font-size:4px; font-weight:600; color:#111827; }
-.prev-minimal .item-sub { font-size:3px; color:#9ca3af; }
-.prev-minimal .item-img { height:22px; background:#f3f4f6; border-radius:2px; margin-top:2px; border:1px solid #e5e7eb; position:relative; overflow:hidden; }
-.prev-minimal .ts-stamp { position:absolute; bottom:1px; right:2px; font-size:2.5px; color:#fff; background:rgba(0,0,0,0.5); padding:0.5px 1.5px; border-radius:0.5px; white-space:nowrap; }
-.prev-minimal .pf { height:6%; background:#f9fafb; border-top:1px solid #e5e7eb; display:flex; align-items:center; justify-content:space-between; padding:0 8%; }
-.prev-minimal .pf-txt { font-size:2.5px; color:#9ca3af; }
+.rg-cover-text {
+  position:absolute; bottom:18px; left:18px; right:18px; z-index:5;
+}
+.rg-cover-title {
+  font-size:19px; font-weight:800; color:#fff; line-height:1.2; margin-bottom:5px;
+}
+.rg-cover-date { font-size:11px; font-weight:600; color:rgba(255,255,255,0.82); margin-bottom:3px; }
+.rg-cover-prepared { font-size:11px; font-weight:600; color:rgba(255,255,255,0.82); margin-bottom:6px; }
+.rg-cover-note { font-size:10px; color:rgba(255,255,255,0.7); line-height:1.55; }
+
+/* Summary page */
+.rg-summary-pg { padding:16px 18px; background:#fff; }
+.rg-summary-stats {
+  display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px;
+}
+.rg-stat-card {
+  background:#f7f7f7; border-radius:6px; padding:9px 10px; text-align:center;
+}
+.rg-stat-num { font-size:20px; font-weight:800; color:#111; }
+.rg-stat-label { font-size:9px; color:#888; margin-top:2px; }
+.rg-progress-bar {
+  height:7px; background:#ececec; border-radius:4px; overflow:hidden; margin-bottom:4px;
+}
+.rg-progress-fill { height:100%; border-radius:4px; transition:width 0.4s; }
+.rg-toc-row {
+  display:flex; justify-content:space-between; align-items:center;
+  font-size:10px; color:#444; padding:4px 0;
+  border-bottom:1px dotted #e5e5e5;
+}
+.rg-toc-pg { font-weight:700; font-size:10px; }
+
+/* Item cards */
+.rg-items-pg { background:#fff; }
+.rg-item-card {
+  display:flex; gap:12px; padding:11px 16px;
+  border-bottom:1px solid #f0f0f0;
+}
+.rg-item-card:last-child { border-bottom:none; }
+.rg-item-header-bar {
+  width:3px; flex-shrink:0; border-radius:2px; align-self:stretch; min-height:40px;
+}
+.rg-item-photos-grid {
+  display:grid; grid-template-columns:repeat(3,1fr); gap:3px;
+}
+.rg-photo-thumb {
+  aspect-ratio:1; border-radius:3px;
+  position:relative; overflow:hidden;
+  display:flex; align-items:center; justify-content:center;
+}
+.rg-photo-num {
+  position:absolute; top:2px; left:2px;
+  background:rgba(0,0,0,0.55); color:#fff;
+  width:13px; height:13px; border-radius:50%;
+  font-size:7.5px; font-weight:700;
+  display:flex; align-items:center; justify-content:center;
+}
+.rg-photo-ts {
+  position:absolute; bottom:2px; left:1px; right:1px;
+  font-size:6.5px; color:#fff;
+  background:rgba(0,0,0,0.45); padding:1px 2px;
+  border-radius:1px; text-align:center;
+}
+.rg-item-info { flex:1; min-width:0; }
+.rg-item-title { font-size:12px; font-weight:700; color:#111; margin-bottom:3px; }
+.rg-item-status {
+  display:inline-flex; align-items:center; gap:3px;
+  font-size:10px; font-weight:700; margin-bottom:4px;
+}
+.rg-item-note { font-size:10px; color:#555; line-height:1.5; }
+
+@media (max-width:640px) {
+  .rg-shell { flex-direction:column; }
+  .rg-sidebar { width:100%; min-width:0; max-height:220px; }
+  .rg-preview-wrap { padding:12px; }
+}
+
 
 /* ── ENVIRONMENTAL CONDITIONS ── */
 .env-wrap { flex:1; overflow-y:auto; padding:20px; }
@@ -6112,9 +6151,9 @@ function showEditProjectModal(pid) {
 }
 
 function showShareModal() {
-  const r=route();
-  const proj=r.projectId?getProject(r.projectId):null;
-  if(!proj) {
+  const r = route();
+  const proj = r.projectId ? getProject(r.projectId) : null;
+  if (!proj) {
     makeModal('Share Report',`
       <div style="text-align:center;padding:20px 0;color:var(--text3)">
         <div style="font-size:32px;margin-bottom:10px;opacity:0.3">📤</div>
@@ -6124,237 +6163,488 @@ function showShareModal() {
   }
 
   const totalPhotos = proj.items.reduce((n,i)=>n+i.photos.length,0);
-  const tsExample = '03/09/2026 14:32'; // example — real stamp comes from photo EXIF
+  const completed   = proj.items.filter(i=>i.status==='completed').length;
+  const inProgress  = proj.items.filter(i=>i.status==='in-progress'||i.status==='punch-ongoing').length;
+  const totalItems  = proj.items.length;
+  const completePct = totalItems > 0 ? Math.round((completed/totalItems)*100) : 0;
 
-  function previewHTML(tpl, showTS) {
-    const title = document.getElementById('pdf-report-title')?.value || 'Site Conditions Report';
-    const logoH = parseInt(document.getElementById('pdf-logo-height')?.value || 18);
-    const isWhiteLabel = document.getElementById('chk-white-label')?.classList.contains('checked') ?? false;
-    const ts = showTS ? `<div class="ts-stamp">${tsExample}</div>` : '';
-    const logoHTML = (window._pdfBranding.logo && !isWhiteLabel) ? `<img src="${window._pdfBranding.logo}" style="height:${logoH * 1.8}%; width:auto; max-width:40%; object-fit:contain; margin-right:10px;">` : '';
-    const phStyle = `display:flex; flex-direction:row; align-items:center; justify-content:flex-start;`;
+  // ── State ─────────────────────────────────────────────────────────────────
+  let _rgFilter    = 'all';
+  let _rgTheme     = 'photographic';
+  let _rgPrimary   = '#1a73e8';
+  let _rgImgSize   = 'regular';
+  let _rgImgQual   = 'low';
+  let _rgSquare    = false;
+  let _rgPageNums  = true;
+  let _rgCoverNotes = true;
+  let _rgInclPhotos = true;
+  let _rgInclTS     = true;
+  let _rgInclNotes  = true;
+  let _rgInclTags   = true;
+  let _rgInclCover  = true;
+  let _rgInclEnv    = true;
 
-    const themes = {
-      classic:`<div class="prev-classic">
-        <div class="ph" style="${phStyle}">${logoHTML}<div><div class="ph-title" style="margin-bottom:0">${title.toUpperCase()}</div></div></div>
-        <div class="pb">
-          <div class="proj-name">${proj.name}</div>
-          <div class="item-card">
-            <div class="item-title">SI 0101 · Center Bar Front Bar</div>
-            <div class="item-sub">● Not Ready &nbsp;|&nbsp; Plumbing Issue</div>
-            <div class="item-img">${ts}</div>
-          </div>
-          <div class="item-card">
-            <div class="item-title">SI 0102 · Center Bar Back Bar</div>
-            <div class="item-sub">● Pending</div>
-            <div class="item-img">${ts}</div>
-          </div>
-        </div>
-        <div class="pf"><div class="pf-txt">${proj.name}</div><div class="pf-txt">Page 1 of ${Math.ceil(proj.items.length/3)||1}</div></div>
-      </div>`,
-      dark:`<div class="prev-dark">
-        <div class="ph" style="${phStyle}">${logoHTML}<div><div class="ph-title" style="margin-bottom:0">${title.toUpperCase()}</div></div></div>
-        <div class="pb">
-          <div class="proj-name">${proj.name}</div>
-          <div class="item-card">
-            <div class="item-title">SI 0101 · Center Bar Front Bar</div>
-            <div class="item-sub">● Not Ready &nbsp;|&nbsp; Plumbing Issue</div>
-            <div class="item-img">${ts}</div>
-          </div>
-          <div class="item-card">
-            <div class="item-title">SI 0102 · Center Bar Back Bar</div>
-            <div class="item-sub">● Pending</div>
-            <div class="item-img">${ts}</div>
-          </div>
-        </div>
-        <div class="pf"><div class="pf-txt">${proj.name}</div><div class="pf-txt">Page 1 of ${Math.ceil(proj.items.length/3)||1}</div></div>
-      </div>`,
-      minimal:`<div class="prev-minimal">
-        <div class="ph" style="${phStyle}">${logoHTML}<div><div class="ph-title" style="margin-bottom:0">${title.toUpperCase()}</div></div></div>
-        <div class="pb">
-          <div class="proj-name">${proj.name}</div>
-          <div class="item-card">
-            <div class="item-title">SI 0101 · Center Bar Front Bar</div>
-            <div class="item-sub">Not Ready &nbsp;·&nbsp; Plumbing Issue</div>
-            <div class="item-img">${ts}</div>
-          </div>
-          <div class="item-card">
-            <div class="item-title">SI 0102 · Center Bar Back Bar</div>
-            <div class="item-sub">Pending</div>
-            <div class="item-img">${ts}</div>
-          </div>
-        </div>
-        <div class="pf"><div class="pf-txt">${proj.name}</div><div class="pf-txt">Page 1 of ${Math.ceil(proj.items.length/3)||1}</div></div>
-      </div>`
-    };
-    return themes[tpl]||themes.classic;
+  // PDF export settings (forwarded to existing exportPDF logic)
+  window._pdfExportSettings = {
+    get quality()     { return _rgImgQual === 'max' ? 0.92 : 0.7; },
+    get inclPhotos()  { return _rgInclPhotos; },
+    get inclTS()      { return _rgInclTS; },
+    get inclNotes()   { return _rgInclNotes; },
+    get inclTags()    { return _rgInclTags; },
+    get inclCover()   { return _rgInclCover; },
+    get inclEnv()     { return _rgInclEnv; },
+    get theme()       { return _rgTheme === 'photographic' || _rgTheme === 'bright' ? 'classic' :
+                               _rgTheme === 'modern' ? 'dark' : 'minimal'; },
+    get pageNums()    { return _rgPageNums; },
+  };
+
+  // ── Section collapse state ─────────────────────────────────────────────────
+  const _secOpen = { themes:true, cover:true, colours:false, images:false, include:false };
+
+  function secToggle(name) { _secOpen[name] = !_secOpen[name]; _rebuildSidebar(); }
+
+  function chevron(name) {
+    return `<span class="rg-chevron ${_secOpen[name]?'open':''}">▲</span>`;
   }
 
-  const html=`
-  <div style="margin-bottom:14px;display:flex;align-items:center;gap:10px">
-    <div style="font-size:22px">📤</div>
-    <div>
-      <div style="font-size:14px;font-weight:600">${proj.name}</div>
-      <div style="font-size:11px;color:var(--text2)">${proj.items.length} site items · ${totalPhotos} photos</div>
-    </div>
-  </div>
+  // ── Cover page SVG (hotel-style aerial) ───────────────────────────────────
+  function _buildCoverSVG(h) {
+    const themeColors = {
+      photographic: { sky1:'#87CEEB', sky2:'#FDB97D', sky3:'#C4886B' },
+      corporate:    { sky1:'#1e3a5f', sky2:'#2563eb', sky3:'#1e293b' },
+      minimal:      { sky1:'#e2e8f0', sky2:'#cbd5e1', sky3:'#94a3b8' },
+      modern:       { sky1:'#0f172a', sky2:'#1e293b', sky3:'#0f172a' },
+      classic:      { sky1:'#1e3a5f', sky2:'#1e3a5f', sky3:'#1e293b' },
+      bright:       { sky1:'#06b6d4', sky2:'#3b82f6', sky3:'#1e40af' },
+      financial:    { sky1:'#14532d', sky2:'#166534', sky3:'#052e16' },
+    };
+    const c = themeColors[_rgTheme] || themeColors.photographic;
+    const isPhoto = _rgTheme === 'photographic' || _rgTheme === 'bright';
 
-  <div class="share-layout">
-    <!-- LEFT: Controls -->
-    <div class="share-controls">
+    return `<svg viewBox="0 0 560 ${h}" xmlns="http://www.w3.org/2000/svg"
+        preserveAspectRatio="xMidYMid slice" style="width:100%;height:${h}px;display:block">
+      <defs>
+        <linearGradient id="covSky${_rgTheme}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${c.sky1}"/>
+          <stop offset="45%" stop-color="${c.sky2}"/>
+          <stop offset="100%" stop-color="${c.sky3}"/>
+        </linearGradient>
+        <linearGradient id="covOv${_rgTheme}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="rgba(0,0,0,0.06)"/>
+          <stop offset="50%" stop-color="rgba(0,0,0,0.45)"/>
+          <stop offset="100%" stop-color="rgba(0,0,0,0.76)"/>
+        </linearGradient>
+      </defs>
+      <rect width="560" height="${h}" fill="url(#covSky${_rgTheme})"/>
+      ${isPhoto ? `
+        <circle cx="280" cy="88" r="30" fill="rgba(255,220,120,0.6)"/>
+        <circle cx="280" cy="88" r="18" fill="rgba(255,240,180,0.85)"/>
+        <rect x="28" y="118" width="82" height="${h-118}" rx="2" fill="rgba(50,40,35,0.82)"/>
+        <rect x="122" y="82" width="102" height="${h-82}" rx="2" fill="rgba(44,36,30,0.88)"/>
+        <rect x="238" y="92" width="118" height="${h-92}" rx="2" fill="rgba(40,33,28,0.85)"/>
+        <rect x="368" y="102" width="92" height="${h-102}" rx="2" fill="rgba(48,40,33,0.80)"/>
+        <rect x="466" y="115" width="85" height="${h-115}" rx="2" fill="rgba(44,37,30,0.75)"/>
+        <rect x="0" y="${h-48}" width="560" height="48" fill="rgba(32,60,105,0.52)"/>
+        <line x1="88" y1="${h-44}" x2="88" y2="${h-82}" stroke="rgba(22,18,12,0.8)" stroke-width="3"/>
+        <ellipse cx="88" cy="${h-82}" rx="21" ry="8" fill="rgba(22,52,12,0.62)" transform="rotate(-8 88 ${h-82})"/>
+        <ellipse cx="88" cy="${h-82}" rx="17" ry="6" fill="rgba(22,52,12,0.52)" transform="rotate(14 88 ${h-82})"/>
+        <line x1="448" y1="${h-42}" x2="448" y2="${h-74}" stroke="rgba(22,18,12,0.7)" stroke-width="2.5"/>
+        <ellipse cx="448" cy="${h-74}" rx="17" ry="6" fill="rgba(22,52,12,0.52)" transform="rotate(-13 448 ${h-74})"/>
+      ` : `
+        <rect x="0" y="${h*0.66}" width="560" height="${h*0.34}" fill="rgba(0,0,0,0.12)"/>
+        <rect x="18" y="${h*0.4}" width="58" height="${h*0.6}" rx="2" fill="rgba(255,255,255,0.055)"/>
+        <rect x="96" y="${h*0.32}" width="78" height="${h*0.68}" rx="2" fill="rgba(255,255,255,0.055)"/>
+        <rect x="196" y="${h*0.36}" width="98" height="${h*0.64}" rx="2" fill="rgba(255,255,255,0.055)"/>
+        <rect x="316" y="${h*0.38}" width="78" height="${h*0.62}" rx="2" fill="rgba(255,255,255,0.055)"/>
+        <rect x="416" y="${h*0.4}" width="128" height="${h*0.6}" rx="2" fill="rgba(255,255,255,0.055)"/>
+      `}
+      <rect width="560" height="${h}" fill="url(#covOv${_rgTheme})"/>
+    </svg>`;
+  }
 
-      <div style="margin-bottom:14px">
-        <div class="share-section-label">Report Customization</div>
-        <div class="field-group">
-          <div class="field-label">Report Title</div>
-          <input class="field-input" id="pdf-report-title" value="Site Conditions Report" style="padding:6px 9px; font-size:12px" oninput="refreshPreview()" />
-        </div>
-        <div class="field-group">
-          <div class="field-label">Logo Height (mm)</div>
-          <input type="range" class="quality-slider" id="pdf-logo-height" min="8" max="45" value="18" step="1" oninput="refreshPreview()" />
-        </div>
-        <div class="field-group">
-          <div class="field-label">Custom Footer Text</div>
-          <input class="field-input" id="pdf-footer-text" placeholder="e.g. Confidential" style="padding:6px 9px; font-size:12px" />
-        </div>
-        <div style="display:flex; gap:8px; margin-top:8px">
-          <button class="btn-add" onclick="document.getElementById('pdf-logo-input').click()" style="flex:1; font-size:9px">📸 Report Logo</button>
-          <button class="btn-add" onclick="document.getElementById('pdf-auditor-input').click()" style="flex:1; font-size:9px">✍️ Auditor Sig</button>
-          <button class="btn-add" onclick="document.getElementById('pdf-client-input').click()" style="flex:1; font-size:9px">✍️ Client Sig</button>
-        </div>
-        <div class="export-opt-row" style="margin-top:12px">
-          <span class="export-opt-label">White-label (No App Branding)</span>
-          <div class="export-check" id="chk-white-label" onclick="toggleCheck('chk-white-label');refreshPreview()"></div>
-        </div>
-      </div>
+  // ── Build preview pages HTML ───────────────────────────────────────────────
+  function _buildPreviewPages() {
+    const accentClr = _rgPrimary;
 
-      <div style="margin-bottom:14px">
-        <div class="share-section-label">PDF Template</div>
-        <div class="tpl-grid">
-          <div class="tpl-card selected" id="tpl-classic" onclick="selectTpl('classic')">
-            <div class="tpl-preview classic">
-              <div class="tpl-classic-header"></div>
-              <div class="tpl-classic-row"></div>
-              <div class="tpl-classic-row dark"></div>
-              <div class="tpl-classic-img"></div>
+    const visibleItems = proj.items.filter(i => {
+      if (_rgFilter==='complete')   return i.status==='completed'||i.status==='punch-ongoing';
+      if (_rgFilter==='incomplete') return i.status!=='completed'&&i.status!=='punch-ongoing';
+      return true;
+    });
+
+    const statusColor = s =>
+      s==='completed'?'#22c55e':s==='punch-ongoing'?'#a855f7':
+      s==='not-ready'?'#ef4444':s==='in-progress'?'#fbbf24':
+      s==='on-hold'?'#f97316':'#6b7280';
+
+    const statusLabel = s => s.replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+
+    // ── PAGE 1: COVER ──────────────────────────────────────
+    const coverH = 310;
+    const coverPage = `
+      <div class="rg-page" id="rg-page-cover">
+        <div class="rg-page-num">1</div>
+        <div class="rg-cover-logo-strip">
+          <div style="font-weight:900;font-size:13px;color:#8B1A1A;letter-spacing:0.5px;line-height:1.15">
+            ALLEGHENY<br><span style="font-size:10px;letter-spacing:2.5px">MILLWORK</span>
+          </div>
+        </div>
+        <div class="rg-cover" style="height:${coverH}px">
+          ${_buildCoverSVG(coverH)}
+          <div class="rg-cover-overlay"></div>
+          <div class="rg-cover-text">
+            <div class="rg-cover-title">${proj.name}</div>
+            <div class="rg-cover-date">${proj.date}</div>
+            <div class="rg-cover-prepared">Prepared For ${proj.client||'Client'}</div>
+            ${_rgCoverNotes ? `<div class="rg-cover-note">
+              General Note: ${totalItems} site items · ${completed} completed · ${inProgress} in progress
+            </div>` : ''}
+          </div>
+        </div>
+      </div>`;
+
+    // ── PAGE 2: SUMMARY ────────────────────────────────────
+    const summaryPage = `
+      <div class="rg-page" id="rg-page-summary">
+        <div class="rg-page-num">2</div>
+        <div class="rg-summary-pg">
+          <div style="font-size:13px;font-weight:800;color:#111;margin-bottom:12px">Project Summary</div>
+          <div class="rg-summary-stats">
+            <div class="rg-stat-card">
+              <div class="rg-stat-num">${totalItems}</div>
+              <div class="rg-stat-label">Total Items</div>
             </div>
-            <div class="tpl-name">Classic</div>
-          </div>
-          <div class="tpl-card" id="tpl-dark" onclick="selectTpl('dark')">
-            <div class="tpl-preview dark-tpl">
-              <div class="tpl-dark-bar"></div>
-              <div class="tpl-dark-row"></div>
-              <div class="tpl-dark-row" style="width:80%"></div>
-              <div class="tpl-dark-img"></div>
+            <div class="rg-stat-card">
+              <div class="rg-stat-num" style="color:${accentClr}">${completed}</div>
+              <div class="rg-stat-label">Completed</div>
             </div>
-            <div class="tpl-name">Dark Pro</div>
-          </div>
-          <div class="tpl-card" id="tpl-minimal" onclick="selectTpl('minimal')">
-            <div class="tpl-preview minimal">
-              <div class="tpl-min-line"></div>
-              <div class="tpl-min-row"></div>
-              <div class="tpl-min-row sm"></div>
-              <div class="tpl-min-img"></div>
+            <div class="rg-stat-card">
+              <div class="rg-stat-num" style="color:#c0392b">${totalItems-completed}</div>
+              <div class="rg-stat-label">In Progress</div>
             </div>
-            <div class="tpl-name">Minimal</div>
+          </div>
+          <div class="rg-progress-bar">
+            <div class="rg-progress-fill" style="width:${completePct}%;background:${accentClr}"></div>
+          </div>
+          <div style="font-size:10px;color:#888;margin-bottom:12px">${completePct}% Complete</div>
+          <div style="font-size:11px;font-weight:700;color:#111;margin-bottom:7px">Contents</div>
+          ${proj.items.slice(0,8).map((it,i)=>`
+            <div class="rg-toc-row">
+              <span>${it.num} — ${it.title}</span>
+              <span class="rg-toc-pg" style="color:${accentClr}">${i+3}</span>
+            </div>`).join('')}
+          ${proj.items.length>8?`<div style="font-size:10px;color:#aaa;padding:4px 0">…and ${proj.items.length-8} more items</div>`:''}
+        </div>
+      </div>`;
+
+    // ── PAGE 3: ITEMS ──────────────────────────────────────
+    const photoSizePx = { small:'130px', regular:'150px', large:'175px', xl:'200px' };
+    const photoW = photoSizePx[_rgImgSize] || '150px';
+    const photoColors = ['#c8b8a2','#b0a090','#8aa0b0','#90a8c0','#a0b0a0','#c0a090'];
+
+    const itemsPage = `
+      <div class="rg-page" id="rg-page-items">
+        <div class="rg-page-num">3</div>
+        <div class="rg-items-pg">
+          ${visibleItems.slice(0,4).map(item=>{
+            const sc = statusColor(item.status);
+            const sl = statusLabel(item.status);
+            const photosHTML = _rgInclPhotos ? `
+              <div class="rg-item-photos-grid" style="width:${photoW};min-width:${photoW}">
+                ${Array.from({length:6},(_,pi)=>`
+                  <div class="rg-photo-thumb"
+                    style="background:${photoColors[pi%photoColors.length]}">
+                    ${pi < Math.max(item.photos.length, 3) ?
+                      `<div class="rg-photo-num">${pi+1}</div>
+                       ${_rgInclTS ? `<div class="rg-photo-ts">10:${(20+pi).toString().padStart(2,'0')} AM</div>` : ''}`
+                      : ''}
+                  </div>`).join('')}
+              </div>` : '';
+            return `
+              <div class="rg-item-card">
+                <div class="rg-item-header-bar" style="background:${sc}"></div>
+                ${photosHTML}
+                <div class="rg-item-info">
+                  <div class="rg-item-title">${item.num} — ${item.title}</div>
+                  <div class="rg-item-status" style="color:${sc}">● ${sl}</div>
+                  ${_rgInclNotes && item.notes ? `
+                    <div class="rg-item-note">${item.notes.slice(0,90)}${item.notes.length>90?'…':''}</div>` : ''}
+                  ${_rgInclTags && item.tags && item.tags.length ? `
+                    <div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px">
+                      ${item.tags.slice(0,3).map(t=>`
+                        <span style="font-size:8.5px;padding:1px 6px;border-radius:4px;
+                          background:#f0f0f0;color:#555">${t}</span>`).join('')}
+                    </div>` : ''}
+                </div>
+              </div>`}).join('')}
+          ${visibleItems.length === 0 ?
+            `<div style="padding:24px;text-align:center;font-size:12px;color:#999">No items match this filter</div>` : ''}
+        </div>
+      </div>`;
+
+    return [_rgInclCover ? coverPage : '', summaryPage, itemsPage].join('');
+  }
+
+  // ── Sidebar HTML builder ───────────────────────────────────────────────────
+  function _buildSidebar() {
+    return `
+      <div class="rg-sidebar-topbar">
+        <span style="font-size:14px">✏️</span> Edit Report
+      </div>
+
+      <div class="rg-filter-tabs">
+        <div class="rg-tab ${_rgFilter==='all'?'active':''}"
+          onclick="window._rgSetFilter('all')">All</div>
+        <div class="rg-tab ${_rgFilter==='complete'?'active':''}"
+          onclick="window._rgSetFilter('complete')">Complete</div>
+        <div class="rg-tab ${_rgFilter==='incomplete'?'active':''}"
+          onclick="window._rgSetFilter('incomplete')">Incomplete</div>
+      </div>
+
+      <div class="rg-section">
+        <div class="rg-section-hdr" onclick="window._rgSecToggle('themes')">
+          <div class="rg-section-title">
+            <div class="rg-section-dot">
+              <svg viewBox="0 0 9 9" fill="#fff">
+                <circle cx="4.5" cy="4.5" r="3.5" fill="none" stroke="#fff" stroke-width="1.5"/>
+                <circle cx="4.5" cy="4.5" r="1.5" fill="#fff"/>
+              </svg>
+            </div>
+            Themes
+          </div>
+          ${chevron('themes')}
+        </div>
+        <div class="rg-section-body ${_secOpen.themes?'':'collapsed'}">
+          <div class="rg-radio-group">
+            ${[['classic','Classic'],['modern','Modern & Bold'],['bright','Bright'],
+               ['corporate','Corporate'],['minimal','Minimal'],['photographic','Photographic'],
+               ['financial','Financial']].map(([v,l])=>`
+              <label class="rg-radio-row">
+                <input type="radio" name="rg-theme" value="${v}"
+                  ${_rgTheme===v?'checked':''}
+                  onchange="window._rgSetTheme('${v}')"> ${l}
+              </label>`).join('')}
           </div>
         </div>
       </div>
 
-      <div style="margin-bottom:14px">
-        <div class="share-section-label">Photo Quality</div>
-        <div class="quality-slider-wrap">
-          <input type="range" class="quality-slider" id="img-quality"
-            min="10" max="100" value="72" step="1"
-            oninput="updateQualityLabel();estimateFileSize('${proj.id}')" />
-          <div class="quality-labels">
-            <span>Low</span><span>Medium</span><span>High</span><span>Max</span>
+      <div class="rg-section">
+        <div class="rg-section-hdr" onclick="window._rgSecToggle('cover')">
+          <div class="rg-section-title">
+            <div class="rg-section-dot">
+              <svg viewBox="0 0 9 9" fill="#fff">
+                <rect x="1" y="1" width="7" height="7" rx="1" fill="none" stroke="#fff" stroke-width="1.5"/>
+                <line x1="2.5" y1="3.5" x2="6.5" y2="3.5" stroke="#fff" stroke-width="1"/>
+                <line x1="2.5" y1="5.5" x2="5.5" y2="5.5" stroke="#fff" stroke-width="1"/>
+              </svg>
+            </div>
+            Front Cover
+          </div>
+          ${chevron('cover')}
+        </div>
+        <div class="rg-section-body ${_secOpen.cover?'':'collapsed'}">
+          <label class="rg-check-row">
+            <input type="checkbox" ${_rgCoverNotes?'checked':''}
+              onchange="window._rgToggle('notes_cover')"> General Notes
+          </label>
+          <label class="rg-check-row">
+            <input type="checkbox" ${_rgInclCover?'checked':''}
+              onchange="window._rgToggle('cover')"> Show Cover Page
+          </label>
+        </div>
+      </div>
+
+      <div class="rg-section">
+        <div class="rg-section-hdr" onclick="window._rgSecToggle('colours')">
+          <div class="rg-section-title">
+            <div class="rg-section-dot">
+              <svg viewBox="0 0 9 9" fill="#fff">
+                <rect x="0.5" y="0.5" width="4" height="4" rx="0.5" fill="#fff"/>
+                <rect x="4.5" y="0.5" width="4" height="4" rx="0.5" fill="#fff" opacity="0.65"/>
+                <rect x="0.5" y="4.5" width="4" height="4" rx="0.5" fill="#fff" opacity="0.65"/>
+                <rect x="4.5" y="4.5" width="4" height="4" rx="0.5" fill="#fff" opacity="0.35"/>
+              </svg>
+            </div>
+            Colours
+          </div>
+          ${chevron('colours')}
+        </div>
+        <div class="rg-section-body ${_secOpen.colours?'':'collapsed'}">
+          <div class="rg-color-list">
+            <div class="rg-color-item">
+              <span>Primary Colour</span>
+              <input type="color" value="${_rgPrimary}"
+                onchange="window._rgSetPrimary(this.value)">
+            </div>
+            <div class="rg-color-item">
+              <span>Text</span>
+              <input type="color" value="#000000">
+            </div>
+            <div class="rg-color-item">
+              <span>Sub Text</span>
+              <input type="color" value="#d40b0b">
+            </div>
           </div>
         </div>
-        <div style="margin-top:6px;font-size:11px;color:var(--text2);font-family:var(--mono)">
-          Quality: <span id="quality-label" style="color:var(--accent)">72%</span>
+      </div>
+
+      <div class="rg-section">
+        <div class="rg-section-hdr" onclick="window._rgSecToggle('images')">
+          <div class="rg-section-title">
+            <div class="rg-section-dot">
+              <svg viewBox="0 0 9 9" fill="#fff">
+                <rect x="1" y="1.5" width="7" height="5.5" rx="1" fill="none" stroke="#fff" stroke-width="1.2"/>
+                <circle cx="3" cy="4" r="0.9" fill="#fff"/>
+                <path d="M1 7 L3.5 5 L5.5 6.5 L7 5 L8 7Z" fill="#fff"/>
+              </svg>
+            </div>
+            Images
+          </div>
+          ${chevron('images')}
+        </div>
+        <div class="rg-section-body ${_secOpen.images?'':'collapsed'}">
+          <div style="font-size:9px;color:var(--text3);font-family:var(--mono);font-weight:600;
+            text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Image Sizes</div>
+          <div class="rg-radio-group" style="margin-bottom:10px">
+            ${[['small','Small'],['regular','Regular'],['large','Large'],['xl','Extra Large']].map(([v,l])=>`
+              <label class="rg-radio-row">
+                <input type="radio" name="rg-imgsize" value="${v}"
+                  ${_rgImgSize===v?'checked':''}
+                  onchange="window._rgSetImgSize('${v}')"> ${l}
+              </label>`).join('')}
+          </div>
+          <div style="font-size:9px;color:var(--text3);font-family:var(--mono);font-weight:600;
+            text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Image Quality</div>
+          <div class="rg-radio-group" style="margin-bottom:10px">
+            <label class="rg-radio-row">
+              <input type="radio" name="rg-imgq"
+                ${_rgImgQual==='low'?'checked':''}
+                onchange="window._rgSetImgQual('low')"> Low
+            </label>
+            <label class="rg-radio-row">
+              <input type="radio" name="rg-imgq"
+                ${_rgImgQual==='max'?'checked':''}
+                onchange="window._rgSetImgQual('max')"> Maximum
+            </label>
+          </div>
+          <label class="rg-check-row">
+            <input type="checkbox" ${_rgSquare?'checked':''}
+              onchange="window._rgToggle('square')"> Square Images
+          </label>
         </div>
       </div>
 
-      <div style="margin-bottom:14px">
-        <div class="share-section-label">Include in Report</div>
-        <div class="export-opt-row">
-          <span class="export-opt-label">Photos</span>
-          <div class="export-check checked" id="chk-photos" onclick="toggleCheck('chk-photos');estimateFileSize('${proj.id}')">✓</div>
+      <div class="rg-section">
+        <div class="rg-section-hdr" onclick="window._rgSecToggle('include')">
+          <div class="rg-section-title">
+            <div class="rg-section-dot">
+              <svg viewBox="0 0 9 9" fill="#fff">
+                <rect x="1" y="1" width="7" height="7" rx="1" fill="none" stroke="#fff" stroke-width="1.5"/>
+                <path d="M2.5 4.5 L4 6 L6.5 3" stroke="#fff" stroke-width="1.2"
+                  fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            Include in Report
+          </div>
+          ${chevron('include')}
         </div>
-        <div class="export-opt-row">
-          <span class="export-opt-label">Timestamp on Photos</span>
-          <div class="export-check checked" id="chk-timestamp" onclick="toggleCheck('chk-timestamp');refreshPreview()">✓</div>
-        </div>
-        <div class="export-opt-row">
-          <span class="export-opt-label">Field Notes</span>
-          <div class="export-check checked" id="chk-notes" onclick="toggleCheck('chk-notes')">✓</div>
-        </div>
-        <div class="export-opt-row">
-          <span class="export-opt-label">Condition Tags</span>
-          <div class="export-check checked" id="chk-tags" onclick="toggleCheck('chk-tags')">✓</div>
-        </div>
-        <div class="export-opt-row" style="margin-bottom:0">
-          <span class="export-opt-label">Cover Page</span>
-          <div class="export-check checked" id="chk-cover" onclick="toggleCheck('chk-cover')">✓</div>
-        </div>
-        <div class="export-opt-row" style="margin-bottom:0;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
-          <span class="export-opt-label">Environmental Charts</span>
-          <div class="export-check checked" id="chk-env" onclick="toggleCheck('chk-env')">✓</div>
-        </div>
-      </div>
-
-      <div class="filesize-bar-wrap">
-        <div class="filesize-row">
-          <span class="filesize-label">Estimated File Size</span>
-          <span class="filesize-val" id="filesize-val">—</span>
-        </div>
-        <div class="filesize-track">
-          <div class="filesize-fill" id="filesize-fill" style="width:0%"></div>
-        </div>
-        <div class="filesize-warning" id="filesize-warning">
-          ⚠ File exceeds 25.5 MB — reduce quality or exclude photos to share via email
+        <div class="rg-section-body ${_secOpen.include?'':'collapsed'}">
+          <label class="rg-check-row">
+            <input type="checkbox" ${_rgInclPhotos?'checked':''}
+              onchange="window._rgToggle('photos')"> Photos
+          </label>
+          <label class="rg-check-row">
+            <input type="checkbox" ${_rgInclTS?'checked':''}
+              onchange="window._rgToggle('ts')"> Timestamps on Photos
+          </label>
+          <label class="rg-check-row">
+            <input type="checkbox" ${_rgInclNotes?'checked':''}
+              onchange="window._rgToggle('notes')"> Field Notes
+          </label>
+          <label class="rg-check-row">
+            <input type="checkbox" ${_rgInclTags?'checked':''}
+              onchange="window._rgToggle('tags')"> Condition Tags
+          </label>
+          <label class="rg-check-row">
+            <input type="checkbox" ${_rgInclEnv?'checked':''}
+              onchange="window._rgToggle('env')"> Environmental Charts
+          </label>
         </div>
       </div>
 
-        <div style="display:flex;gap:8px;margin-top:14px">
-        <button class="btn-save" style="flex:1" onclick="exportPDF('${proj.id}')">⬇ Export PDF</button>
-        <button class="btn-nav" onclick="exportCSV('${proj.id}')">⬇ Export CSV</button>
-        <button class="btn-nav" onclick="closeModal()">Cancel</button>
-      </div>
-    </div>
+      <div class="rg-section">
+        <div class="rg-section-body" style="padding:10px 14px">
+          <label class="rg-check-row">
+            <input type="checkbox" ${_rgPageNums?'checked':''}
+              onchange="window._rgToggle('pagenums')"> Page Numbers
+          </label>
+        </div>
+      </div>`;
+  }
 
-    <!-- RIGHT: Live preview -->
-    <div class="share-preview-col">
-      <div class="preview-label">Live Preview</div>
-      <div class="tpl-live-preview" id="live-preview-wrap" title="Preview of your PDF layout">
-        ${previewHTML('classic', true)}
-      </div>
-      <div style="font-size:9px;color:var(--text3);text-align:center;margin-top:6px;font-family:var(--mono)">
-        Actual layout may vary
-      </div>
-    </div>
-  </div>`;
+  // ── Rebuild helpers ────────────────────────────────────────────────────────
+  function _rebuildSidebar()  {
+    const el = document.getElementById('rg-sidebar-inner');
+    if (el) el.innerHTML = _buildSidebar();
+  }
+  function _rebuildPreview() {
+    const el = document.getElementById('rg-preview-inner');
+    if (el) el.innerHTML = _buildPreviewPages();
+  }
+  function _render() { _rebuildSidebar(); _rebuildPreview(); }
 
+  // ── Global event handlers ──────────────────────────────────────────────────
+  window._rgSetFilter  = v => { _rgFilter  = v; _rebuildSidebar(); _rebuildPreview(); };
+  window._rgSetTheme   = v => { _rgTheme   = v; _rebuildSidebar(); _rebuildPreview(); };
+  window._rgSetImgSize = v => { _rgImgSize = v; _rebuildPreview(); };
+  window._rgSetImgQual = v => { _rgImgQual = v; };
+  window._rgSetPrimary = v => { _rgPrimary = v; _rebuildPreview(); };
+  window._rgSecToggle  = name => { secToggle(name); };
+  window._rgToggle = key => {
+    const actions = {
+      notes_cover: () => _rgCoverNotes = !_rgCoverNotes,
+      photos:  () => _rgInclPhotos = !_rgInclPhotos,
+      ts:      () => _rgInclTS     = !_rgInclTS,
+      notes:   () => _rgInclNotes  = !_rgInclNotes,
+      tags:    () => _rgInclTags   = !_rgInclTags,
+      cover:   () => _rgInclCover  = !_rgInclCover,
+      env:     () => _rgInclEnv    = !_rgInclEnv,
+      square:  () => _rgSquare     = !_rgSquare,
+      pagenums:() => _rgPageNums   = !_rgPageNums,
+    };
+    if (actions[key]) { actions[key](); _rebuildSidebar(); _rebuildPreview(); }
+  };
+
+  // ── Create and mount the full-screen overlay ───────────────────────────────
   closeModal();
-  const ov=document.createElement('div');
-  ov.className='modal-overlay'; ov.id='modal-overlay';
-  ov.onclick=e=>{ if(e.target===ov) closeModal(); };
-  ov.innerHTML=`
-    <div class="modal wide">
-      <div class="modal-header">
-        <span class="modal-title">Share / Export Report</span>
-        <div class="btn-icon" onclick="closeModal()">✕</div>
+  const ov = document.createElement('div');
+  ov.className = 'rg-overlay';
+  ov.id = 'rg-overlay';
+  ov.innerHTML = `
+    <div class="rg-shell">
+      <div class="rg-sidebar" id="rg-sidebar-inner"></div>
+      <div class="rg-main">
+        <div class="rg-topbar">
+          <div class="rg-topbar-title">Report Generator</div>
+          <div class="rg-topbar-actions">
+            <button class="rg-btn-outline" onclick="exportPDF('${proj.id}')">PDF</button>
+            <button class="rg-btn-outline" onclick="exportCSV('${proj.id}')">CSV</button>
+            <button class="rg-btn-primary" onclick="exportPDF('${proj.id}')">Request Report</button>
+            <button class="rg-btn-close"
+              onclick="document.getElementById('rg-overlay')?.remove()">✕</button>
+          </div>
+        </div>
+        <div class="rg-preview-wrap" id="rg-preview-inner"></div>
       </div>
-      <div class="modal-body">${html}</div>
     </div>`;
   document.body.appendChild(ov);
+  _render();
 
-  // Store preview builder for refresh
-  window._buildPreview = previewHTML;
-
-  setTimeout(()=>estimateFileSize(proj.id), 80);
+  // Close on bare backdrop click
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
 }
+
+
 
 // ── UI HELPERS ─────────────────────────
 let _selectedTpl = 'classic';
