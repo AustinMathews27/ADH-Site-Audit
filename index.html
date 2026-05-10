@@ -2052,7 +2052,13 @@ function markStoreDirty() {
 
 // ── Strip photos from an item (photos live in IndexedDB only) ────
 function _buildItemPayload(item) {
-  return Object.assign({}, item, { photos: [] });
+  // Send photo metadata (URL + caption + takenAt) to CosmosDB so other
+  // devices can load Azure Blob photos. Never send base64 data — it's
+  // too large for Cosmos and lives in IndexedDB only.
+  const cloudPhotos = (item.photos || [])
+    .filter(p => p.url)   // only photos that have been uploaded to Azure Blob
+    .map(p => ({ url: p.url, caption: p.caption || '', takenAt: p.takenAt || '' }));
+  return Object.assign({}, item, { photos: cloudPhotos });
 }
 
 // ── Strip photos from a project ──────────────────────────────────
@@ -2246,7 +2252,14 @@ async function _mergeCloudIntoLocal(cloudData) {
 
   function _restoreItemPhotos(item) {
     const out = Object.assign({}, item);
-    if (localPhotos[item.id]) out.photos = localPhotos[item.id];
+    const local = localPhotos[item.id] || [];
+    const cloudUrls = (item.photos || []).filter(p => p.url);
+    // Build merged photo array:
+    //   - Keep all local base64 photos (IndexedDB-only, no URL yet)
+    //   - Add cloud URL photos that aren't already represented locally
+    const localUrlSet = new Set(local.map(p => p.url).filter(Boolean));
+    const newCloudPhotos = cloudUrls.filter(p => !localUrlSet.has(p.url));
+    out.photos = [...local, ...newCloudPhotos];
     return out;
   }
 
@@ -2256,8 +2269,13 @@ async function _mergeCloudIntoLocal(cloudData) {
     // Cloud items win field-by-field via deepMerge; local-only items kept
     cloudItemMap.forEach((ci, id) => {
       if (localItemMap.has(id)) {
+        const localItem = localItemMap.get(id);
+        // BUG FIX: Never overwrite a locally-dirty item with cloud data.
+        // If the user has unsaved notes/changes, the 15-second poll was
+        // clobbering them with the old cloud version before auto-sync ran.
+        if (localItem._dirty) return;
         // Deep-merge so concurrent edits on different fields both survive
-        const merged = Object.assign({}, localItemMap.get(id));
+        const merged = Object.assign({}, localItem);
         Object.keys(ci).forEach(k => {
           if (k !== 'photos') merged[k] = ci[k]; // photos always local
         });
@@ -2284,9 +2302,13 @@ async function _mergeCloudIntoLocal(cloudData) {
       const cloudItem = _restoreItemPhotos(item);
       if (idx >= 0) {
         updatedProj.items = [...updatedProj.items];
-        Object.keys(cloudItem).forEach(k => {
-          if (k !== 'photos') updatedProj.items[idx][k] = cloudItem[k];
-        });
+        // BUG FIX: Same as _mergeProjectItems — skip dirty items so the poll
+        // never overwrites notes/fields the user has typed but not yet synced.
+        if (!updatedProj.items[idx]._dirty) {
+          Object.keys(cloudItem).forEach(k => {
+            if (k !== 'photos') updatedProj.items[idx][k] = cloudItem[k];
+          });
+        }
       } else {
         updatedProj.items = [...(updatedProj.items || []), cloudItem];
       }
@@ -2640,7 +2662,13 @@ function goBack() {
   render();
 }
 
-function navToRoot()              { stack=[]; render(); }
+function navToRoot() {
+  // Flush editor fields before jumping home (same as goBack)
+  const cur = route();
+  if (cur.view === 'si') _doSave(cur.projectId, cur.siId, false);
+  stack = [];
+  render();
+}
 function navToFolder(fid)         { stack=[{view:'folder',folderId:fid}]; render(); }
 function navToProject(pid,fid)    {
   // Keep folder in stack if provided
@@ -2844,7 +2872,7 @@ function renderLeft(r) {
       if(!items.length&&q) return;
       html+=`<div class="section-group">${sec.name}<span class="section-count">${items.length}</span></div>`;
       items.forEach(item=>{
-        const thumb=item.photos.length?`<img src="${item.photos[0].data}" />`:`<span>📷</span>`;
+        const thumb=item.photos.length?`<img src="${item.photos[0].url || item.photos[0].data}" />`:`<span>📷</span>`;
         const tw = item.towerWork;
         const twEnabled = tw && tw.enabled && tw.rooms && tw.rooms.length > 0;
         const twDone = twEnabled ? tw.rooms.filter(r=>r.status==='completed').length : 0;
@@ -4024,10 +4052,11 @@ function buildSIEditor(pid,sid) {
   const photosHTML = item.photos.length===0
     ? `<div class="photo-empty"><div class="photo-empty-icon">📷</div>No photos yet</div>`
     : item.photos.map((p,i)=>{
+        const src = p.url || p.data || ''; // Azure Blob URL preferred; fall back to legacy base64
         const ts = p.takenAt ? `<span style="position:absolute;bottom:4px;right:5px;font-size:9px;font-family:var(--mono);color:rgba(255,255,255,0.85);background:rgba(0,0,0,0.5);padding:1px 5px;border-radius:3px;pointer-events:none">${p.takenAt}</span>` : '';
         return `
         <div class="photo-card" onclick="previewPhoto('${pid}','${sid}',${i})">
-          <img src="${p.data}" />
+          <img src="${src}" />
           <div class="photo-card-overlay">
             <span class="photo-num">${i+1}</span>
             <div style="display:flex;gap:3px">
@@ -6034,7 +6063,7 @@ function handleFileImport(e) {
       dataReader.onload=dataEv=>{
         // Resize/Compress before saving to localStorage to prevent QuotaExceededError
         const img = new Image();
-        img.onload = () => {
+        img.onload = async () => {
           const canvas = document.createElement('canvas');
           const MAX_WIDTH = 1200; // Resizing to 1200px is plenty for audit reports
           let width = img.width;
@@ -6043,8 +6072,30 @@ function handleFileImport(e) {
           canvas.width = width; canvas.height = height;
           canvas.getContext('2d').drawImage(img, 0, 0, width, height);
           const compressedData = canvas.toDataURL('image/jpeg', 0.7); // 0.7 quality is the sweet spot
-          item.photos.push({data:compressedData, caption:'', takenAt});
+
+          // Save locally first (works offline, instant feedback)
+          const photoEntry = {data: compressedData, caption: '', takenAt};
+          item.photos.push(photoEntry);
           if(++loaded===files.length){ markAsDirty(_pt.sid); save(); buildSIEditor(_pt.pid,_pt.sid); renderLeft(route()); }
+
+          // Then upload to Azure Blob Storage in the background
+          // If it succeeds, replace the local data entry with a URL entry
+          try {
+            canvas.toBlob(async (blob) => {
+              if (!blob) return;
+              const blobUrl = await _uploadPhotoToAzureBlob(blob, _pt.pid, _pt.sid);
+              if (blobUrl) {
+                // Swap data→url so CosmosDB sync picks it up (data stays for offline display)
+                photoEntry.url = blobUrl;
+                markAsDirty(_pt.sid);
+                save();
+                buildSIEditor(_pt.pid, _pt.sid);
+              }
+            }, 'image/jpeg', 0.7);
+          } catch(uploadErr) {
+            // Non-fatal — photo is still saved locally in base64
+            console.warn('[Photo] Azure Blob upload failed, photo kept locally:', uploadErr.message);
+          }
         };
         img.src = dataEv.target.result;
       };
@@ -6053,6 +6104,39 @@ function handleFileImport(e) {
     arrReader.readAsArrayBuffer(file);
   });
   e.target.value='';
+}
+
+// ── Azure Blob Storage upload ────────────────────────────────────────────────
+// Fetches a short-lived SAS token from the Azure Function, then uploads
+// directly to Blob Storage. Returns the permanent blob URL on success.
+
+let _cachedSasUrl = null;
+let _sasUrlExpiry = null;
+
+async function _getBlobSasUrl() {
+  const now = Date.now();
+  if (_cachedSasUrl && _sasUrlExpiry && now < _sasUrlExpiry) return _cachedSasUrl;
+  const res = await fetch('/api/getBlobSasUrl');
+  if (!res.ok) throw new Error(`SAS fetch failed: ${res.status}`);
+  const { sasUrl, expiresOn } = await res.json();
+  _cachedSasUrl = sasUrl;
+  _sasUrlExpiry = expiresOn ? new Date(expiresOn).getTime() - 5 * 60 * 1000 : now + 50 * 60 * 1000;
+  return _cachedSasUrl;
+}
+
+async function _uploadPhotoToAzureBlob(blob, projectId, siId) {
+  const sasContainerUrl = await _getBlobSasUrl();
+  const ext      = 'jpg';
+  const blobName = `${projectId}/${siId}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+  const [baseUrl, sasParams] = sasContainerUrl.split('?');
+  const putUrl = `${baseUrl}/${blobName}?${sasParams}`;
+  const uploadRes = await fetch(putUrl, {
+    method : 'PUT',
+    headers: { 'x-ms-blob-type': 'BlockBlob', 'Content-Type': 'image/jpeg' },
+    body   : blob,
+  });
+  if (!uploadRes.ok) throw new Error(`Blob PUT failed: ${uploadRes.status}`);
+  return `${baseUrl}/${blobName}`;
 }
 
 // ── COMPANY BRANDING SYSTEM ──────────────────────────────────────────────────
@@ -6165,7 +6249,7 @@ function previewPhoto(pid,sid,idx) {
   const item=getSI(pid,sid); if(!item) return;
   const ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;z-index:999;background:rgba(0,0,0,0.93);display:flex;align-items:center;justify-content:center;cursor:pointer;';
-  ov.innerHTML=`<img src="${item.photos[idx].data}" style="max-width:92%;max-height:92%;border-radius:10px;object-fit:contain;" />`;
+  ov.innerHTML=`<img src="${item.photos[idx].url || item.photos[idx].data}" style="max-width:92%;max-height:92%;border-radius:10px;object-fit:contain;" />`;
   ov.onclick=()=>document.body.removeChild(ov);
   document.body.appendChild(ov);
 }
@@ -7435,7 +7519,9 @@ async function exportPDF(pid) {
           const ph = item.photos[pi];
           try {
             const tsLabel = inclTS ? (ph.takenAt || null) : null;
-            const compressed = await compressImage(ph.data, quality, tsLabel);
+            // Support both Azure Blob URL photos and legacy base64 photos
+            const photoSrc = ph.url || ph.data || null;
+            const compressed = photoSrc ? await compressImage(photoSrc, quality, tsLabel) : null;
             if(compressed) {
               const px = 14 + col * (photoW + GAP);
               doc.addImage(compressed,'JPEG',px,iy,photoW,photoH,'','FAST');
