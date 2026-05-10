@@ -6242,8 +6242,18 @@ window.handleBrandingUpload = function(e, type) {
 function deletePhoto(pid,sid,idx) {
   const item=getSI(pid,sid); if(!item) return;
   syncEditorToStore(pid,sid);
-  item.photos.splice(idx,1); markAsDirty(sid); save();
+  const [removed] = item.photos.splice(idx,1);
+  markAsDirty(sid); save();
   buildSIEditor(pid,sid); renderLeft(route());
+
+  // If the photo was uploaded to Azure Blob, delete it server-side too
+  if (removed && removed.url) {
+    fetch('/api/deleteBlob', {
+      method : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body   : JSON.stringify({ blobUrl: removed.url }),
+    }).catch(e => console.warn('[Photo] Blob delete failed (non-fatal):', e.message));
+  }
 }
 function previewPhoto(pid,sid,idx) {
   const item=getSI(pid,sid); if(!item) return;
@@ -7108,7 +7118,9 @@ window.estimateFileSize = function(pid) {
     bytes += 1500; // estimated text data per item
     if(includePhotos) {
       item.photos.forEach(p=>{
-        const origBytes = (p.data||'').length * 0.75;
+        // For legacy base64 photos, derive size from the data string.
+        // For Azure Blob URL photos, use a 150KB estimate (900px JPEG at 0.7 quality).
+        const origBytes = p.data ? (p.data.length * 0.75) : 153600;
         // The export resizes photos to a max-width of 900px.
         // A 900px JPEG at ~70% quality is typically 120KB - 180KB.
         const scaledBase = Math.min(origBytes, 160000); 
@@ -7272,6 +7284,12 @@ async function exportPDF(pid) {
   async function compressImage(dataUrl, q, addTS) {
     return new Promise(res=>{
       const img=new Image();
+      // For Azure Blob URLs (https://), set crossOrigin so the canvas
+      // doesn't get tainted. The Blob container must have CORS enabled
+      // (Azure Portal → Storage Account → Resource sharing (CORS) → add your domain).
+      if (dataUrl && dataUrl.startsWith('https://')) {
+        img.crossOrigin = 'anonymous';
+      }
       img.onload=()=>{
         const canvas=document.createElement('canvas');
         const MAX=900;
@@ -7312,7 +7330,13 @@ async function exportPDF(pid) {
           ctx.fillText(ts, bx+pad, by+th+pad*0.6);
         }
 
-        res(canvas.toDataURL('image/jpeg',q));
+        try {
+          res(canvas.toDataURL('image/jpeg',q));
+        } catch(e) {
+          // Canvas tainted (CORS not configured on blob container) — skip photo in PDF
+          console.warn('[PDF] Canvas tainted for photo — add CORS rules to Azure Blob container:', e.message);
+          res(null);
+        }
       };
       img.onerror=()=>res(null);
       img.src=dataUrl;
