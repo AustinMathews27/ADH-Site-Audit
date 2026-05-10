@@ -1,6 +1,6 @@
 // ADH Field Audit Tool — Service Worker
 // Cache version — bump this string to force update
-const CACHE_VERSION = 'adh-audit-v5.5';
+const CACHE_VERSION = 'adh-audit-v6.0';
 
 // Resources to pre-cache on install
 const PRECACHE = [
@@ -9,7 +9,7 @@ const PRECACHE = [
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',
-  // CDN resources cached on first use (see RUNTIME_CACHE below)
+  '/favicon.ico',
 ];
 
 // CDN origins to cache at runtime
@@ -32,6 +32,11 @@ self.addEventListener('install', event => {
     caches.open(CACHE_VERSION)
       .then(cache => cache.addAll(PRECACHE))
       .then(() => self.skipWaiting())
+      .catch(err => {
+        // Don't fail install if one asset is missing (e.g. subdirectory deploys)
+        console.warn('[SW] Precache partial failure:', err.message);
+        return self.skipWaiting();
+      })
   );
 });
 
@@ -53,9 +58,13 @@ self.addEventListener('fetch', event => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip non-GET and chrome-extension requests
+  // Skip non-GET, chrome-extension, and blob/data URL requests
   if (request.method !== 'GET') return;
   if (url.protocol === 'chrome-extension:') return;
+  if (url.protocol === 'blob:' || url.protocol === 'data:') return;
+
+  // Skip Azure API calls — never cache these
+  if (url.pathname.startsWith('/api/')) return;
 
   // For CDN requests: cache-first, fallback to network
   const isCDN = CDN_ORIGINS.some(o => url.origin === o || request.url.startsWith(o));
@@ -80,6 +89,7 @@ self.addEventListener('fetch', event => {
     event.respondWith(
       fetch(request)
         .then(response => {
+          // Only cache successful same-origin basic responses
           if (!response || response.status !== 200 || response.type !== 'basic') return response;
           const clone = response.clone();
           caches.open(CACHE_VERSION).then(cache => cache.put(request, clone));

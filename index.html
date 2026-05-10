@@ -9,12 +9,13 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ADH Audit">
-<meta name="theme-color" content="#f1f5f9">
+<meta name="theme-color" content="#f1f5f9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0f14" media="(prefers-color-scheme: dark)">
 <meta name="description" content="ADH Field Audit Tool — field conditions audit for construction and installation teams">
 <meta name="mobile-web-app-capable" content="yes">
 
 <!-- Inline SVG icon for Add to Home Screen -->
-<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%231f2229'/%3E%3Crect x='0' y='0' width='192' height='8' rx='4' fill='%233db8f5'/%3E%3Ctext x='96' y='118' font-family='system-ui%2C-apple-system%2Csans-serif' font-weight='800' font-size='72' fill='%233db8f5' text-anchor='middle' letter-spacing='-2'%3EADH%3C/text%3E%3Ctext x='96' y='148' font-family='system-ui%2C-apple-system%2Csans-serif' font-weight='500' font-size='18' fill='%238b95a8' text-anchor='middle' letter-spacing='3'%3EAUDIT%3C/text%3E%3C/svg%3E">
+<link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
 
 <!-- Fonts & Libraries -->
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -555,6 +556,10 @@ select.field-input { cursor:pointer; }
   padding-bottom: calc(9px + var(--sab));
 }
 .save-bar .btn-save { display:none; }
+.si-mobile-back-bar {
+  display:none; padding:0 16px calc(8px + var(--sab));
+  background:var(--surface); border-top:none; flex-shrink:0;
+}
 .btn-nav {
   flex:1; padding:10px 13px; background:var(--surface2); color:var(--text2);
   border:1px solid var(--border); border-radius:9px;
@@ -1146,6 +1151,7 @@ input[type="radio"] {
   .status-pills { flex-wrap:wrap; gap:4px; }
   .edit-header { padding:10px 12px; }
   .save-bar { padding:8px 12px calc(8px + var(--sab)); }
+  .si-mobile-back-bar { display:flex; }
 }
 
 /* Tablet: narrower left panel */
@@ -1620,6 +1626,42 @@ body.theme-dark .sched-current-week {
 }
 .btn-ai:hover { opacity: 0.9; }
 .btn-ai:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── FILE ATTACHMENTS ── */
+.attach-row { display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:5px; }
+.attach-icon { font-size:16px;flex-shrink:0; }
+.attach-name { font-size:11px;font-family:var(--mono);color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.attach-size { font-size:9px;color:var(--text3);font-family:var(--mono);flex-shrink:0; }
+.attach-del  { width:22px;height:22px;border-radius:5px;border:none;background:none;color:var(--text3);cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;transition:all 0.12s;flex-shrink:0; }
+.attach-del:hover { background:var(--red-dim);color:var(--red); }
+.btn-attach { display:flex;align-items:center;gap:5px;padding:6px 12px;border-radius:7px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);font-size:11px;font-family:var(--mono);cursor:pointer;transition:all 0.12s; }
+.btn-attach:hover { border-color:var(--accent);color:var(--accent); }
+/* ── VOICE-TO-TEXT ── */
+.voice-btn { width:34px;height:34px;border-radius:50%;border:1px solid var(--border);background:var(--surface2);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;transition:all 0.15s;flex-shrink:0; }
+.voice-btn.recording { background:var(--red-dim);border-color:var(--red);color:var(--red);animation:pulse-rec 1s infinite; }
+@keyframes pulse-rec { 0%,100%{opacity:1} 50%{opacity:0.5} }
+/* ── CAMERA FAB (mobile) ── */
+.camera-fab { display:none;position:fixed;bottom:calc(80px + var(--sab));right:18px;z-index:200;width:52px;height:52px;border-radius:50%;background:var(--accent);color:#000;border:none;font-size:22px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.3);align-items:center;justify-content:center;transition:transform 0.15s; }
+.camera-fab:active { transform:scale(0.93); }
+@media(max-width:640px){ .camera-fab.visible { display:flex; } }
+/* ── ARCHIVE BADGE ── */
+.archived-badge { font-size:9px;font-family:var(--mono);padding:2px 7px;border-radius:4px;background:var(--surface3);color:var(--text3);border:1px solid var(--border);letter-spacing:0.5px; }
+.proj-grid.archived-section { opacity:0.65; }
+/* ── ACTIVITY FEED ── */
+.act-item { display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border); }
+.act-dot  { width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:4px; }
+.act-dot.status   { background:var(--accent); }
+.act-dot.photo    { background:var(--green); }
+.act-dot.note     { background:var(--yellow); }
+.act-dot.attach   { background:#a855f7; }
+/* ── FLOOR PLAN ── */
+.fp-canvas-wrap { position:relative;flex:1;overflow:hidden;background:var(--surface2);display:flex;align-items:center;justify-content:center; }
+.fp-canvas { cursor:crosshair;display:block;max-width:100%;max-height:100%; }
+.fp-pin { position:absolute;transform:translate(-50%,-50%);cursor:pointer;font-size:18px;text-shadow:0 1px 4px rgba(0,0,0,0.6);transition:transform 0.12s;z-index:10; }
+.fp-pin:hover { transform:translate(-50%,-50%) scale(1.3); }
+.fp-pin-label { position:absolute;top:100%;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:2px 6px;font-size:9px;font-family:var(--mono);color:var(--accent);white-space:nowrap;pointer-events:none;margin-top:2px; }
+/* ── NOTIFICATION BELL ── */
+.notif-badge { position:absolute;top:2px;right:2px;width:8px;height:8px;border-radius:50%;background:var(--red);border:2px solid var(--surface); }
 </style>
 </head>
 <body>
@@ -1646,6 +1688,7 @@ body.theme-dark .sched-current-week {
     <div class="btn-icon" onclick="showShareModal()" title="Share">📤</div>
     <div class="btn-icon" onclick="handleAdd()" title="Add">＋</div>
     <div class="btn-icon" onclick="showLoginModal()" id="admin-lock-btn" title="Admin Login">🔓</div>
+    <div class="btn-icon" onclick="toggleNotifications()" id="notif-btn" title="Notifications" style="position:relative">🔔</div>
   </div>
 </div>
 
@@ -1691,10 +1734,14 @@ body.theme-dark .sched-current-week {
     <div id="v-toolbox"  style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
     <div id="v-awi"      style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
     <div id="v-manpower" style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
+    <div id="v-activity"  style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
+    <div id="v-floorplan" style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
   </div>
 </div>
 
 <div class="toast" id="toast"></div>
+<!-- Camera FAB — shows on mobile when in SI editor -->
+<button class="camera-fab" id="camera-fab" onclick="fabCamera()" title="Take Photo">📷</button>
 <!-- Hidden file inputs — no visible UI -->
 <input type="file" id="file-input" accept="image/*" multiple onchange="handleFileImport(event)" style="display:none">
 <input type="file" id="cover-photo-input" accept="image/*" onchange="handleCoverPhotoUpload(event)" style="display:none">
@@ -1706,6 +1753,8 @@ body.theme-dark .sched-current-week {
 <input type="file" id="contact-csv-input"  accept=".csv,text/csv"          onchange="handleContactCSV(event)"  style="display:none">
 <input type="file" id="contact-vcf-input"  accept=".vcf,text/vcard"         onchange="handleContactVCF(event)"  style="display:none">
 <input type="file" id="contact-xlsx-input" accept=".xlsx,.xls"              onchange="handleContactXLSX(event)" style="display:none">
+<input type="file" id="attach-file-input" accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.txt,.csv,.zip,.png,.jpg,.jpeg" multiple onchange="handleAttachmentImport(event)" style="display:none">
+<input type="file" id="floorplan-input" accept="image/*,.pdf" onchange="handleFloorPlanUpload(event)" style="display:none">
 
 <!-- Mobile bottom nav (phones only) -->
 <div class="mobile-bottom-nav" id="mobile-bottom-nav">
@@ -2451,6 +2500,7 @@ async function _initStore() {
   // Ensure new fields exist in migrated / old data
   if(!store.settings) store.settings = { isAdmin: false, theme: 'light' };
   if(store.settings.theme === undefined || store.settings.theme === 'default') store.settings.theme = 'light';
+  if(!store.settings.displayName) store.settings.displayName = '';
   if(!store.folders)  store.folders  = [];
   if(!store.projects) store.projects = [];
   if(!store.contacts) store.contacts = [];
@@ -2643,7 +2693,9 @@ function applyTheme(id) {
   document.body.classList.remove('theme-dark');
   const colors = { 'light': '#f1f5f9', 'dark': '#0b0f14' };
   if (id === 'dark') document.body.classList.add('theme-dark');
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', colors[id] || colors['light']);
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => {
+    m.setAttribute('content', colors[id] || colors['light']);
+  });
 }
 
 // ══════════════════════════════════════════
@@ -2768,6 +2820,14 @@ function renderNavBar(r) {
   if (r.view==='awi') {
     crumbs.push(`<span class="crumb-sep">›</span>`);
     crumbs.push(`<span class="crumb active">📐 AWI Standards</span>`);
+  }
+  if (r.view==='activity') {
+    crumbs.push(`<span class="crumb-sep">›</span>`);
+    crumbs.push(`<span class="crumb active">📋 Activity Feed</span>`);
+  }
+  if (r.view==='floorplan') {
+    crumbs.push(`<span class="crumb-sep">›</span>`);
+    crumbs.push(`<span class="crumb active">🗺️ Floor Plan</span>`);
   }
   bc.innerHTML = crumbs.join('');
 }
@@ -3099,15 +3159,17 @@ renderLeft = function(r) {
 
 // ── RIGHT PANEL ──────────────────────────
 function renderRight(r) {
-  const views=['v-empty','v-root','v-folder','v-project','v-si','v-env','v-contacts','v-schedule','v-toolbox','v-awi'];
-  views.forEach(id=>{ const el=document.getElementById(id); el.style.display='none'; });
+  const views=['v-empty','v-root','v-folder','v-project','v-si','v-env','v-contacts','v-schedule','v-toolbox','v-awi','v-manpower','v-activity','v-floorplan'];
+  views.forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display='none'; });
 
   if (r.view==='contacts') { buildContactBookView(); show('v-contacts'); }
   else if (r.view==='toolbox') { buildToolboxView(); show('v-toolbox'); }
   else if (r.view==='awi')     { buildAWIView();     show('v-awi'); }
   else if (r.view==='env') { buildEnvView(r.projectId); show('v-env'); }
   else if (r.view==='schedule') { buildScheduleView(r.projectId); show('v-schedule'); }
-  else if (r.view==='manpower') { buildManpowerView(r.projectId); show('v-manpower'); }
+  else if (r.view==='manpower')  { buildManpowerView(r.projectId);  show('v-manpower');  }
+  else if (r.view==='activity')  { buildActivityView(r.projectId);  show('v-activity');  }
+  else if (r.view==='floorplan') { buildFloorPlanView(r.projectId); show('v-floorplan'); }
   else if (r.view==='si') { buildSIEditor(r.projectId,r.siId); show('v-si'); }
   else if (r.view==='project'&&!r.siId&&!r.envMode) { buildProjectView(r.projectId); show('v-project'); }
   else if (r.view==='folder'&&!r.projectId) { buildFolderView(r.folderId); show('v-folder'); }
@@ -3976,6 +4038,16 @@ function buildProjectView(pid) {
         <div class="action-body"><div class="action-title">Manpower Tracking</div><div class="action-desc">Daily labor log & budget burn-down per SI</div></div>
         <div class="action-arrow">›</div>
       </div>
+      <div class="action-row" onclick="navToActivity('${pid}')">
+        <span class="action-icon">📋</span>
+        <div class="action-text"><div class="action-title">Activity Feed</div><div class="action-sub">Status changes, notes, photos</div></div>
+        <span class="action-arrow">›</span>
+      </div>
+      <div class="action-row" onclick="navToFloorPlan('${pid}')">
+        <span class="action-icon">🗺️</span>
+        <div class="action-text"><div class="action-title">Floor Plan</div><div class="action-sub">Upload plan and pin SIs</div></div>
+        <span class="action-arrow">›</span>
+      </div>
       <div class="action-row" onclick="navToEnv('${pid}')">
         <div class="action-icon" style="background:rgba(52,211,153,0.1)">🌡️</div>
         <div class="action-body"><div class="action-title">Environmental Conditions</div><div class="action-desc">Temperature & humidity charts from sensor data</div></div>
@@ -4013,14 +4085,22 @@ function openFirstSI(pid) {
 
 function navToEnv(pid) {
   const cur=route();
-  stack=stack.filter(r=>r.view!=='env'&&r.view!=='si'&&r.view!=='schedule');
+  // Remove duplicate views but keep project in stack so goBack() lands on project
+  stack=stack.filter(r=>r.view!=='env'&&r.view!=='si'&&r.view!=='schedule'&&r.view!=='manpower');
+  // Ensure project is in stack so Back works
+  if(!stack.find(r=>r.view==='project'&&r.projectId===pid)) {
+    stack.push({view:'project',folderId:cur.folderId||'',projectId:pid});
+  }
   stack.push({view:'env', folderId:cur.folderId||'', projectId:pid});
   render();
 }
 
 function navToSchedule(pid) {
   const cur=route();
-  stack=stack.filter(r=>r.view!=='schedule'&&r.view!=='si'&&r.view!=='env');
+  stack=stack.filter(r=>r.view!=='schedule'&&r.view!=='si'&&r.view!=='env'&&r.view!=='manpower');
+  if(!stack.find(r=>r.view==='project'&&r.projectId===pid)) {
+    stack.push({view:'project',folderId:cur.folderId||'',projectId:pid});
+  }
   stack.push({view:'schedule', folderId:cur.folderId||'', projectId:pid});
   render();
 }
@@ -4122,7 +4202,9 @@ function buildSIEditor(pid,sid) {
         <div class="photo-grid">${photosHTML}</div>
       </div>
           <div class="field-group">
-            <div class="field-label">Field Notes / Observations</div>
+            <div class="field-label" style="display:flex;align-items:center;justify-content:space-between">Field Notes / Observations
+              <button class="voice-btn" id="voice-btn" onclick="toggleVoice('${pid}','${sid}')" title="Voice note">🎤</button>
+            </div>
             <textarea class="field-input" id="notes-input" placeholder="Describe current field conditions, what changed, what's blocking..." oninput="scheduleAutoSave('${pid}','${sid}')">${item.notes}</textarea>
           </div>
           <div class="field-row">
@@ -4194,10 +4276,21 @@ function buildSIEditor(pid,sid) {
         </div>
       </div>
     </div>
+      <div class="field-group">
+        <div class="field-label" style="display:flex;align-items:center;justify-content:space-between">
+          File Attachments (${(item.attachments||[]).length})
+          <button class="btn-attach" onclick="triggerAttach('${pid}','${sid}')">📎 Attach File</button>
+        </div>
+        <div id="attach-list-${sid}">${_buildAttachListHTML(pid,sid)}</div>
+      </div>
     <div class="save-bar">
       <button class="btn-nav" onclick="navSI('${pid}','${sid}',-1)">‹ Prev</button>
       <div class="autosave-indicator" id="autosave-ind">✦ auto-save</div>
       <button class="btn-nav" onclick="navSI('${pid}','${sid}',1)">Next ›</button>
+    </div>
+    <div class="si-mobile-back-bar" id="si-mobile-back">
+      <button class="btn-nav" style="border-color:var(--accent);color:var(--accent)"
+        onclick="navToProject('${pid}','${fid}')">← Back to Project</button>
     </div>`;
 }
 
@@ -5699,7 +5792,13 @@ function deleteEnvScreenshot(pid, idx) {
 function setStatus(pid,sid,status) {
   const item=getSI(pid,sid); if(!item) return;
   syncEditorToStore(pid,sid);
-  item.status=status; markAsDirty(sid); save();
+  const prev=item.status;
+  item.status=status;
+  item._updatedBy=store.settings.displayName||'You';
+  item._updatedAt=Date.now();
+  _logActivity(pid,{type:'status',siId:sid,siNum:item.num,detail:`${prev}→${status}`,by:item._updatedBy});
+  markAsDirty(sid); save();
+  _maybeNotify(item.num,item.title,status);
   buildSIEditor(pid,sid);
   renderLeft(route());
 }
@@ -5857,7 +5956,11 @@ function syncEditorToStore(pid, sid) {
 
 function _doSave(pid,sid,toast=true) {
   const item=getSI(pid,sid); if(!item) return;
+  const prevNotes=item.notes||'';
   syncEditorToStore(pid, sid);
+  item._updatedBy=store.settings.displayName||'You';
+  item._updatedAt=Date.now();
+  if(item.notes!==prevNotes && item.notes) _logActivity(pid,{type:'note',siId:sid,siNum:item.num,detail:item.notes.slice(0,80),by:item._updatedBy});
   markAsDirty(sid);
   save();
   renderLeft(route());
@@ -6076,6 +6179,7 @@ function handleFileImport(e) {
           // Save locally first (works offline, instant feedback)
           const photoEntry = {data: compressedData, caption: '', takenAt};
           item.photos.push(photoEntry);
+          _logActivity(_pt.pid,{type:'photo',siId:_pt.sid,siNum:item.num,detail:`Photo ${item.photos.length}`,by:store.settings.displayName||'You'});
           if(++loaded===files.length){ markAsDirty(_pt.sid); save(); buildSIEditor(_pt.pid,_pt.sid); renderLeft(route()); }
 
           // Then upload to Azure Blob Storage in the background
@@ -6441,6 +6545,17 @@ function showShareModal() {
 
   // Section collapse state
   const _sec = { themes:true, cover:true, colours:false, images:false, include:false, branding:false };
+  // Inject display name input at top of share modal
+  requestAnimationFrame(()=>{
+    const mo=document.querySelector('.modal');
+    if(mo&&!mo.querySelector('#disp-name-row')){
+      const row=document.createElement('div');
+      row.id='disp-name-row';
+      row.style.cssText='padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;background:var(--surface2)';
+      row.innerHTML=`<span style="font-size:11px;font-family:var(--mono);color:var(--text3);white-space:nowrap">Your Name</span><input id="disp-name-inp" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:5px 10px;font-size:12px;color:var(--text);outline:none;font-family:var(--sans)" placeholder="e.g. J. Garcia" value="${store.settings.displayName||''}" oninput="store.settings.displayName=this.value;markStoreDirty();save()">`;
+      mo.insertBefore(row,mo.children[1]);
+    }
+  });
 
   // Map RG theme → PDF template name used by existing exportPDF()
   const _themeToPDF = {
@@ -7911,6 +8026,10 @@ function showProjMenu(e,pid,fid) {
       <span class="ctx-icon">⚙️</span> Duplicate Options…
     </div>
     <div class="ctx-divider"></div>
+    <div class="ctx-item" onclick="closeCtxMenu();toggleArchiveProject('${pid}','${fid}')">
+      <span class="ctx-icon">${getProject('${pid}')?.archived?'📤':'🗄️'}</span> ${getProject('${pid}')?.archived?'Unarchive':'Archive'}
+    </div>
+    <div class="ctx-divider"></div>
     <div class="ctx-item danger" onclick="closeCtxMenu();confirmDeleteProject('${pid}','${fid}')">
       <span class="ctx-icon">🗑</span> Delete Project
     </div>`;
@@ -8841,27 +8960,80 @@ function showToast(msg,type='') {
 // INIT — load IndexedDB then render
 // ══════════════════════════════════════════
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', _initStore);
+  document.addEventListener('DOMContentLoaded', () => { _initStore(); _initMobileQoL(); });
 } else {
   _initStore();
+  _initMobileQoL();
+}
+
+// ── MOBILE QoL ENHANCEMENTS ───────────────
+function _initMobileQoL() {
+  // ── Swipe-left-from-edge = goBack() on mobile ──
+  let _touchStartX = 0;
+  let _touchStartY = 0;
+  const EDGE_THRESHOLD = 30;  // px from left edge to begin swipe
+  const SWIPE_MIN = 80;       // px minimum horizontal swipe distance
+
+  document.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    _touchStartX = t.clientX;
+    _touchStartY = t.clientY;
+  }, { passive: true });
+
+  document.addEventListener('touchend', e => {
+    const t = e.changedTouches[0];
+    const dx = t.clientX - _touchStartX;
+    const dy = Math.abs(t.clientY - _touchStartY);
+    // Swipe right (from left edge) = back; only on mobile width
+    if (_touchStartX < EDGE_THRESHOLD && dx > SWIPE_MIN && dy < 60 && window.innerWidth <= 640) {
+      if (stack.length > 0) {
+        if (navigator.vibrate) navigator.vibrate(12);
+        goBack();
+      }
+    }
+  }, { passive: true });
+
+  // ── Prevent pull-to-refresh rubber-banding on iOS in PWA mode ──
+  let _lastY = 0;
+  document.addEventListener('touchmove', e => {
+    const el = e.target.closest('[data-scroll]') || e.target.closest('.list-scroll') ||
+                e.target.closest('.edit-scroll') || e.target.closest('.grid-wrap') ||
+                e.target.closest('.env-wrap') || e.target.closest('[style*="overflow"]');
+    if (!el) {
+      e.preventDefault();
+    }
+  }, { passive: false });
 }
 
 // ── INLINE PWA SETUP ─────────────────────
-// Inject manifest as a blob so no external file needed
+// Inject manifest dynamically — works at any URL depth (Azure, GitHub Pages, etc.)
 (function injectManifest() {
+  // Compute base path so start_url/scope work regardless of subdirectory deployment
+  const pathParts = window.location.pathname.split('/');
+  pathParts.pop(); // remove filename (or empty string for trailing slash)
+  const basePath = pathParts.join('/') || '/';
+  const startUrl = window.location.origin + basePath + '/';
+  const iconBase = window.location.origin + basePath;
+
   const manifest = {
     name: 'ADH Field Audit Tool',
     short_name: 'ADH Audit',
     description: 'Field conditions audit for construction and installation teams',
-    start_url: window.location.href,
+    start_url: startUrl,
+    scope: startUrl,
     display: 'standalone',
     orientation: 'any',
     background_color: '#16181d',
     theme_color: '#16181d',
-    icons: [{
-      src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%231f2229'/%3E%3Crect x='0' y='0' width='192' height='8' rx='4' fill='%233db8f5'/%3E%3Ctext x='96' y='118' font-family='system-ui%2C-apple-system%2Csans-serif' font-weight='800' font-size='72' fill='%233db8f5' text-anchor='middle' letter-spacing='-2'%3EADH%3C/text%3E%3Ctext x='96' y='148' font-family='system-ui%2C-apple-system%2Csans-serif' font-weight='500' font-size='18' fill='%238b95a8' text-anchor='middle' letter-spacing='3'%3EAUDIT%3C/text%3E%3C/svg%3E",
-      sizes: '192x192', type: 'image/svg+xml', purpose: 'any maskable'
-    }]
+    // iOS Safari requires PNG icons — SVG icons are silently ignored on phones
+    icons: [
+      { src: iconBase + '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: iconBase + '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+      { src: iconBase + '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: iconBase + '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+    ],
+    categories: ['business', 'productivity', 'utilities'],
+    lang: 'en-US'
   };
   const blob = new Blob([JSON.stringify(manifest)], {type:'application/json'});
   const url  = URL.createObjectURL(blob);
@@ -9465,6 +9637,9 @@ window.updateMPPreview = function(sid) {
 function navToManpower(pid) {
   const cur = route();
   stack = stack.filter(r => r.view !== 'manpower' && r.view !== 'si' && r.view !== 'env' && r.view !== 'schedule');
+  if(!stack.find(r=>r.view==='project'&&r.projectId===pid)) {
+    stack.push({view:'project',folderId:cur.folderId||'',projectId:pid});
+  }
   stack.push({ view: 'manpower', folderId: cur.folderId || '', projectId: pid });
   render();
 }
@@ -10087,6 +10262,442 @@ window.handleWorkOrdersXLSX = function(e) {
   reader.readAsArrayBuffer(file);
   e.target.value = '';
 };
+
+
+// ══════════════════════════════════════════════════════════════════
+// FEATURE: _timeAgo + _logActivity helpers
+// ══════════════════════════════════════════════════════════════════
+function _timeAgo(ts) {
+  if(!ts) return '';
+  const diff=Date.now()-ts;
+  const m=Math.floor(diff/60000);
+  if(m<1) return 'just now';
+  if(m<60) return m+'m ago';
+  const h=Math.floor(m/60);
+  if(h<24) return h+'h ago';
+  return Math.floor(h/24)+'d ago';
+}
+
+function _logActivity(pid,entry) {
+  const proj=getProject(pid); if(!proj) return;
+  if(!proj.activityLog) proj.activityLog=[];
+  proj.activityLog.unshift({...entry,at:Date.now()});
+  if(proj.activityLog.length>300) proj.activityLog.length=300;
+  markProjectDirty(pid);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// FEATURE: Updated-by badge on SI row (call from renderLeft patch)
+// ══════════════════════════════════════════════════════════════════
+function _updatedByBadge(item) {
+  if(!item._updatedAt) return '';
+  const name=item._updatedBy||'';
+  return `<div style="font-size:9px;color:var(--text3);font-family:var(--mono);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name?name+' · ':''}<span style="color:var(--accent)">${_timeAgo(item._updatedAt)}</span></div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// FEATURE: Voice-to-Text
+// ══════════════════════════════════════════════════════════════════
+let _voiceRec=null, _voiceActive=false;
+function toggleVoice(pid,sid) {
+  const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SpeechRecognition){ showToast('Voice not supported on this browser',''); return; }
+  const btn=document.getElementById('voice-btn');
+  if(_voiceActive){ _voiceRec?.stop(); return; }
+  _voiceRec=new SpeechRecognition();
+  _voiceRec.continuous=true; _voiceRec.interimResults=true; _voiceRec.lang='en-US';
+  _voiceRec.onstart=()=>{ _voiceActive=true; if(btn)btn.classList.add('recording'); showToast('🎤 Listening…'); };
+  _voiceRec.onresult=e=>{
+    const ta=document.getElementById('notes-input'); if(!ta) return;
+    const transcript=Array.from(e.results).map(r=>r[0].transcript).join(' ');
+    // Only append final results to avoid duplication
+    if(e.results[e.results.length-1].isFinal){
+      ta.value=(ta.value?ta.value+' ':'')+e.results[e.results.length-1][0].transcript.trim();
+      scheduleAutoSave(pid,sid);
+    }
+  };
+  _voiceRec.onerror=()=>{ _voiceActive=false; if(btn)btn.classList.remove('recording'); };
+  _voiceRec.onend=()=>{ _voiceActive=false; if(btn)btn.classList.remove('recording'); _voiceRec=null; };
+  _voiceRec.start();
+}
+
+// ══════════════════════════════════════════════════════════════════
+// FEATURE: Camera FAB (mobile shortcut)
+// ══════════════════════════════════════════════════════════════════
+let _fabTarget={pid:null,sid:null};
+function fabCamera(){
+  if(!_fabTarget.pid||!_fabTarget.sid){ showToast('Open an SI first'); return; }
+  triggerCamera(_fabTarget.pid,_fabTarget.sid);
+}
+// Show/hide FAB based on current view
+const _origBuildSI=buildSIEditor;
+buildSIEditor=function(pid,sid){
+  _origBuildSI(pid,sid);
+  _fabTarget={pid,sid};
+  const fab=document.getElementById('camera-fab');
+  if(fab) fab.classList.add('visible');
+};
+// Hide FAB when leaving SI
+const _origRenderRight=renderRight;
+renderRight=function(r){
+  _origRenderRight(r);
+  const fab=document.getElementById('camera-fab');
+  if(fab){ if(r.view==='si') fab.classList.add('visible'); else fab.classList.remove('visible'); }
+};
+
+// ══════════════════════════════════════════════════════════════════
+// FEATURE: Push / Local Notifications
+// ══════════════════════════════════════════════════════════════════
+let _notifEnabled=localStorage.getItem('adh_notif')==='1';
+function toggleNotifications(){
+  if(!('Notification' in window)){ showToast('Notifications not supported'); return; }
+  if(_notifEnabled){ _notifEnabled=false; localStorage.setItem('adh_notif','0'); showToast('Notifications off'); _updateNotifUI(); return; }
+  Notification.requestPermission().then(p=>{
+    if(p==='granted'){ _notifEnabled=true; localStorage.setItem('adh_notif','1'); showToast('🔔 Notifications on','green'); new Notification('ADH Audit',{body:'You'll be notified on status changes.',icon:'icon-192.png'}); }
+    else showToast('Permission denied');
+    _updateNotifUI();
+  });
+}
+function _updateNotifUI(){
+  const btn=document.getElementById('notif-btn');
+  if(!btn) return;
+  btn.querySelector('.notif-badge')?.remove();
+  if(_notifEnabled){ const b=document.createElement('div'); b.className='notif-badge'; btn.appendChild(b); }
+}
+function _maybeNotify(num,title,status){
+  if(!_notifEnabled||Notification.permission!=='granted') return;
+  const labels={'completed':'✅ Completed','not-ready':'❌ Not Ready','punch-ongoing':'◈ Punch Ongoing','in-progress':'◑ In Progress','on-hold':'⏸ On Hold'};
+  if(!labels[status]) return;
+  try{ new Notification(`${num} — ${labels[status]}`,{body:title,icon:'icon-192.png',tag:num}); }catch(e){}
+}
+// Init notif badge on load
+document.addEventListener('DOMContentLoaded',_updateNotifUI);
+setTimeout(_updateNotifUI,500);
+
+// ══════════════════════════════════════════════════════════════════
+// FEATURE: File Attachments
+// ══════════════════════════════════════════════════════════════════
+let _attachTarget={pid:null,sid:null};
+function triggerAttach(pid,sid){
+  _attachTarget={pid,sid};
+  document.getElementById('attach-file-input').click();
+}
+function handleAttachmentImport(e){
+  const {pid,sid}=_attachTarget;
+  const item=getSI(pid,sid); if(!item) return;
+  if(!item.attachments) item.attachments=[];
+  const files=Array.from(e.target.files);
+  let loaded=0;
+  files.forEach(file=>{
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      const ext=file.name.split('.').pop().toLowerCase();
+      const icons={pdf:'📄',doc:'📝',docx:'📝',xlsx:'📊',xls:'📊',pptx:'📑',csv:'📊',txt:'📃',zip:'🗜️',png:'🖼️',jpg:'🖼️',jpeg:'🖼️'};
+      const attach={id:'att_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),name:file.name,type:file.type,ext,icon:icons[ext]||'📎',size:file.size,data:ev.target.result,addedAt:Date.now(),addedBy:store.settings.displayName||'You'};
+      item.attachments.push(attach);
+      _logActivity(pid,{type:'attach',siId:sid,siNum:item.num,detail:file.name,by:attach.addedBy});
+      if(++loaded===files.length){
+        markAsDirty(sid); save();
+        const el=document.getElementById('attach-list-'+sid);
+        if(el) el.innerHTML=_buildAttachListHTML(pid,sid);
+        showToast('✓ File attached','green');
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+  e.target.value='';
+}
+function _buildAttachListHTML(pid,sid){
+  const item=getSI(pid,sid); if(!item||!item.attachments||!item.attachments.length) return '<div style="font-size:11px;color:var(--text3);padding:6px 0">No files attached yet</div>';
+  return item.attachments.map(a=>`
+    <div class="attach-row">
+      <span class="attach-icon">${a.icon||'📎'}</span>
+      <span class="attach-name" title="${a.name}">${a.name}</span>
+      <span class="attach-size">${(a.size/1024).toFixed(0)}KB</span>
+      ${a.data?`<button class="attach-del" style="color:var(--accent);background:none" onclick="event.stopPropagation();_openAttachment('${a.id}','${pid}','${sid}')" title="Open">⬇</button>`:''}
+      <button class="attach-del" onclick="deleteAttachment('${pid}','${sid}','${a.id}')">✕</button>
+    </div>`).join('');
+}
+function _openAttachment(attId,pid,sid){
+  const item=getSI(pid,sid); if(!item) return;
+  const a=item.attachments?.find(x=>x.id===attId); if(!a||!a.data) return;
+  const link=document.createElement('a');
+  link.href=a.data; link.download=a.name; link.click();
+}
+function deleteAttachment(pid,sid,attId){
+  const item=getSI(pid,sid); if(!item) return;
+  item.attachments=(item.attachments||[]).filter(a=>a.id!==attId);
+  markAsDirty(sid); save();
+  const el=document.getElementById('attach-list-'+sid);
+  if(el) el.innerHTML=_buildAttachListHTML(pid,sid);
+  showToast('Attachment removed');
+}
+
+// ══════════════════════════════════════════════════════════════════
+// FEATURE: Archive / Unarchive Projects
+// ══════════════════════════════════════════════════════════════════
+function toggleArchiveProject(pid,fid){
+  const proj=getProject(pid); if(!proj) return;
+  proj.archived=!proj.archived;
+  markProjectDirty(pid); save();
+  showToast(proj.archived?'Project archived':'Project unarchived','green');
+  render();
+}
+
+// ══════════════════════════════════════════════════════════════════
+// FEATURE: Activity Feed View
+// ══════════════════════════════════════════════════════════════════
+function navToActivity(pid){
+  const cur=route();
+  stack=stack.filter(r=>r.view!=='activity'&&r.view!=='si'&&r.view!=='env'&&r.view!=='schedule'&&r.view!=='manpower');
+  if(!stack.find(r=>r.view==='project'&&r.projectId===pid)) stack.push({view:'project',folderId:cur.folderId||'',projectId:pid});
+  stack.push({view:'activity',folderId:cur.folderId||'',projectId:pid});
+  render();
+}
+const _actTypeLabel={status:'Status Change',note:'Note Saved',photo:'Photo Added',attach:'File Attached'};
+const _actTypeIcon ={status:'🔄',note:'📝',photo:'📷',attach:'📎'};
+const _actTypeDot  ={status:'status',note:'note',photo:'photo',attach:'attach'};
+function buildActivityView(pid){
+  const proj=getProject(pid); if(!proj) return;
+  const el=document.getElementById('v-activity'); if(!el) return;
+  const log=proj.activityLog||[];
+
+  // Group by date
+  const byDate={};
+  log.forEach(e=>{
+    const d=new Date(e.at);
+    const key=d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+    if(!byDate[key]) byDate[key]=[];
+    byDate[key].push(e);
+  });
+
+  const rowsHTML=Object.entries(byDate).map(([date,entries])=>`
+    <div style="font-size:9px;font-family:var(--mono);font-weight:700;letter-spacing:0.8px;color:var(--text3);text-transform:uppercase;padding:10px 14px 4px;background:var(--bg)">${date}</div>
+    ${entries.map(e=>`
+      <div class="act-item">
+        <div class="act-dot ${_actTypeDot[e.type]||'status'}"></div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span style="font-size:10px;font-family:var(--mono);color:var(--accent);font-weight:700">${e.siNum||''}</span>
+            <span style="font-size:11px;color:var(--text);font-weight:500">${_actTypeLabel[e.type]||e.type}</span>
+            ${e.by&&e.by!=='You'?`<span style="font-size:9px;color:var(--text3);font-family:var(--mono)">${e.by}</span>`:''}
+          </div>
+          ${e.detail?`<div style="font-size:11px;color:var(--text2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e.detail}">${e.detail}</div>`:''}
+        </div>
+        <div style="font-size:9px;color:var(--text3);font-family:var(--mono);flex-shrink:0">${_timeAgo(e.at)}</div>
+      </div>`).join('')}`).join('');
+
+  el.innerHTML=`
+    <div style="flex:1;overflow-y:auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0">
+        <div style="font-size:14px;font-weight:600">📋 Activity Feed <span style="font-size:11px;color:var(--text3);font-weight:400">${proj.name}</span></div>
+        ${log.length?`<button onclick="if(confirm('Clear activity log?')){getProject('${pid}').activityLog=[];markProjectDirty('${pid}');save();buildActivityView('${pid}')}" style="font-size:10px;font-family:var(--mono);padding:4px 10px;border:1px solid var(--border);background:var(--surface2);border-radius:6px;cursor:pointer;color:var(--text3)">Clear</button>`:''}
+      </div>
+      ${log.length?`<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;margin:14px;overflow:hidden">${rowsHTML}</div>`
+        :`<div style="text-align:center;padding:60px 24px;color:var(--text3)"><div style="font-size:40px;opacity:0.2;margin-bottom:12px">📋</div><div style="font-size:14px;font-weight:600;color:var(--text2)">No activity yet</div><div style="font-size:12px;margin-top:6px">Status changes, notes, and photos will appear here</div></div>`}
+    </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// FEATURE: Floor Plan Overlay
+// ══════════════════════════════════════════════════════════════════
+function navToFloorPlan(pid){
+  const cur=route();
+  stack=stack.filter(r=>r.view!=='floorplan'&&r.view!=='si'&&r.view!=='env'&&r.view!=='schedule'&&r.view!=='manpower'&&r.view!=='activity');
+  if(!stack.find(r=>r.view==='project'&&r.projectId===pid)) stack.push({view:'project',folderId:cur.folderId||'',projectId:pid});
+  stack.push({view:'floorplan',folderId:cur.folderId||'',projectId:pid});
+  render();
+}
+let _fpDraggingPin=null;
+function handleFloorPlanUpload(e){
+  const pid=route().projectId; if(!pid) return;
+  const proj=getProject(pid); if(!proj) return;
+  const file=e.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    if(!proj.floorPlan) proj.floorPlan={pins:[]};
+    proj.floorPlan.imageData=ev.target.result;
+    markProjectDirty(pid); save();
+    buildFloorPlanView(pid);
+    showToast('✓ Floor plan uploaded','green');
+  };
+  reader.readAsDataURL(file);
+  e.target.value='';
+}
+function buildFloorPlanView(pid){
+  const proj=getProject(pid); if(!proj) return;
+  const el=document.getElementById('v-floorplan'); if(!el) return;
+  const fp=proj.floorPlan||{pins:[]};
+  const hasImage=!!fp.imageData;
+
+  el.innerHTML=`
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:8px;flex-wrap:wrap">
+      <div style="font-size:14px;font-weight:600">🗺️ Floor Plan <span style="font-size:11px;color:var(--text3);font-weight:400">${proj.name}</span></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        ${hasImage?`<span style="font-size:10px;font-family:var(--mono);color:var(--text3)">${(fp.pins||[]).length} pins</span>`:''}
+        <button onclick="document.getElementById('floorplan-input').click()" style="font-size:11px;font-family:var(--mono);padding:6px 12px;border:1px solid var(--border);background:var(--surface2);border-radius:7px;cursor:pointer;color:var(--text2)">📤 ${hasImage?'Replace Plan':'Upload Plan'}</button>
+        ${hasImage?`<button onclick="_fpAddMode=!_fpAddMode;this.style.background=_fpAddMode?'var(--accent-dim)':'var(--surface2)';this.style.borderColor=_fpAddMode?'var(--accent)':'var(--border)';this.style.color=_fpAddMode?'var(--accent)':'var(--text2)'" id="fp-pin-btn" style="font-size:11px;font-family:var(--mono);padding:6px 12px;border:1px solid var(--border);background:var(--surface2);border-radius:7px;cursor:pointer;color:var(--text2)">📍 Place Pin</button>`:''}
+      </div>
+    </div>
+    <div class="fp-canvas-wrap" id="fp-wrap" style="flex:1;overflow:auto;position:relative">
+      ${hasImage
+        ?`<div id="fp-inner" style="position:relative;display:inline-block">
+            <img id="fp-img" src="${fp.imageData}" style="display:block;max-width:100%;user-select:none" draggable="false">
+            ${(fp.pins||[]).map(pin=>`
+              <div class="fp-pin" data-pinid="${pin.id}" style="left:${pin.xPct}%;top:${pin.yPct}%"
+                title="${pin.siNum}: ${pin.siTitle}"
+                onclick="_fpPinClick(event,'${pid}','${pin.id}')"
+                onmousedown="_fpPinDragStart(event,'${pid}','${pin.id}')">
+                📍<div class="fp-pin-label">${pin.siNum}</div>
+              </div>`).join('')}
+          </div>`
+        :`<div style="text-align:center;padding:60px 24px;color:var(--text3)"><div style="font-size:48px;opacity:0.15;margin-bottom:16px">🗺️</div><div style="font-size:14px;font-weight:600;color:var(--text2)">No floor plan yet</div><div style="font-size:12px;margin-top:6px">Upload a PNG, JPG, or PDF of your floor plan, then click to pin SIs</div></div>`}
+    </div>
+    ${hasImage?`
+    <div style="padding:8px 14px;background:var(--surface2);border-top:1px solid var(--border);font-size:10px;font-family:var(--mono);color:var(--text3);flex-shrink:0">
+      Pin SI items: toggle "Place Pin" → select SI from list → click location on plan
+    </div>
+    <div id="fp-si-picker" style="display:none;position:absolute;bottom:40px;left:10px;right:10px;background:var(--surface);border:1px solid var(--accent);border-radius:10px;max-height:200px;overflow-y:auto;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,0.3)">
+      ${proj.items.slice(0,50).map(item=>`<div style="padding:8px 12px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center" onclick="_fpSelectSI('${pid}','${item.id}')" onmouseover="this.style.background='var(--accent-dim)'" onmouseout="this.style.background=''"><span style="font-family:var(--mono);font-size:10px;color:var(--accent)">${item.num}</span>${item.title}</div>`).join('')}
+    </div>`:''}`;
+
+  // Wire up click-to-pin
+  if(hasImage){
+    window._fpAddMode=false;
+    window._fpSelectedSI=null;
+    const wrap=document.getElementById('fp-inner');
+    if(wrap) wrap.addEventListener('click',e=>{
+      if(e.target.closest('.fp-pin')) return;
+      if(!window._fpAddMode) return;
+      if(!window._fpSelectedSI){
+        const picker=document.getElementById('fp-si-picker');
+        if(picker) picker.style.display=picker.style.display==='none'?'block':'none';
+        return;
+      }
+      const img=document.getElementById('fp-img'); if(!img) return;
+      const rect=img.getBoundingClientRect();
+      const xPct=((e.clientX-rect.left)/rect.width*100).toFixed(2);
+      const yPct=((e.clientY-rect.top)/rect.height*100).toFixed(2);
+      const si=window._fpSelectedSI;
+      if(!proj.floorPlan.pins) proj.floorPlan.pins=[];
+      // Remove existing pin for this SI
+      proj.floorPlan.pins=proj.floorPlan.pins.filter(p=>p.siId!==si.id);
+      proj.floorPlan.pins.push({id:'pin_'+Date.now(),siId:si.id,siNum:si.num,siTitle:si.title,xPct,yPct});
+      markProjectDirty(pid); save();
+      window._fpAddMode=false; window._fpSelectedSI=null;
+      buildFloorPlanView(pid);
+      showToast('📍 Pin placed','green');
+    });
+  }
+}
+window._fpSelectSI=function(pid,siId){
+  const proj=getProject(pid); if(!proj) return;
+  window._fpSelectedSI=proj.items.find(i=>i.id===siId);
+  const picker=document.getElementById('fp-si-picker');
+  if(picker) picker.style.display='none';
+  showToast(`📍 Now click on the floor plan to place ${window._fpSelectedSI?.num}`);
+};
+window._fpPinClick=function(e,pid,pinId){
+  e.stopPropagation();
+  const proj=getProject(pid); if(!proj) return;
+  const pin=proj.floorPlan?.pins?.find(p=>p.id===pinId); if(!pin) return;
+  if(confirm(`Remove pin for ${pin.siNum}?
+
+"${pin.siTitle}"
+
+Click OK to remove, Cancel to open SI.`)){
+    proj.floorPlan.pins=proj.floorPlan.pins.filter(p=>p.id!==pinId);
+    markProjectDirty(pid); save(); buildFloorPlanView(pid);
+  } else {
+    navToSI(pid,pin.siId);
+  }
+};
+
+// ══════════════════════════════════════════════════════════════════
+// PATCH: renderLeft — show archived section + updated-by badge
+// ══════════════════════════════════════════════════════════════════
+(function patchRenderLeft(){
+  const orig=renderLeft;
+  renderLeft=function(r){
+    orig(r);
+    // Inject updated-by badges into rendered SI rows
+    if(r.projectId){
+      const proj=getProject(r.projectId); if(!proj) return;
+      document.querySelectorAll('.si-row[data-sid]').forEach(row=>{
+        const sid=row.dataset.sid;
+        const item=proj.items.find(i=>i.id===sid);
+        if(!item||!item._updatedAt) return;
+        const info=row.querySelector('.si-info');
+        if(!info||info.querySelector('.upd-badge')) return;
+        const badge=document.createElement('div');
+        badge.className='upd-badge';
+        badge.style.cssText='font-size:9px;color:var(--text3);font-family:var(--mono);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+        badge.innerHTML=(item._updatedBy&&item._updatedBy!=='You'?item._updatedBy+' · ':'')+`<span style="color:var(--accent)">${_timeAgo(item._updatedAt)}</span>`;
+        info.appendChild(badge);
+      });
+    }
+  };
+})();
+
+// ══════════════════════════════════════════════════════════════════
+// PATCH: buildFolderView / buildRootView — show archived projects separately
+// ══════════════════════════════════════════════════════════════════
+(function patchProjViews(){
+  function injectArchivedSection(gridEl, allProjs, fid){
+    if(!gridEl) return;
+    const archived=allProjs.filter(p=>p.archived);
+    if(!archived.length) return;
+    // Remove archived cards from main grid
+    archived.forEach(p=>{
+      const existing=[...gridEl.querySelectorAll('.proj-card')].find(el=>el.onclick?.toString().includes(p.id));
+      existing?.remove();
+    });
+    // Add collapsible archived section
+    const sec=document.createElement('div');
+    sec.style.cssText='margin-top:14px;border-top:1px solid var(--border);padding-top:10px';
+    const key='adh_arch_open_'+fid;
+    const open=localStorage.getItem(key)==='1';
+    sec.innerHTML=`
+      <div onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none';localStorage.setItem('${key}',this.nextElementSibling.style.display!==''?'1':'0')"
+        style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;font-family:var(--mono);color:var(--text3);font-weight:600;letter-spacing:0.5px;padding:4px 0;user-select:none">
+        <span>🗄️ ARCHIVED (${archived.length})</span><span style="margin-left:auto">${open?'▲':'▼'}</span>
+      </div>
+      <div class="proj-grid archived-section" style="display:${open?'grid':'none'};margin-top:8px">
+        ${archived.map(p=>projCardHTML(p,fid||'')).join('')}
+      </div>`;
+    gridEl.after(sec);
+  }
+
+  // Hook into DOM mutations after buildRootView/buildFolderView render
+  const origRenderRight=renderRight;
+  renderRight=function(r){
+    origRenderRight(r);
+    requestAnimationFrame(()=>{
+      // Filter archived from all visible proj-grids and add archived section
+      const projGrids=document.querySelectorAll('.proj-grid:not(.archived-section)');
+      projGrids.forEach(grid=>{
+        const allProjs=store.projects.filter(p=>{
+          const cards=[...grid.querySelectorAll('.proj-card:not(.new-card)')];
+          return cards.some(c=>c.getAttribute('onclick')?.includes(p.id)||c.querySelector('*')?.onclick?.toString().includes(p.id));
+        });
+        // simpler: just filter archived cards from current folder
+        if(r.view==='folder'||r.view==='root'){
+          const fid=r.folderId||'';
+          const inFolder=store.projects.filter(p=>p.archived);
+          if(inFolder.length) injectArchivedSection(grid, store.projects, fid);
+        }
+      });
+    });
+  };
+})();
+
+// ══════════════════════════════════════════════════════════════════
+// Init: Request notification permission status check
+// ══════════════════════════════════════════════════════════════════
+setTimeout(()=>{
+  if(_notifEnabled && Notification.permission!=='granted'){ _notifEnabled=false; localStorage.setItem('adh_notif','0'); }
+  _updateNotifUI();
+},1000);
 </script>
 </body>
 </html>
