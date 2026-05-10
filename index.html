@@ -10353,7 +10353,7 @@ function toggleNotifications(){
   if(!('Notification' in window)){ showToast('Notifications not supported'); return; }
   if(_notifEnabled){ _notifEnabled=false; localStorage.setItem('adh_notif','0'); showToast('Notifications off'); _updateNotifUI(); return; }
   Notification.requestPermission().then(p=>{
-    if(p==='granted'){ _notifEnabled=true; localStorage.setItem('adh_notif','1'); showToast('🔔 Notifications on','green'); new Notification('ADH Audit',{body:'You'll be notified on status changes.',icon:'icon-192.png'}); }
+    if(p==='granted'){ _notifEnabled=true; localStorage.setItem('adh_notif','1'); showToast('🔔 Notifications on','green'); new Notification('ADH Audit',{body:'You will be notified on status changes.',icon:'icon-192.png'}); }
     else showToast('Permission denied');
     _updateNotifUI();
   });
