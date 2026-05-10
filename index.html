@@ -1964,10 +1964,71 @@ function markAsDirty(itemId) {
   // Also track the parent project for structural awareness
   const proj = store.projects.find(p => p.items && p.items.some(i => i.id === itemId));
   if (proj) _dirtyProjects.add(proj.id);
+  if (proj) {
+    const item = proj.items.find(i => i.id === itemId);
+    if (item) {
+      item._dirty = true;
+      item._lastModified = new Date().toISOString();
+    }
+    _dirtyProjects.add(proj.id);
+  }
+  _dirtyItems.add(itemId);
   if (!store.pendingSync) store.pendingSync = [];
   if (!store.pendingSync.includes(itemId)) store.pendingSync.push(itemId);
   store.lastUpdated = Date.now();
   save();
+}
+
+/**
+ * Run once on app startup.
+ * Flags all existing items as _dirty so the next sync pushes
+ * the complete dataset to CosmosDB.
+ */
+async function migrateMarkAllDirty() {
+  const MIGRATED_KEY = 'adh_dirty_migration_v1';
+  if (localStorage.getItem(MIGRATED_KEY)) return; // already ran
+
+  console.log('[Migration] Marking all IDB items as dirty for full CosmosDB re-sync…');
+  store.projects.forEach(p => {
+    (p.items || []).forEach(item => {
+      item._dirty = true;
+      item._lastModified = item._lastModified || new Date().toISOString();
+      _dirtyItems.add(item.id);
+      _dirtyProjects.add(p.id);
+    });
+  });
+  
+  save();
+  localStorage.setItem(MIGRATED_KEY, '1');
+  console.log('[Migration] ✓ Done. Scheduling full sync…');
+  scheduleDirtySync(500); 
+}
+
+/**
+ * Central function — call this any time ANY field on an SI changes.
+ * Replaces scattered direct saves throughout the codebase.
+ *
+ * @param {object} si      - The SI object being edited
+ * @param {object} changes - Key/value pairs of changed fields
+ */
+function markDirtyAndSave(si, changes) {
+  // 1. Apply all changes at once
+  Object.assign(si, changes);
+
+  // 2. Mark dirty so the CosmosDB sync picks it up
+  markAsDirty(si.id);
+
+  // 3. Persist to IndexedDB immediately (handled by save() inside markAsDirty)
+
+  // 4. Schedule a debounced CosmosDB push
+  scheduleDirtySync();
+}
+
+// Debounce timer for sync
+let _syncTimer = null;
+function scheduleDirtySync(delayMs = 2000) {
+  clearTimeout(_syncTimer);
+  _syncTimer = setTimeout(() => syncChanges(true), delayMs);
 }
 
 /**
@@ -2133,6 +2194,15 @@ async function syncChanges(isAuto = false) {
     if (result.ok) {
       store._savedAt   = now;
       store.pendingSync = [];
+
+      // Clear the dirty flag only after a confirmed save
+      _dirtyItems.forEach(itemId => {
+        store.projects.forEach(p => {
+          const item = p.items?.find(i => i.id === itemId);
+          if (item) item._dirty = false;
+        });
+      });
+
       _dirtyItems.clear();
       _dirtyProjects.clear();
       _dirtyStore      = false;
@@ -2447,6 +2517,7 @@ _migrateManpower(store);
     if (navigator.onLine) {
       _startPolling();
       _pollForRemoteChanges();
+      syncChanges(true); // Flush dirty queue when back online
     } else {
       _stopPolling();
     }
@@ -5617,6 +5688,7 @@ window.updateSIField = function(pid, sid, field, value) {
   if (!item) return;
   item[field] = value;
   markAsDirty(sid); save();
+  markDirtyAndSave(item, { [field]: value });
   scheduleAutoSave(pid, sid);
 };
 
