@@ -5983,7 +5983,94 @@ function handleFileImport(e) {
   e.target.value='';
 }
 
-window._pdfBranding = { logo: null, auditorSig: null, clientSig: null };
+// ── COMPANY BRANDING SYSTEM ──────────────────────────────────────────────────
+// Replaces the old single-variable window._pdfBranding.
+// Branding is stored per-company in IndexedDB and loaded on init.
+// Each ADH company (AMI, ACD, ACS, ASST, ACM, ADH) has its own logo + color.
+
+const ADH_COMPANIES = [
+  { id:'ami',  name:'Allegheny Millwork (AMI)',             abbr:'AMI',  color:'#8B1A1A' },
+  { id:'acd',  name:'Allegheny Commercial Doors (ACD)',     abbr:'ACD',  color:'#1e3a5f' },
+  { id:'acs',  name:'Allegheny Construction Specialties',   abbr:'ACS',  color:'#14532d' },
+  { id:'asst', name:'Allegheny Solid Surfaces (A.S.S.T)',   abbr:'ASST', color:'#4a1d96' },
+  { id:'acm',  name:'Ascent Custom Millwork (ACM)',         abbr:'ACM',  color:'#7c3aed' },
+  { id:'adh',  name:'Allegheny Diversified Holdings (ADH)', abbr:'ADH',  color:'#0f172a' },
+];
+
+// Runtime branding state — populated from IndexedDB on init
+window._pdfBranding = {
+  companyId:   'ami',      // active company
+  logo:        null,       // base64 image or null
+  auditorSig:  null,       // base64 image or null
+  clientSig:   null,       // base64 image or null
+  // Per-company logos stored separately
+  logos: {},               // { companyId: base64 }
+  auditorSigs: {},         // { companyId: base64 }
+};
+
+// Load saved branding from IndexedDB
+(async () => {
+  try {
+    const saved = await _idbGet('adh_branding');
+    if (saved) {
+      Object.assign(window._pdfBranding, saved);
+      // Restore active logo for current company
+      const cid = window._pdfBranding.companyId || 'ami';
+      window._pdfBranding.logo       = window._pdfBranding.logos?.[cid] || null;
+      window._pdfBranding.auditorSig = window._pdfBranding.auditorSigs?.[cid] || null;
+    }
+  } catch(e) { /* use defaults */ }
+})();
+
+async function _saveBranding() {
+  try {
+    await _idbSet('adh_branding', {
+      companyId:   window._pdfBranding.companyId,
+      logos:       window._pdfBranding.logos,
+      auditorSigs: window._pdfBranding.auditorSigs,
+    });
+  } catch(e) {}
+}
+
+window.setActiveCompany = function(cid) {
+  window._pdfBranding.companyId  = cid;
+  window._pdfBranding.logo       = window._pdfBranding.logos?.[cid]       || null;
+  window._pdfBranding.auditorSig = window._pdfBranding.auditorSigs?.[cid] || null;
+  _saveBranding();
+};
+
+window.getActiveCompany = function() {
+  return ADH_COMPANIES.find(c => c.id === (window._pdfBranding.companyId||'ami')) || ADH_COMPANIES[0];
+};
+
+window.handleBrandingUpload = function(e, type) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const data = ev.target.result;
+    const cid  = window._pdfBranding.companyId || 'ami';
+    if (type === 'logo') {
+      if (!window._pdfBranding.logos) window._pdfBranding.logos = {};
+      window._pdfBranding.logos[cid] = data;
+      window._pdfBranding.logo       = data;
+    } else if (type === 'auditorSig') {
+      if (!window._pdfBranding.auditorSigs) window._pdfBranding.auditorSigs = {};
+      window._pdfBranding.auditorSigs[cid] = data;
+      window._pdfBranding.auditorSig        = data;
+    } else if (type === 'clientSig') {
+      window._pdfBranding.clientSig = data;
+    }
+    _saveBranding();
+    showToast(type === 'logo' ? '✓ Logo saved' : '✓ Signature saved', 'green');
+    // Refresh RG preview if open
+    if (document.getElementById('rg-overlay')) {
+      window._rgRefreshLogoStrip?.();
+    }
+  };
+  reader.readAsDataURL(file);
+};
+
 window.handleBrandingUpload = function(e, type) {
   const file = e.target.files[0];
   if(!file) return;
@@ -6162,20 +6249,19 @@ function showShareModal() {
     return;
   }
 
-  const totalPhotos = proj.items.reduce((n,i)=>n+i.photos.length,0);
-  const completed   = proj.items.filter(i=>i.status==='completed').length;
-  const inProgress  = proj.items.filter(i=>i.status==='in-progress'||i.status==='punch-ongoing').length;
-  const totalItems  = proj.items.length;
-  const completePct = totalItems > 0 ? Math.round((completed/totalItems)*100) : 0;
+  const completed  = proj.items.filter(i=>i.status==='completed').length;
+  const inProgress = proj.items.filter(i=>i.status==='in-progress'||i.status==='punch-ongoing').length;
+  const totalItems = proj.items.length;
+  const completePct= totalItems > 0 ? Math.round((completed/totalItems)*100) : 0;
 
-  // ── State ─────────────────────────────────────────────────────────────────
-  let _rgFilter    = 'all';
-  let _rgTheme     = 'photographic';
-  let _rgPrimary   = '#1a73e8';
-  let _rgImgSize   = 'regular';
-  let _rgImgQual   = 'low';
-  let _rgSquare    = false;
-  let _rgPageNums  = true;
+  // ── Report Generator State ─────────────────────────────────────────────────
+  let _rgFilter     = 'all';
+  let _rgTheme      = 'photographic';
+  let _rgPrimary    = '#1a73e8';
+  let _rgImgSize    = 'regular';
+  let _rgImgQual    = 'low';
+  let _rgSquare     = false;
+  let _rgPageNums   = true;
   let _rgCoverNotes = true;
   let _rgInclPhotos = true;
   let _rgInclTS     = true;
@@ -6183,111 +6269,133 @@ function showShareModal() {
   let _rgInclTags   = true;
   let _rgInclCover  = true;
   let _rgInclEnv    = true;
+  let _rgReportTitle = 'Site Conditions Report';
+  let _rgFooterText  = '';
+  let _rgWhiteLabel  = false;
 
-  // PDF export settings (forwarded to existing exportPDF logic)
-  window._pdfExportSettings = {
-    get quality()     { return _rgImgQual === 'max' ? 0.92 : 0.7; },
-    get inclPhotos()  { return _rgInclPhotos; },
-    get inclTS()      { return _rgInclTS; },
-    get inclNotes()   { return _rgInclNotes; },
-    get inclTags()    { return _rgInclTags; },
-    get inclCover()   { return _rgInclCover; },
-    get inclEnv()     { return _rgInclEnv; },
-    get theme()       { return _rgTheme === 'photographic' || _rgTheme === 'bright' ? 'classic' :
-                               _rgTheme === 'modern' ? 'dark' : 'minimal'; },
-    get pageNums()    { return _rgPageNums; },
+  // Section collapse state
+  const _sec = { themes:true, cover:true, colours:false, images:false, include:false, branding:false };
+
+  // Map RG theme → PDF template name used by existing exportPDF()
+  const _themeToPDF = {
+    photographic:'classic', bright:'classic', corporate:'dark',
+    modern:'dark', financial:'dark', minimal:'minimal', classic:'classic',
   };
 
-  // ── Section collapse state ─────────────────────────────────────────────────
-  const _secOpen = { themes:true, cover:true, colours:false, images:false, include:false };
+  // ── Expose settings for exportPDF() to read ───────────────────────────────
+  window._pdfExportSettings = {
+    get quality()      { return _rgImgQual === 'max' ? 0.92 : 0.70; },
+    get inclPhotos()   { return _rgInclPhotos; },
+    get inclTS()       { return _rgInclTS; },
+    get inclNotes()    { return _rgInclNotes; },
+    get inclTags()     { return _rgInclTags; },
+    get inclCover()    { return _rgInclCover; },
+    get inclEnv()      { return _rgInclEnv; },
+    get pdfTheme()     { return _themeToPDF[_rgTheme] || 'classic'; },
+    get reportTitle()  { return _rgReportTitle; },
+    get footerText()   { return _rgFooterText; },
+    get whiteLabel()   { return _rgWhiteLabel; },
+  };
 
-  function secToggle(name) { _secOpen[name] = !_secOpen[name]; _rebuildSidebar(); }
-
+  // ── Helpers ────────────────────────────────────────────────────────────────
   function chevron(name) {
-    return `<span class="rg-chevron ${_secOpen[name]?'open':''}">▲</span>`;
+    return `<span class="rg-chevron ${_sec[name]?'open':''}">▲</span>`;
   }
+  function secToggle(name) { _sec[name] = !_sec[name]; _rebuildSidebar(); }
 
-  // ── Cover page SVG (hotel-style aerial) ───────────────────────────────────
+  const statusColor = s =>
+    s==='completed'?'#22c55e':s==='punch-ongoing'?'#a855f7':
+    s==='not-ready'?'#ef4444':s==='in-progress'?'#fbbf24':
+    s==='on-hold'?'#f97316':'#6b7280';
+  const statusLabel = s => s.replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+
+  // ── Cover SVG ──────────────────────────────────────────────────────────────
   function _buildCoverSVG(h) {
-    const themeColors = {
-      photographic: { sky1:'#87CEEB', sky2:'#FDB97D', sky3:'#C4886B' },
-      corporate:    { sky1:'#1e3a5f', sky2:'#2563eb', sky3:'#1e293b' },
-      minimal:      { sky1:'#e2e8f0', sky2:'#cbd5e1', sky3:'#94a3b8' },
-      modern:       { sky1:'#0f172a', sky2:'#1e293b', sky3:'#0f172a' },
-      classic:      { sky1:'#1e3a5f', sky2:'#1e3a5f', sky3:'#1e293b' },
-      bright:       { sky1:'#06b6d4', sky2:'#3b82f6', sky3:'#1e40af' },
-      financial:    { sky1:'#14532d', sky2:'#166534', sky3:'#052e16' },
-    };
-    const c = themeColors[_rgTheme] || themeColors.photographic;
-    const isPhoto = _rgTheme === 'photographic' || _rgTheme === 'bright';
-
+    const tc = {
+      photographic:{ s1:'#87CEEB', s2:'#FDB97D', s3:'#C4886B' },
+      bright:      { s1:'#06b6d4', s2:'#3b82f6', s3:'#1e40af' },
+      corporate:   { s1:'#1e3a5f', s2:'#2563eb', s3:'#1e293b' },
+      modern:      { s1:'#0f172a', s2:'#1e293b', s3:'#0f172a' },
+      financial:   { s1:'#14532d', s2:'#166534', s3:'#052e16' },
+      minimal:     { s1:'#e2e8f0', s2:'#cbd5e1', s3:'#94a3b8' },
+      classic:     { s1:'#1e3a5f', s2:'#1e3a5f', s3:'#1e293b' },
+    }[_rgTheme] || { s1:'#87CEEB', s2:'#FDB97D', s3:'#C4886B' };
+    const photo = _rgTheme==='photographic'||_rgTheme==='bright';
+    const uid   = _rgTheme + h;
     return `<svg viewBox="0 0 560 ${h}" xmlns="http://www.w3.org/2000/svg"
-        preserveAspectRatio="xMidYMid slice" style="width:100%;height:${h}px;display:block">
+        preserveAspectRatio="xMidYMid slice" style="display:block;width:100%;height:${h}px">
       <defs>
-        <linearGradient id="covSky${_rgTheme}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="${c.sky1}"/>
-          <stop offset="45%" stop-color="${c.sky2}"/>
-          <stop offset="100%" stop-color="${c.sky3}"/>
+        <linearGradient id="cs${uid}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${tc.s1}"/>
+          <stop offset="45%" stop-color="${tc.s2}"/>
+          <stop offset="100%" stop-color="${tc.s3}"/>
         </linearGradient>
-        <linearGradient id="covOv${_rgTheme}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="rgba(0,0,0,0.06)"/>
-          <stop offset="50%" stop-color="rgba(0,0,0,0.45)"/>
+        <linearGradient id="co${uid}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stop-color="rgba(0,0,0,0.06)"/>
+          <stop offset="50%"  stop-color="rgba(0,0,0,0.44)"/>
           <stop offset="100%" stop-color="rgba(0,0,0,0.76)"/>
         </linearGradient>
       </defs>
-      <rect width="560" height="${h}" fill="url(#covSky${_rgTheme})"/>
-      ${isPhoto ? `
+      <rect width="560" height="${h}" fill="url(#cs${uid})"/>
+      ${photo ? `
         <circle cx="280" cy="88" r="30" fill="rgba(255,220,120,0.6)"/>
         <circle cx="280" cy="88" r="18" fill="rgba(255,240,180,0.85)"/>
-        <rect x="28" y="118" width="82" height="${h-118}" rx="2" fill="rgba(50,40,35,0.82)"/>
-        <rect x="122" y="82" width="102" height="${h-82}" rx="2" fill="rgba(44,36,30,0.88)"/>
-        <rect x="238" y="92" width="118" height="${h-92}" rx="2" fill="rgba(40,33,28,0.85)"/>
-        <rect x="368" y="102" width="92" height="${h-102}" rx="2" fill="rgba(48,40,33,0.80)"/>
-        <rect x="466" y="115" width="85" height="${h-115}" rx="2" fill="rgba(44,37,30,0.75)"/>
-        <rect x="0" y="${h-48}" width="560" height="48" fill="rgba(32,60,105,0.52)"/>
+        <rect x="28"  y="118" width="82"  height="${h-118}" rx="2" fill="rgba(50,40,35,0.82)"/>
+        <rect x="122" y="82"  width="102" height="${h-82}"  rx="2" fill="rgba(44,36,30,0.88)"/>
+        <rect x="238" y="92"  width="118" height="${h-92}"  rx="2" fill="rgba(40,33,28,0.85)"/>
+        <rect x="368" y="102" width="92"  height="${h-102}" rx="2" fill="rgba(48,40,33,0.80)"/>
+        <rect x="466" y="115" width="85"  height="${h-115}" rx="2" fill="rgba(44,37,30,0.75)"/>
+        <rect x="0"   y="${h-48}" width="560" height="48"   fill="rgba(32,60,105,0.52)"/>
         <line x1="88" y1="${h-44}" x2="88" y2="${h-82}" stroke="rgba(22,18,12,0.8)" stroke-width="3"/>
         <ellipse cx="88" cy="${h-82}" rx="21" ry="8" fill="rgba(22,52,12,0.62)" transform="rotate(-8 88 ${h-82})"/>
         <ellipse cx="88" cy="${h-82}" rx="17" ry="6" fill="rgba(22,52,12,0.52)" transform="rotate(14 88 ${h-82})"/>
         <line x1="448" y1="${h-42}" x2="448" y2="${h-74}" stroke="rgba(22,18,12,0.7)" stroke-width="2.5"/>
         <ellipse cx="448" cy="${h-74}" rx="17" ry="6" fill="rgba(22,52,12,0.52)" transform="rotate(-13 448 ${h-74})"/>
       ` : `
-        <rect x="0" y="${h*0.66}" width="560" height="${h*0.34}" fill="rgba(0,0,0,0.12)"/>
-        <rect x="18" y="${h*0.4}" width="58" height="${h*0.6}" rx="2" fill="rgba(255,255,255,0.055)"/>
-        <rect x="96" y="${h*0.32}" width="78" height="${h*0.68}" rx="2" fill="rgba(255,255,255,0.055)"/>
-        <rect x="196" y="${h*0.36}" width="98" height="${h*0.64}" rx="2" fill="rgba(255,255,255,0.055)"/>
-        <rect x="316" y="${h*0.38}" width="78" height="${h*0.62}" rx="2" fill="rgba(255,255,255,0.055)"/>
-        <rect x="416" y="${h*0.4}" width="128" height="${h*0.6}" rx="2" fill="rgba(255,255,255,0.055)"/>
+        <rect x="18"  y="${h*.40}" width="58"  height="${h*.60}" rx="2" fill="rgba(255,255,255,0.055)"/>
+        <rect x="96"  y="${h*.32}" width="78"  height="${h*.68}" rx="2" fill="rgba(255,255,255,0.055)"/>
+        <rect x="196" y="${h*.36}" width="98"  height="${h*.64}" rx="2" fill="rgba(255,255,255,0.055)"/>
+        <rect x="316" y="${h*.38}" width="78"  height="${h*.62}" rx="2" fill="rgba(255,255,255,0.055)"/>
+        <rect x="416" y="${h*.40}" width="128" height="${h*.60}" rx="2" fill="rgba(255,255,255,0.055)"/>
       `}
-      <rect width="560" height="${h}" fill="url(#covOv${_rgTheme})"/>
+      <rect width="560" height="${h}" fill="url(#co${uid})"/>
     </svg>`;
   }
 
-  // ── Build preview pages HTML ───────────────────────────────────────────────
-  function _buildPreviewPages() {
-    const accentClr = _rgPrimary;
+  // ── Logo strip (cover page header) ────────────────────────────────────────
+  function _buildLogoStrip() {
+    const co = window.getActiveCompany?.() || { name:'Allegheny Millwork', abbr:'AMI', color:'#8B1A1A' };
+    const logo = window._pdfBranding?.logo;
+    if (logo && !_rgWhiteLabel) {
+      return `<img src="${logo}" style="height:38px;max-width:180px;object-fit:contain;display:block;">`;
+    }
+    if (_rgWhiteLabel) return '';
+    return `<div style="font-weight:900;font-size:13px;color:${co.color};letter-spacing:0.5px;line-height:1.15">
+      ${co.name.split('(')[0].trim().toUpperCase()}<br>
+      <span style="font-size:10px;letter-spacing:2px;opacity:0.7">${co.abbr}</span>
+    </div>`;
+  }
 
-    const visibleItems = proj.items.filter(i => {
+  // ── Preview pages ──────────────────────────────────────────────────────────
+  function _buildPreviewPages() {
+    const acc = _rgPrimary;
+    const visItems = proj.items.filter(i => {
       if (_rgFilter==='complete')   return i.status==='completed'||i.status==='punch-ongoing';
       if (_rgFilter==='incomplete') return i.status!=='completed'&&i.status!=='punch-ongoing';
       return true;
     });
 
-    const statusColor = s =>
-      s==='completed'?'#22c55e':s==='punch-ongoing'?'#a855f7':
-      s==='not-ready'?'#ef4444':s==='in-progress'?'#fbbf24':
-      s==='on-hold'?'#f97316':'#6b7280';
-
-    const statusLabel = s => s.replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
-
-    // ── PAGE 1: COVER ──────────────────────────────────────
+    const photoSizePx = { small:'128px', regular:'150px', large:'172px', xl:'198px' };
+    const photoW = photoSizePx[_rgImgSize] || '150px';
+    const photoColors = ['#c8b8a2','#b0a090','#8aa0b0','#90a8c0','#a0b0a0','#c0a090'];
     const coverH = 310;
-    const coverPage = `
+
+    // PAGE 1 — COVER
+    const coverPage = !_rgInclCover ? '' : `
       <div class="rg-page" id="rg-page-cover">
         <div class="rg-page-num">1</div>
-        <div class="rg-cover-logo-strip">
-          <div style="font-weight:900;font-size:13px;color:#8B1A1A;letter-spacing:0.5px;line-height:1.15">
-            ALLEGHENY<br><span style="font-size:10px;letter-spacing:2.5px">MILLWORK</span>
-          </div>
+        <div class="rg-cover-logo-strip" id="rg-logo-strip">
+          ${_buildLogoStrip()}
         </div>
         <div class="rg-cover" style="height:${coverH}px">
           ${_buildCoverSVG(coverH)}
@@ -6296,17 +6404,17 @@ function showShareModal() {
             <div class="rg-cover-title">${proj.name}</div>
             <div class="rg-cover-date">${proj.date}</div>
             <div class="rg-cover-prepared">Prepared For ${proj.client||'Client'}</div>
-            ${_rgCoverNotes ? `<div class="rg-cover-note">
-              General Note: ${totalItems} site items · ${completed} completed · ${inProgress} in progress
-            </div>` : ''}
+            ${_rgCoverNotes ? `
+              <div class="rg-cover-note">General Note: ${totalItems} site items ·
+                ${completed} completed · ${inProgress} in progress</div>` : ''}
           </div>
         </div>
       </div>`;
 
-    // ── PAGE 2: SUMMARY ────────────────────────────────────
+    // PAGE 2 — SUMMARY
     const summaryPage = `
       <div class="rg-page" id="rg-page-summary">
-        <div class="rg-page-num">2</div>
+        <div class="rg-page-num">${_rgInclCover?2:1}</div>
         <div class="rg-summary-pg">
           <div style="font-size:13px;font-weight:800;color:#111;margin-bottom:12px">Project Summary</div>
           <div class="rg-summary-stats">
@@ -6315,7 +6423,7 @@ function showShareModal() {
               <div class="rg-stat-label">Total Items</div>
             </div>
             <div class="rg-stat-card">
-              <div class="rg-stat-num" style="color:${accentClr}">${completed}</div>
+              <div class="rg-stat-num" style="color:${acc}">${completed}</div>
               <div class="rg-stat-label">Completed</div>
             </div>
             <div class="rg-stat-card">
@@ -6324,40 +6432,37 @@ function showShareModal() {
             </div>
           </div>
           <div class="rg-progress-bar">
-            <div class="rg-progress-fill" style="width:${completePct}%;background:${accentClr}"></div>
+            <div class="rg-progress-fill" style="width:${completePct}%;background:${acc}"></div>
           </div>
           <div style="font-size:10px;color:#888;margin-bottom:12px">${completePct}% Complete</div>
           <div style="font-size:11px;font-weight:700;color:#111;margin-bottom:7px">Contents</div>
           ${proj.items.slice(0,8).map((it,i)=>`
             <div class="rg-toc-row">
               <span>${it.num} — ${it.title}</span>
-              <span class="rg-toc-pg" style="color:${accentClr}">${i+3}</span>
+              <span class="rg-toc-pg" style="color:${acc}">${i+(_rgInclCover?3:2)}</span>
             </div>`).join('')}
-          ${proj.items.length>8?`<div style="font-size:10px;color:#aaa;padding:4px 0">…and ${proj.items.length-8} more items</div>`:''}
+          ${proj.items.length>8?`<div style="font-size:10px;color:#aaa;padding:4px 0">
+            …and ${proj.items.length-8} more items</div>`:''}
         </div>
       </div>`;
 
-    // ── PAGE 3: ITEMS ──────────────────────────────────────
-    const photoSizePx = { small:'130px', regular:'150px', large:'175px', xl:'200px' };
-    const photoW = photoSizePx[_rgImgSize] || '150px';
-    const photoColors = ['#c8b8a2','#b0a090','#8aa0b0','#90a8c0','#a0b0a0','#c0a090'];
-
+    // PAGE 3 — ITEMS
     const itemsPage = `
       <div class="rg-page" id="rg-page-items">
-        <div class="rg-page-num">3</div>
+        <div class="rg-page-num">${_rgInclCover?3:2}</div>
         <div class="rg-items-pg">
-          ${visibleItems.slice(0,4).map(item=>{
+          ${visItems.slice(0,4).map(item => {
             const sc = statusColor(item.status);
             const sl = statusLabel(item.status);
             const photosHTML = _rgInclPhotos ? `
               <div class="rg-item-photos-grid" style="width:${photoW};min-width:${photoW}">
-                ${Array.from({length:6},(_,pi)=>`
+                ${Array.from({length:6},(_,pi) => `
                   <div class="rg-photo-thumb"
                     style="background:${photoColors[pi%photoColors.length]}">
-                    ${pi < Math.max(item.photos.length, 3) ?
-                      `<div class="rg-photo-num">${pi+1}</div>
-                       ${_rgInclTS ? `<div class="rg-photo-ts">10:${(20+pi).toString().padStart(2,'0')} AM</div>` : ''}`
-                      : ''}
+                    ${pi < Math.max(item.photos.length, 2) ? `
+                      <div class="rg-photo-num">${pi+1}</div>
+                      ${_rgInclTS ? `<div class="rg-photo-ts">10:${(20+pi).toString().padStart(2,'0')} AM</div>` : ''}
+                    ` : ''}
                   </div>`).join('')}
               </div>` : '';
             return `
@@ -6368,39 +6473,77 @@ function showShareModal() {
                   <div class="rg-item-title">${item.num} — ${item.title}</div>
                   <div class="rg-item-status" style="color:${sc}">● ${sl}</div>
                   ${_rgInclNotes && item.notes ? `
-                    <div class="rg-item-note">${item.notes.slice(0,90)}${item.notes.length>90?'…':''}</div>` : ''}
-                  ${_rgInclTags && item.tags && item.tags.length ? `
+                    <div class="rg-item-note">
+                      ${item.notes.slice(0,100)}${item.notes.length>100?'…':''}
+                    </div>` : ''}
+                  ${_rgInclTags && item.tags?.length ? `
                     <div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px">
                       ${item.tags.slice(0,3).map(t=>`
                         <span style="font-size:8.5px;padding:1px 6px;border-radius:4px;
                           background:#f0f0f0;color:#555">${t}</span>`).join('')}
                     </div>` : ''}
                 </div>
-              </div>`}).join('')}
-          ${visibleItems.length === 0 ?
-            `<div style="padding:24px;text-align:center;font-size:12px;color:#999">No items match this filter</div>` : ''}
+              </div>`;
+          }).join('')}
+          ${visItems.length===0 ? `
+            <div style="padding:24px;text-align:center;font-size:12px;color:#999">
+              No items match this filter
+            </div>` : ''}
         </div>
       </div>`;
 
-    return [_rgInclCover ? coverPage : '', summaryPage, itemsPage].join('');
+    // PAGE 4 — SIGNATURE (if signatures exist)
+    const audSig = window._pdfBranding?.auditorSig;
+    const cliSig = window._pdfBranding?.clientSig;
+    const sigPage = (audSig || cliSig) ? `
+      <div class="rg-page" id="rg-page-sig">
+        <div class="rg-page-num">4</div>
+        <div style="padding:20px 18px;background:#fff">
+          <div style="font-size:13px;font-weight:800;color:#111;margin-bottom:18px">Report Sign-Off</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+            <div>
+              <div style="font-size:10px;font-weight:700;color:#555;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Auditor / Inspector</div>
+              ${audSig ? `<img src="${audSig}" style="height:44px;max-width:140px;object-fit:contain;display:block;margin-bottom:6px;">` :
+                '<div style="height:44px;border-bottom:1px solid #ccc;margin-bottom:6px;width:140px"></div>'}
+              <div style="font-size:9px;color:#999">Signature</div>
+              <div style="font-size:9px;color:#999;margin-top:8px">Date: ________________</div>
+            </div>
+            <div>
+              <div style="font-size:10px;font-weight:700;color:#555;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Client / GC</div>
+              ${cliSig ? `<img src="${cliSig}" style="height:44px;max-width:140px;object-fit:contain;display:block;margin-bottom:6px;">` :
+                '<div style="height:44px;border-bottom:1px solid #ccc;margin-bottom:6px;width:140px"></div>'}
+              <div style="font-size:9px;color:#999">Signature</div>
+              <div style="font-size:9px;color:#999;margin-top:8px">Date: ________________</div>
+            </div>
+          </div>
+        </div>
+      </div>` : '';
+
+    return [coverPage, summaryPage, itemsPage, sigPage].join('');
   }
 
-  // ── Sidebar HTML builder ───────────────────────────────────────────────────
+  // ── Sidebar ────────────────────────────────────────────────────────────────
   function _buildSidebar() {
+    const co = window.getActiveCompany?.() || ADH_COMPANIES[0];
+    const logo = window._pdfBranding?.logo;
+    const audSig = window._pdfBranding?.auditorSig;
+    const cliSig = window._pdfBranding?.clientSig;
+
     return `
       <div class="rg-sidebar-topbar">
         <span style="font-size:14px">✏️</span> Edit Report
       </div>
 
+      <!-- FILTER TABS -->
       <div class="rg-filter-tabs">
-        <div class="rg-tab ${_rgFilter==='all'?'active':''}"
-          onclick="window._rgSetFilter('all')">All</div>
-        <div class="rg-tab ${_rgFilter==='complete'?'active':''}"
-          onclick="window._rgSetFilter('complete')">Complete</div>
-        <div class="rg-tab ${_rgFilter==='incomplete'?'active':''}"
-          onclick="window._rgSetFilter('incomplete')">Incomplete</div>
+        ${['all','complete','incomplete'].map(f=>`
+          <div class="rg-tab ${_rgFilter===f?'active':''}"
+            onclick="window._rgSetFilter('${f}')">
+            ${f.charAt(0).toUpperCase()+f.slice(1)}
+          </div>`).join('')}
       </div>
 
+      <!-- THEMES -->
       <div class="rg-section">
         <div class="rg-section-hdr" onclick="window._rgSecToggle('themes')">
           <div class="rg-section-title">
@@ -6409,12 +6552,10 @@ function showShareModal() {
                 <circle cx="4.5" cy="4.5" r="3.5" fill="none" stroke="#fff" stroke-width="1.5"/>
                 <circle cx="4.5" cy="4.5" r="1.5" fill="#fff"/>
               </svg>
-            </div>
-            Themes
-          </div>
-          ${chevron('themes')}
+            </div>Themes
+          </div>${chevron('themes')}
         </div>
-        <div class="rg-section-body ${_secOpen.themes?'':'collapsed'}">
+        <div class="rg-section-body ${_sec.themes?'':'collapsed'}">
           <div class="rg-radio-group">
             ${[['classic','Classic'],['modern','Modern & Bold'],['bright','Bright'],
                ['corporate','Corporate'],['minimal','Minimal'],['photographic','Photographic'],
@@ -6428,6 +6569,107 @@ function showShareModal() {
         </div>
       </div>
 
+      <!-- BRANDING -->
+      <div class="rg-section">
+        <div class="rg-section-hdr" onclick="window._rgSecToggle('branding')">
+          <div class="rg-section-title">
+            <div class="rg-section-dot">
+              <svg viewBox="0 0 9 9" fill="#fff">
+                <rect x="1" y="2.5" width="7" height="4.5" rx="1" fill="none" stroke="#fff" stroke-width="1.3"/>
+                <line x1="3" y1="2.5" x2="3" y2="1" stroke="#fff" stroke-width="1"/>
+                <line x1="6" y1="2.5" x2="6" y2="1" stroke="#fff" stroke-width="1"/>
+              </svg>
+            </div>Company &amp; Branding
+          </div>${chevron('branding')}
+        </div>
+        <div class="rg-section-body ${_sec.branding?'':'collapsed'}">
+
+          <!-- Company selector -->
+          <div style="margin-bottom:10px">
+            <div style="font-size:9px;color:var(--text3);font-family:var(--mono);font-weight:600;
+              text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Active Company</div>
+            <select style="width:100%;background:var(--surface2);border:1px solid var(--border);
+              border-radius:7px;padding:6px 9px;font-size:11px;color:var(--text);outline:none;cursor:pointer;"
+              onchange="window.setActiveCompany(this.value);window._rgRebuildAll()">
+              ${ADH_COMPANIES.map(c=>`
+                <option value="${c.id}" ${c.id===co.id?'selected':''}>${c.name}</option>`).join('')}
+            </select>
+          </div>
+
+          <!-- Logo upload -->
+          <div style="margin-bottom:10px">
+            <div style="font-size:9px;color:var(--text3);font-family:var(--mono);font-weight:600;
+              text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">
+              Company Logo <span style="color:var(--accent)">(${co.abbr})</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              ${logo ? `<img src="${logo}" style="height:36px;max-width:90px;object-fit:contain;border-radius:4px;border:1px solid var(--border)">` :
+                `<div style="height:36px;width:60px;background:var(--surface3);border:1px dashed var(--border);
+                  border-radius:4px;display:flex;align-items:center;justify-content:center;
+                  font-size:9px;color:var(--text3)">No logo</div>`}
+              <button onclick="document.getElementById('pdf-logo-input').click()"
+                style="flex:1;padding:6px 10px;background:var(--accent-dim);color:var(--accent);
+                  border:1px solid rgba(61,184,245,0.25);border-radius:7px;font-size:10px;
+                  font-family:var(--mono);font-weight:600;cursor:pointer;">
+                ${logo?'Change':'Upload'} Logo
+              </button>
+              ${logo?`<button onclick="window._rgClearLogo()" title="Remove logo"
+                style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border);
+                background:var(--surface2);color:var(--red);cursor:pointer;font-size:12px;">✕</button>`:''}
+            </div>
+          </div>
+
+          <!-- Auditor signature -->
+          <div style="margin-bottom:10px">
+            <div style="font-size:9px;color:var(--text3);font-family:var(--mono);font-weight:600;
+              text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Auditor Signature</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              ${audSig ? `<img src="${audSig}" style="height:36px;max-width:90px;object-fit:contain;border-radius:4px;border:1px solid var(--border)">` :
+                `<div style="height:36px;width:60px;background:var(--surface3);border:1px dashed var(--border);
+                  border-radius:4px;display:flex;align-items:center;justify-content:center;
+                  font-size:9px;color:var(--text3)">No sig</div>`}
+              <button onclick="document.getElementById('pdf-auditor-input').click()"
+                style="flex:1;padding:6px 10px;background:var(--green-dim);color:var(--green);
+                  border:1px solid rgba(52,211,153,0.25);border-radius:7px;font-size:10px;
+                  font-family:var(--mono);font-weight:600;cursor:pointer;">
+                ${audSig?'Change':'Upload'} Sig
+              </button>
+              ${audSig?`<button onclick="window._rgClearSig('auditor')" title="Remove"
+                style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border);
+                background:var(--surface2);color:var(--red);cursor:pointer;font-size:12px;">✕</button>`:''}
+            </div>
+          </div>
+
+          <!-- Client signature -->
+          <div style="margin-bottom:10px">
+            <div style="font-size:9px;color:var(--text3);font-family:var(--mono);font-weight:600;
+              text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Client Signature</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              ${cliSig ? `<img src="${cliSig}" style="height:36px;max-width:90px;object-fit:contain;border-radius:4px;border:1px solid var(--border)">` :
+                `<div style="height:36px;width:60px;background:var(--surface3);border:1px dashed var(--border);
+                  border-radius:4px;display:flex;align-items:center;justify-content:center;
+                  font-size:9px;color:var(--text3)">No sig</div>`}
+              <button onclick="document.getElementById('pdf-client-input').click()"
+                style="flex:1;padding:6px 10px;background:var(--folder-dim);color:var(--folder);
+                  border:1px solid rgba(245,158,11,0.25);border-radius:7px;font-size:10px;
+                  font-family:var(--mono);font-weight:600;cursor:pointer;">
+                ${cliSig?'Change':'Upload'} Sig
+              </button>
+              ${cliSig?`<button onclick="window._rgClearSig('client')" title="Remove"
+                style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border);
+                background:var(--surface2);color:var(--red);cursor:pointer;font-size:12px;">✕</button>`:''}
+            </div>
+          </div>
+
+          <!-- White label toggle -->
+          <label class="rg-check-row">
+            <input type="checkbox" ${_rgWhiteLabel?'checked':''}
+              onchange="window._rgToggle('whitelabel')"> White-label (hide branding)
+          </label>
+        </div>
+      </div>
+
+      <!-- FRONT COVER -->
       <div class="rg-section">
         <div class="rg-section-hdr" onclick="window._rgSecToggle('cover')">
           <div class="rg-section-title">
@@ -6437,23 +6679,30 @@ function showShareModal() {
                 <line x1="2.5" y1="3.5" x2="6.5" y2="3.5" stroke="#fff" stroke-width="1"/>
                 <line x1="2.5" y1="5.5" x2="5.5" y2="5.5" stroke="#fff" stroke-width="1"/>
               </svg>
-            </div>
-            Front Cover
-          </div>
-          ${chevron('cover')}
+            </div>Front Cover
+          </div>${chevron('cover')}
         </div>
-        <div class="rg-section-body ${_secOpen.cover?'':'collapsed'}">
-          <label class="rg-check-row">
-            <input type="checkbox" ${_rgCoverNotes?'checked':''}
-              onchange="window._rgToggle('notes_cover')"> General Notes
-          </label>
+        <div class="rg-section-body ${_sec.cover?'':'collapsed'}">
           <label class="rg-check-row">
             <input type="checkbox" ${_rgInclCover?'checked':''}
               onchange="window._rgToggle('cover')"> Show Cover Page
           </label>
+          <label class="rg-check-row">
+            <input type="checkbox" ${_rgCoverNotes?'checked':''}
+              onchange="window._rgToggle('notes_cover')"> General Notes on Cover
+          </label>
+          <div style="margin-top:8px">
+            <div style="font-size:9px;color:var(--text3);font-family:var(--mono);font-weight:600;
+              text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">Report Title</div>
+            <input class="field-input" style="font-size:11px;padding:6px 9px"
+              value="${_rgReportTitle}"
+              oninput="window._rgSetReportTitle(this.value)"
+              placeholder="Site Conditions Report"/>
+          </div>
         </div>
       </div>
 
+      <!-- COLOURS -->
       <div class="rg-section">
         <div class="rg-section-hdr" onclick="window._rgSecToggle('colours')">
           <div class="rg-section-title">
@@ -6464,12 +6713,10 @@ function showShareModal() {
                 <rect x="0.5" y="4.5" width="4" height="4" rx="0.5" fill="#fff" opacity="0.65"/>
                 <rect x="4.5" y="4.5" width="4" height="4" rx="0.5" fill="#fff" opacity="0.35"/>
               </svg>
-            </div>
-            Colours
-          </div>
-          ${chevron('colours')}
+            </div>Colours
+          </div>${chevron('colours')}
         </div>
-        <div class="rg-section-body ${_secOpen.colours?'':'collapsed'}">
+        <div class="rg-section-body ${_sec.colours?'':'collapsed'}">
           <div class="rg-color-list">
             <div class="rg-color-item">
               <span>Primary Colour</span>
@@ -6488,6 +6735,7 @@ function showShareModal() {
         </div>
       </div>
 
+      <!-- IMAGES -->
       <div class="rg-section">
         <div class="rg-section-hdr" onclick="window._rgSecToggle('images')">
           <div class="rg-section-title">
@@ -6497,12 +6745,10 @@ function showShareModal() {
                 <circle cx="3" cy="4" r="0.9" fill="#fff"/>
                 <path d="M1 7 L3.5 5 L5.5 6.5 L7 5 L8 7Z" fill="#fff"/>
               </svg>
-            </div>
-            Images
-          </div>
-          ${chevron('images')}
+            </div>Images
+          </div>${chevron('images')}
         </div>
-        <div class="rg-section-body ${_secOpen.images?'':'collapsed'}">
+        <div class="rg-section-body ${_sec.images?'':'collapsed'}">
           <div style="font-size:9px;color:var(--text3);font-family:var(--mono);font-weight:600;
             text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Image Sizes</div>
           <div class="rg-radio-group" style="margin-bottom:10px">
@@ -6534,6 +6780,7 @@ function showShareModal() {
         </div>
       </div>
 
+      <!-- INCLUDE -->
       <div class="rg-section">
         <div class="rg-section-hdr" onclick="window._rgSecToggle('include')">
           <div class="rg-section-title">
@@ -6543,35 +6790,19 @@ function showShareModal() {
                 <path d="M2.5 4.5 L4 6 L6.5 3" stroke="#fff" stroke-width="1.2"
                   fill="none" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-            </div>
-            Include in Report
-          </div>
-          ${chevron('include')}
+            </div>Include in Report
+          </div>${chevron('include')}
         </div>
-        <div class="rg-section-body ${_secOpen.include?'':'collapsed'}">
-          <label class="rg-check-row">
-            <input type="checkbox" ${_rgInclPhotos?'checked':''}
-              onchange="window._rgToggle('photos')"> Photos
-          </label>
-          <label class="rg-check-row">
-            <input type="checkbox" ${_rgInclTS?'checked':''}
-              onchange="window._rgToggle('ts')"> Timestamps on Photos
-          </label>
-          <label class="rg-check-row">
-            <input type="checkbox" ${_rgInclNotes?'checked':''}
-              onchange="window._rgToggle('notes')"> Field Notes
-          </label>
-          <label class="rg-check-row">
-            <input type="checkbox" ${_rgInclTags?'checked':''}
-              onchange="window._rgToggle('tags')"> Condition Tags
-          </label>
-          <label class="rg-check-row">
-            <input type="checkbox" ${_rgInclEnv?'checked':''}
-              onchange="window._rgToggle('env')"> Environmental Charts
-          </label>
+        <div class="rg-section-body ${_sec.include?'':'collapsed'}">
+          <label class="rg-check-row"><input type="checkbox" ${_rgInclPhotos?'checked':''} onchange="window._rgToggle('photos')"> Photos</label>
+          <label class="rg-check-row"><input type="checkbox" ${_rgInclTS?'checked':''}     onchange="window._rgToggle('ts')">     Timestamps on Photos</label>
+          <label class="rg-check-row"><input type="checkbox" ${_rgInclNotes?'checked':''}  onchange="window._rgToggle('notes')">  Field Notes</label>
+          <label class="rg-check-row"><input type="checkbox" ${_rgInclTags?'checked':''}   onchange="window._rgToggle('tags')">   Condition Tags</label>
+          <label class="rg-check-row"><input type="checkbox" ${_rgInclEnv?'checked':''}    onchange="window._rgToggle('env')">    Environmental Charts</label>
         </div>
       </div>
 
+      <!-- PAGE NUMBERS -->
       <div class="rg-section">
         <div class="rg-section-body" style="padding:10px 14px">
           <label class="rg-check-row">
@@ -6587,35 +6818,61 @@ function showShareModal() {
     const el = document.getElementById('rg-sidebar-inner');
     if (el) el.innerHTML = _buildSidebar();
   }
-  function _rebuildPreview() {
+  function _rebuildPreview()  {
     const el = document.getElementById('rg-preview-inner');
     if (el) el.innerHTML = _buildPreviewPages();
   }
-  function _render() { _rebuildSidebar(); _rebuildPreview(); }
 
-  // ── Global event handlers ──────────────────────────────────────────────────
-  window._rgSetFilter  = v => { _rgFilter  = v; _rebuildSidebar(); _rebuildPreview(); };
-  window._rgSetTheme   = v => { _rgTheme   = v; _rebuildSidebar(); _rebuildPreview(); };
-  window._rgSetImgSize = v => { _rgImgSize = v; _rebuildPreview(); };
-  window._rgSetImgQual = v => { _rgImgQual = v; };
-  window._rgSetPrimary = v => { _rgPrimary = v; _rebuildPreview(); };
-  window._rgSecToggle  = name => { secToggle(name); };
-  window._rgToggle = key => {
-    const actions = {
-      notes_cover: () => _rgCoverNotes = !_rgCoverNotes,
-      photos:  () => _rgInclPhotos = !_rgInclPhotos,
-      ts:      () => _rgInclTS     = !_rgInclTS,
-      notes:   () => _rgInclNotes  = !_rgInclNotes,
-      tags:    () => _rgInclTags   = !_rgInclTags,
-      cover:   () => _rgInclCover  = !_rgInclCover,
-      env:     () => _rgInclEnv    = !_rgInclEnv,
-      square:  () => _rgSquare     = !_rgSquare,
-      pagenums:() => _rgPageNums   = !_rgPageNums,
-    };
-    if (actions[key]) { actions[key](); _rebuildSidebar(); _rebuildPreview(); }
+  // ── Global handlers ────────────────────────────────────────────────────────
+  window._rgRebuildAll     = () => { _rebuildSidebar(); _rebuildPreview(); };
+  window._rgSetFilter      = v  => { _rgFilter  = v; _rebuildSidebar(); _rebuildPreview(); };
+  window._rgSetTheme       = v  => { _rgTheme   = v; _rebuildSidebar(); _rebuildPreview(); };
+  window._rgSetImgSize     = v  => { _rgImgSize = v; _rebuildPreview(); };
+  window._rgSetImgQual     = v  => { _rgImgQual = v; };
+  window._rgSetPrimary     = v  => { _rgPrimary = v; _rebuildPreview(); };
+  window._rgSetReportTitle = v  => { _rgReportTitle = v; };
+  window._rgSecToggle      = name => { secToggle(name); };
+
+  window._rgClearLogo = () => {
+    const cid = window._pdfBranding.companyId || 'ami';
+    if (window._pdfBranding.logos) delete window._pdfBranding.logos[cid];
+    window._pdfBranding.logo = null;
+    _saveBranding();
+    _rebuildSidebar(); _rebuildPreview();
+  };
+  window._rgClearSig = (type) => {
+    const cid = window._pdfBranding.companyId || 'ami';
+    if (type === 'auditor') {
+      if (window._pdfBranding.auditorSigs) delete window._pdfBranding.auditorSigs[cid];
+      window._pdfBranding.auditorSig = null;
+    } else {
+      window._pdfBranding.clientSig = null;
+    }
+    _saveBranding();
+    _rebuildSidebar(); _rebuildPreview();
+  };
+  window._rgRefreshLogoStrip = () => {
+    const strip = document.getElementById('rg-logo-strip');
+    if (strip) strip.innerHTML = _buildLogoStrip();
   };
 
-  // ── Create and mount the full-screen overlay ───────────────────────────────
+  window._rgToggle = key => {
+    const acts = {
+      notes_cover: () => _rgCoverNotes = !_rgCoverNotes,
+      photos:      () => _rgInclPhotos = !_rgInclPhotos,
+      ts:          () => _rgInclTS     = !_rgInclTS,
+      notes:       () => _rgInclNotes  = !_rgInclNotes,
+      tags:        () => _rgInclTags   = !_rgInclTags,
+      cover:       () => _rgInclCover  = !_rgInclCover,
+      env:         () => _rgInclEnv    = !_rgInclEnv,
+      square:      () => _rgSquare     = !_rgSquare,
+      pagenums:    () => _rgPageNums   = !_rgPageNums,
+      whitelabel:  () => _rgWhiteLabel = !_rgWhiteLabel,
+    };
+    if (acts[key]) { acts[key](); _rebuildSidebar(); _rebuildPreview(); }
+  };
+
+  // ── Mount the overlay ──────────────────────────────────────────────────────
   closeModal();
   const ov = document.createElement('div');
   ov.className = 'rg-overlay';
@@ -6627,9 +6884,12 @@ function showShareModal() {
         <div class="rg-topbar">
           <div class="rg-topbar-title">Report Generator</div>
           <div class="rg-topbar-actions">
-            <button class="rg-btn-outline" onclick="exportPDF('${proj.id}')">PDF</button>
-            <button class="rg-btn-outline" onclick="exportCSV('${proj.id}')">CSV</button>
-            <button class="rg-btn-primary" onclick="exportPDF('${proj.id}')">Request Report</button>
+            <button class="rg-btn-outline"
+              onclick="exportPDF('${proj.id}')">PDF</button>
+            <button class="rg-btn-outline"
+              onclick="exportCSV('${proj.id}')">CSV</button>
+            <button class="rg-btn-primary"
+              onclick="exportPDF('${proj.id}')">Request Report</button>
             <button class="rg-btn-close"
               onclick="document.getElementById('rg-overlay')?.remove()">✕</button>
           </div>
@@ -6638,9 +6898,13 @@ function showShareModal() {
       </div>
     </div>`;
   document.body.appendChild(ov);
-  _render();
-
-  // Close on bare backdrop click
+  _rebuildSidebar();
+  _rebuildPreview();
+  // Open branding section by default if no logo set yet
+  if (!window._pdfBranding?.logo) {
+    _sec.branding = true;
+    _rebuildSidebar();
+  }
   ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
 }
 
@@ -6768,17 +7032,22 @@ async function exportPDF(pid) {
     return; // Stops export
   }
 
-  const quality   = parseInt(document.getElementById('img-quality')?.value||72)/100;
-  const inclPhotos= document.getElementById('chk-photos')?.classList.contains('checked')??true;
-  const inclTS    = document.getElementById('chk-timestamp')?.classList.contains('checked')??true;
-  const inclNotes = document.getElementById('chk-notes')?.classList.contains('checked')??true;
-  const inclTags  = document.getElementById('chk-tags')?.classList.contains('checked')??true;
-  const inclCover = document.getElementById('chk-cover')?.classList.contains('checked')??true;
-  const inclEnv   = document.getElementById('chk-env')?.classList.contains('checked')??true;
-  const reportTitle = document.getElementById('pdf-report-title')?.value || 'Site Conditions Report';
-  const footerText  = document.getElementById('pdf-footer-text')?.value || '';
-  const whiteLabel  = document.getElementById('chk-white-label')?.classList.contains('checked') ?? false;
-  const tpl       = _selectedTpl;
+    // ── Read settings from Report Generator state (new system) ──
+  // Falls back to safe defaults if called outside the RG overlay.
+  const _rgs = window._pdfExportSettings || {};
+  const quality     = _rgs.quality     ?? 0.72;
+  const inclPhotos  = _rgs.inclPhotos  ?? true;
+  const inclTS      = _rgs.inclTS      ?? true;
+  const inclNotes   = _rgs.inclNotes   ?? true;
+  const inclTags    = _rgs.inclTags    ?? true;
+  const inclCover   = _rgs.inclCover   ?? true;
+  const inclEnv     = _rgs.inclEnv     ?? true;
+  const reportTitle = _rgs.reportTitle ?? 'Site Conditions Report';
+  const footerText  = _rgs.footerText  ?? '';
+  const whiteLabel  = _rgs.whiteLabel  ?? false;
+  const tpl         = _rgs.pdfTheme    ?? 'classic';
+  // Close the RG overlay if open (PDF will open separately)
+  document.getElementById('rg-overlay')?.remove();
 
   closeModal();
   showPDFProgress('Loading PDF engine…', 0);
