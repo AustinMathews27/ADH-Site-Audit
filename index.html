@@ -10524,12 +10524,15 @@ function handleFloorPlanUpload(e){
   const pid=route().projectId; if(!pid) return;
   const proj=getProject(pid); if(!proj) return;
   const file=e.target.files[0]; if(!file) return;
+  const isPDF = file.type==='application/pdf' || file.name.toLowerCase().endsWith('.pdf');
   const reader=new FileReader();
   reader.onload=ev=>{
     if(!proj.floorPlan) proj.floorPlan={pins:[]};
     proj.floorPlan.imageData=ev.target.result;
-    // Also persist image in IndexedDB separately (not synced to CosmosDB to avoid size limit)
-    _idbSet('fp_img_'+pid, ev.target.result).catch(()=>{});
+    proj.floorPlan.imageType=file.type||'image/jpeg';
+    proj.floorPlan.isPDF=isPDF;
+    // Persist in IndexedDB — not sent to CosmosDB (too large)
+    _idbSet('fp_img_'+pid, {data:ev.target.result, type:file.type, isPDF}).catch(()=>{});
     markProjectDirty(pid); save();
     buildFloorPlanView(pid);
     showToast('✓ Floor plan uploaded','green');
@@ -10541,95 +10544,156 @@ function buildFloorPlanView(pid){
   const proj=getProject(pid); if(!proj) return;
   const el=document.getElementById('v-floorplan'); if(!el) return;
   const fp=proj.floorPlan||{pins:[]};
-  // If imageData was stripped from CosmosDB sync, restore from IndexedDB
-  if(!fp.imageData && fp.pins) {
+
+  // Restore from IndexedDB if imageData was stripped by CosmosDB sync
+  if(!fp.imageData){
     _idbGet('fp_img_'+pid).then(saved=>{
-      if(saved){ fp.imageData=saved; if(proj.floorPlan) proj.floorPlan.imageData=saved; buildFloorPlanView(pid); }
+      if(!saved) return;
+      const data   = typeof saved==='object' ? saved.data   : saved;
+      const type   = typeof saved==='object' ? saved.type   : 'image/jpeg';
+      const isPDF  = typeof saved==='object' ? saved.isPDF  : false;
+      if(proj.floorPlan){ proj.floorPlan.imageData=data; proj.floorPlan.imageType=type; proj.floorPlan.isPDF=isPDF; }
+      buildFloorPlanView(pid);
     }).catch(()=>{});
   }
-  const hasImage=!!fp.imageData;
+
+  const hasImage = !!fp.imageData;
+  const isPDF    = fp.isPDF || (fp.imageType||'').includes('pdf');
+
+  const pinsHTML = (fp.pins||[]).map(pin=>`
+    <div class="fp-pin" data-pinid="${pin.id}" style="left:${pin.xPct}%;top:${pin.yPct}%;position:absolute;transform:translate(-50%,-50%);z-index:20;cursor:pointer;font-size:18px;text-shadow:0 1px 4px rgba(0,0,0,0.6)"
+      title="${pin.siNum}: ${pin.siTitle}"
+      onclick="_fpPinClick(event,'${pid}','${pin.id}')">
+      📍<div class="fp-pin-label">${pin.siNum}</div>
+    </div>`).join('');
+
+  // For PDFs: use <embed> + transparent overlay for click-to-pin
+  // For images: use <img>
+  const mediaHTML = isPDF
+    ? `<div id="fp-inner" style="position:relative;width:100%;height:100%;min-height:600px">
+        <embed id="fp-embed" src="" type="application/pdf" style="width:100%;height:100%;min-height:600px;border:none;display:block">
+        <div id="fp-overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;cursor:crosshair;z-index:10"
+          onclick="_fpOverlayClick(event,'${pid}')"></div>
+        ${pinsHTML}
+       </div>`
+    : `<div id="fp-inner" style="position:relative;display:inline-block;min-width:200px">
+        <img id="fp-img" src="" style="display:block;max-width:100%;user-select:none" draggable="false">
+        ${pinsHTML}
+       </div>`;
 
   el.innerHTML=`
     <div style="padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:8px;flex-wrap:wrap">
       <div style="font-size:14px;font-weight:600">🗺️ Floor Plan <span style="font-size:11px;color:var(--text3);font-weight:400">${proj.name}</span></div>
-      <div style="display:flex;gap:8px;align-items:center">
-        ${hasImage?`<span style="font-size:10px;font-family:var(--mono);color:var(--text3)">${(fp.pins||[]).length} pins</span>`:''}
-        <button onclick="document.getElementById('floorplan-input').click()" style="font-size:11px;font-family:var(--mono);padding:6px 12px;border:1px solid var(--border);background:var(--surface2);border-radius:7px;cursor:pointer;color:var(--text2)">📤 ${hasImage?'Replace Plan':'Upload Plan'}</button>
-        ${hasImage?`<button onclick="_fpAddMode=!_fpAddMode;this.style.background=_fpAddMode?'var(--accent-dim)':'var(--surface2)';this.style.borderColor=_fpAddMode?'var(--accent)':'var(--border)';this.style.color=_fpAddMode?'var(--accent)':'var(--text2)'" id="fp-pin-btn" style="font-size:11px;font-family:var(--mono);padding:6px 12px;border:1px solid var(--border);background:var(--surface2);border-radius:7px;cursor:pointer;color:var(--text2)">📍 Place Pin</button>`:''}
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        ${hasImage?`<span style="font-size:10px;font-family:var(--mono);color:var(--text3)">${(fp.pins||[]).length} pins · ${isPDF?'PDF':'Image'}</span>`:''}
+        <button onclick="document.getElementById('floorplan-input').click()" style="font-size:11px;font-family:var(--mono);padding:6px 12px;border:1px solid var(--border);background:var(--surface2);border-radius:7px;cursor:pointer;color:var(--text2)">📤 ${hasImage?'Replace':'Upload Plan'}</button>
+        ${hasImage?`<button onclick="_fpTogglePinMode(this)" id="fp-pin-btn" style="font-size:11px;font-family:var(--mono);padding:6px 12px;border:1px solid var(--border);background:var(--surface2);border-radius:7px;cursor:pointer;color:var(--text2)">📍 Place Pin</button>`:''}
+        ${hasImage&&(fp.pins||[]).length?`<button onclick="_fpClearPins('${pid}')" style="font-size:11px;font-family:var(--mono);padding:6px 12px;border:1px solid var(--red-dim);background:var(--red-dim);border-radius:7px;cursor:pointer;color:var(--red)">🗑 Clear Pins</button>`:''}
       </div>
     </div>
-    <div class="fp-canvas-wrap" id="fp-wrap" style="flex:1;overflow:auto;position:relative">
-      ${hasImage
-        ?`<div id="fp-inner" style="position:relative;display:inline-block">
-            <img id="fp-img" src="" style="display:block;max-width:100%;user-select:none" draggable="false">
-            ${(fp.pins||[]).map(pin=>`
-              <div class="fp-pin" data-pinid="${pin.id}" style="left:${pin.xPct}%;top:${pin.yPct}%"
-                title="${pin.siNum}: ${pin.siTitle}"
-                onclick="_fpPinClick(event,'${pid}','${pin.id}')"
-                onmousedown="_fpPinDragStart(event,'${pid}','${pin.id}')">
-                📍<div class="fp-pin-label">${pin.siNum}</div>
-              </div>`).join('')}
-          </div>`
-        :`<div style="text-align:center;padding:60px 24px;color:var(--text3)"><div style="font-size:48px;opacity:0.15;margin-bottom:16px">🗺️</div><div style="font-size:14px;font-weight:600;color:var(--text2)">No floor plan yet</div><div style="font-size:12px;margin-top:6px">Upload a PNG, JPG, or PDF of your floor plan, then click to pin SIs</div></div>`}
+    <div style="flex:1;overflow:auto;position:relative;background:var(--surface2)" id="fp-scroll">
+      ${hasImage ? mediaHTML
+        : `<div style="text-align:center;padding:60px 24px;color:var(--text3)">
+            <div style="font-size:48px;opacity:0.15;margin-bottom:16px">🗺️</div>
+            <div style="font-size:14px;font-weight:600;color:var(--text2)">No floor plan yet</div>
+            <div style="font-size:12px;margin-top:6px;max-width:300px;margin-left:auto;margin-right:auto">Upload a PNG, JPG, or PDF. Supports multi-page PDFs — use browser PDF controls to navigate pages.</div>
+           </div>`}
     </div>
     ${hasImage?`
-    <div style="padding:8px 14px;background:var(--surface2);border-top:1px solid var(--border);font-size:10px;font-family:var(--mono);color:var(--text3);flex-shrink:0">
-      Pin SI items: toggle "Place Pin" → select SI from list → click location on plan
+    <div style="padding:6px 14px;background:var(--surface);border-top:1px solid var(--border);font-size:10px;font-family:var(--mono);color:var(--text3);flex-shrink:0;display:flex;align-items:center;gap:10px">
+      <span>📍 Place Pin → select SI → click plan</span>
+      ${isPDF?`<span style="color:var(--accent)">PDF: use browser controls to navigate pages before placing pins</span>`:''}
     </div>
-    <div id="fp-si-picker" style="display:none;position:absolute;bottom:40px;left:10px;right:10px;background:var(--surface);border:1px solid var(--accent);border-radius:10px;max-height:200px;overflow-y:auto;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,0.3)">
-      ${proj.items.slice(0,50).map(item=>`<div style="padding:8px 12px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center" onclick="_fpSelectSI('${pid}','${item.id}')" onmouseover="this.style.background='var(--accent-dim)'" onmouseout="this.style.background=''"><span style="font-family:var(--mono);font-size:10px;color:var(--accent)">${item.num}</span>${item.title}</div>`).join('')}
+    <div id="fp-si-picker" style="display:none;position:fixed;bottom:50px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--accent);border-radius:10px;max-height:220px;overflow-y:auto;z-index:500;box-shadow:0 8px 32px rgba(0,0,0,0.4);min-width:280px;max-width:420px">
+      <div style="padding:8px 12px;font-size:9px;font-family:var(--mono);color:var(--text3);border-bottom:1px solid var(--border);display:flex;justify-content:space-between">
+        <span>SELECT SI TO PIN</span>
+        <span style="cursor:pointer" onclick="document.getElementById('fp-si-picker').style.display='none'">✕</span>
+      </div>
+      ${proj.items.map(item=>`
+        <div style="padding:9px 14px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:center"
+          onclick="_fpSelectSI('${pid}','${item.id}')"
+          onmouseover="this.style.background='var(--accent-dim)'"
+          onmouseout="this.style.background=''">
+          <span style="font-family:var(--mono);font-size:10px;color:var(--accent);flex-shrink:0">${item.num}</span>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.title}</span>
+          <div class="si-status ${item.status}" style="flex-shrink:0;margin-left:auto"></div>
+        </div>`).join('')}
     </div>`:''}`;
 
-  // Set image src via JS (not template literal) to avoid backtick issues with base64
-  if(hasImage){
-    const fpImg=document.getElementById('fp-img');
-    if(fpImg && fp.imageData) fpImg.src=fp.imageData;
-  }
-  // Wire up click-to-pin
+  // Assign src via JS (never inline — avoids backtick issues + PDFs need embed.src set after DOM insert)
   if(hasImage){
     window._fpAddMode=false;
     window._fpSelectedSI=null;
-    const wrap=document.getElementById('fp-inner');
-    if(wrap) wrap.addEventListener('click',e=>{
-      if(e.target.closest('.fp-pin')) return;
-      if(!window._fpAddMode) return;
-      if(!window._fpSelectedSI){
-        const picker=document.getElementById('fp-si-picker');
-        if(picker) picker.style.display=picker.style.display==='none'?'block':'none';
-        return;
-      }
-      const img=document.getElementById('fp-img'); if(!img) return;
-      const rect=img.getBoundingClientRect();
-      const xPct=((e.clientX-rect.left)/rect.width*100).toFixed(2);
-      const yPct=((e.clientY-rect.top)/rect.height*100).toFixed(2);
-      const si=window._fpSelectedSI;
-      if(!proj.floorPlan.pins) proj.floorPlan.pins=[];
-      // Remove existing pin for this SI
-      proj.floorPlan.pins=proj.floorPlan.pins.filter(p=>p.siId!==si.id);
-      proj.floorPlan.pins.push({id:'pin_'+Date.now(),siId:si.id,siNum:si.num,siTitle:si.title,xPct,yPct});
-      markProjectDirty(pid); save();
-      window._fpAddMode=false; window._fpSelectedSI=null;
-      buildFloorPlanView(pid);
-      showToast('📍 Pin placed','green');
-    });
+    window._fpPid=pid;
+
+    if(isPDF){
+      const embed=document.getElementById('fp-embed');
+      if(embed) embed.src=fp.imageData;
+    } else {
+      const img=document.getElementById('fp-img');
+      if(img){ img.src=fp.imageData; }
+      // Wire click for image-based pinning
+      const inner=document.getElementById('fp-inner');
+      if(inner) inner.addEventListener('click',e=>{
+        if(e.target.closest('.fp-pin')) return;
+        _fpHandleClick(e,pid,'fp-img');
+      });
+    }
   }
 }
+
+// Toggle pin placement mode
+window._fpTogglePinMode=function(btn){
+  window._fpAddMode=!window._fpAddMode;
+  btn.style.background   = window._fpAddMode?'var(--accent-dim)':'var(--surface2)';
+  btn.style.borderColor  = window._fpAddMode?'var(--accent)':'var(--border)';
+  btn.style.color        = window._fpAddMode?'var(--accent)':'var(--text2)';
+  if(window._fpAddMode) showToast('📍 Select an SI from the list, then click the plan');
+  else { document.getElementById('fp-si-picker').style.display='none'; window._fpSelectedSI=null; }
+};
+
+// Click handler for overlay (PDF) — coordinates relative to overlay div
+window._fpOverlayClick=function(e,pid){
+  _fpHandleClick(e,pid,'fp-overlay');
+};
+
+// Shared pin placement logic for both image and PDF
+window._fpHandleClick=function(e,pid,refId){
+  if(!window._fpAddMode) return;
+  if(!window._fpSelectedSI){
+    const picker=document.getElementById('fp-si-picker');
+    if(picker) picker.style.display=picker.style.display==='none'?'block':'none';
+    return;
+  }
+  const ref=document.getElementById(refId); if(!ref) return;
+  const rect=ref.getBoundingClientRect();
+  const xPct=((e.clientX-rect.left)/rect.width*100).toFixed(2);
+  const yPct=((e.clientY-rect.top)/rect.height*100).toFixed(2);
+  const si=window._fpSelectedSI;
+  const proj=getProject(pid); if(!proj) return;
+  if(!proj.floorPlan.pins) proj.floorPlan.pins=[];
+  proj.floorPlan.pins=proj.floorPlan.pins.filter(p=>p.siId!==si.id);
+  proj.floorPlan.pins.push({id:'pin_'+Date.now(),siId:si.id,siNum:si.num,siTitle:si.title,xPct,yPct});
+  markProjectDirty(pid); save();
+  window._fpAddMode=false; window._fpSelectedSI=null;
+  buildFloorPlanView(pid);
+  showToast('📍 Pin placed','green');
+};
+
 window._fpSelectSI=function(pid,siId){
   const proj=getProject(pid); if(!proj) return;
   window._fpSelectedSI=proj.items.find(i=>i.id===siId);
   const picker=document.getElementById('fp-si-picker');
   if(picker) picker.style.display='none';
-  showToast(`📍 Now click on the floor plan to place ${window._fpSelectedSI?.num}`);
+  showToast(`📍 Now click the floor plan to place ${window._fpSelectedSI?.num}`);
 };
+
 window._fpPinClick=function(e,pid,pinId){
   e.stopPropagation();
   const proj=getProject(pid); if(!proj) return;
   const pin=proj.floorPlan?.pins?.find(p=>p.id===pinId); if(!pin) return;
-  if(confirm(`Remove pin for ${pin.siNum}?
-
-"${pin.siTitle}"
-
-Click OK to remove, Cancel to open SI.`)){
+  const choice=confirm(`${pin.siNum}: "${pin.siTitle}"\n\nOK = Remove pin    Cancel = Open SI`);
+  if(choice){
     proj.floorPlan.pins=proj.floorPlan.pins.filter(p=>p.id!==pinId);
     markProjectDirty(pid); save(); buildFloorPlanView(pid);
   } else {
@@ -10637,6 +10701,13 @@ Click OK to remove, Cancel to open SI.`)){
   }
 };
 
+window._fpClearPins=function(pid){
+  const proj=getProject(pid); if(!proj||!proj.floorPlan) return;
+  if(!confirm('Remove all pins from this floor plan?')) return;
+  proj.floorPlan.pins=[];
+  markProjectDirty(pid); save(); buildFloorPlanView(pid);
+  showToast('Pins cleared');
+};
 // ══════════════════════════════════════════════════════════════════
 // PATCH: renderLeft — show archived section + updated-by badge
 // ══════════════════════════════════════════════════════════════════
