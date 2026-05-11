@@ -2101,21 +2101,26 @@ function markStoreDirty() {
 
 // ── Strip photos from an item (photos live in IndexedDB only) ────
 function _buildItemPayload(item) {
-  // Send photo metadata (URL + caption + takenAt) to CosmosDB so other
-  // devices can load Azure Blob photos. Never send base64 data — it's
-  // too large for Cosmos and lives in IndexedDB only.
+  // Strip all base64 binary data before CosmosDB sync — only metadata + URLs go to cloud.
   const cloudPhotos = (item.photos || [])
-    .filter(p => p.url)   // only photos that have been uploaded to Azure Blob
+    .filter(p => p.url)
     .map(p => ({ url: p.url, caption: p.caption || '', takenAt: p.takenAt || '' }));
-  return Object.assign({}, item, { photos: cloudPhotos });
+  // Attachments: keep metadata but strip base64 data (too large for Cosmos)
+  const cloudAttachments = (item.attachments || [])
+    .map(a => ({ id: a.id, name: a.name, type: a.type, ext: a.ext, icon: a.icon, size: a.size, addedAt: a.addedAt, addedBy: a.addedBy }));
+  return Object.assign({}, item, { photos: cloudPhotos, attachments: cloudAttachments });
 }
 
 // ── Strip photos from a project ──────────────────────────────────
 function _buildProjectPayload(p) {
-  return Object.assign({}, p, {
+  // Strip large binary data before sending to CosmosDB (2MB doc limit)
+  const fp = p.floorPlan ? Object.assign({}, p.floorPlan, { imageData: null }) : undefined;
+  const out = Object.assign({}, p, {
     coverPhoto: null,
     items: (p.items || []).map(_buildItemPayload)
   });
+  if (fp !== undefined) out.floorPlan = fp;
+  return out;
 }
 
 // ── POST a patch to /api/patchAudit ──────────────────────────────
@@ -2876,6 +2881,49 @@ function renderLeft(r) {
     return;
   }
 
+  // ── IMPORTANT: check projectId BEFORE folderId so navigating from root
+  // (folderId='') directly to a project still shows the SI list, not folders.
+  if (r.projectId) {
+    title.textContent='SITE ITEMS';
+    const proj = getProject(r.projectId);
+    if (!proj) { scroll.innerHTML = emptyMsg('Project not found'); return; }
+    let html='';
+    proj.sections.forEach(sec=>{
+      const items=proj.items.filter(i=>i.sectionId===sec.id&&(!q||i.title.toLowerCase().includes(q)||i.num.toLowerCase().includes(q)));
+      if(!items.length&&q) return;
+      html+=`<div class="section-group">${sec.name}<span class="section-count">${items.length}</span></div>`;
+      items.forEach(item=>{
+        const thumb=item.photos.length?`<img src="${item.photos[0].url || item.photos[0].data}" />`:`<span>📷</span>`;
+        const tw = item.towerWork;
+        const twEnabled = tw && tw.enabled && tw.rooms && tw.rooms.length > 0;
+        const twDone = twEnabled ? tw.rooms.filter(r=>r.status==='completed').length : 0;
+        const twTotal = twEnabled ? tw.rooms.length : 0;
+        const twAllDone = twEnabled && twDone === twTotal;
+        html+=`<div class="si-row ${r.siId===item.id?'active':''}"
+          data-sid="${item.id}" data-pid="${proj.id}" data-secid="${item.sectionId}"
+          draggable="true"
+          onclick="navToSI('${proj.id}','${item.id}')">
+          <div class="si-drag-handle" title="Drag to reorder">⠿</div>
+          <div class="si-row-check ${window._bulkSelected?.has(item.id)?'checked':''}"
+            onclick="toggleBulkSelect('${proj.id}','${item.id}',event)">${window._bulkSelected?.has(item.id)?'✓':''}</div>
+          <div class="si-thumb">${thumb}</div>
+          <div class="si-info">
+            <div class="si-num">
+              SI# ${item.num.replace(/^SI\s+/, '')}
+              ${twEnabled ? `<span class="tw-badge ${twAllDone?'done':''}" style="margin-left:4px">🏢 ${twDone}/${twTotal}</span>` : ''}
+            </div>
+            <div class="si-title">${item.title}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+            <div class="si-status ${item.status}"></div>
+          </div>
+        </div>`;
+      });
+    });
+    scroll.innerHTML = html || emptyMsg('No items');
+    return;
+  }
+
   if (!r.folderId) {
     title.textContent='FOLDERS';
     const list = store.folders.filter(f => f.parentId === null && (!q || f.name.toLowerCase().includes(q)));
@@ -2922,44 +2970,6 @@ function renderLeft(r) {
       }).join('') || emptyMsg('No projects');
     }
     return;
-  }
-  if (r.projectId) {
-    title.textContent='SITE ITEMS';
-    const proj = getProject(r.projectId);
-    let html='';
-    proj.sections.forEach(sec=>{
-      const items=proj.items.filter(i=>i.sectionId===sec.id&&(!q||i.title.toLowerCase().includes(q)||i.num.toLowerCase().includes(q)));
-      if(!items.length&&q) return;
-      html+=`<div class="section-group">${sec.name}<span class="section-count">${items.length}</span></div>`;
-      items.forEach(item=>{
-        const thumb=item.photos.length?`<img src="${item.photos[0].url || item.photos[0].data}" />`:`<span>📷</span>`;
-        const tw = item.towerWork;
-        const twEnabled = tw && tw.enabled && tw.rooms && tw.rooms.length > 0;
-        const twDone = twEnabled ? tw.rooms.filter(r=>r.status==='completed').length : 0;
-        const twTotal = twEnabled ? tw.rooms.length : 0;
-        const twAllDone = twEnabled && twDone === twTotal;
-        html+=`<div class="si-row ${r.siId===item.id?'active':''}"
-          data-sid="${item.id}" data-pid="${proj.id}" data-secid="${item.sectionId}"
-          draggable="true"
-          onclick="navToSI('${proj.id}','${item.id}')">
-          <div class="si-drag-handle" title="Drag to reorder">⠿</div>
-          <div class="si-row-check ${window._bulkSelected?.has(item.id)?'checked':''}"
-            onclick="toggleBulkSelect('${proj.id}','${item.id}',event)">${window._bulkSelected?.has(item.id)?'✓':''}</div>
-          <div class="si-thumb">${thumb}</div>
-          <div class="si-info">
-            <div class="si-num">
-              SI# ${item.num.replace(/^SI\s+/, '')}
-              ${twEnabled ? `<span class="tw-badge ${twAllDone?'done':''}" style="margin-left:4px">🏢 ${twDone}/${twTotal}</span>` : ''}
-            </div>
-            <div class="si-title">${item.title}</div>
-          </div>
-          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-            <div class="si-status ${item.status}"></div>
-          </div>
-        </div>`;
-      });
-    });
-    scroll.innerHTML = html || emptyMsg('No items');
   }
 }
 
@@ -4109,6 +4119,7 @@ function navToSchedule(pid) {
 function buildSIEditor(pid,sid) {
   const proj=getProject(pid); const item=getSI(pid,sid);
   if(!item||!proj) return;
+  const fid = route().folderId || '';   // needed for "Back to Project" button
   const sec=proj.sections.find(s=>s.id===item.sectionId);
 
   const sectionItems = proj.items.filter(i => i.sectionId === item.sectionId);
@@ -10517,6 +10528,8 @@ function handleFloorPlanUpload(e){
   reader.onload=ev=>{
     if(!proj.floorPlan) proj.floorPlan={pins:[]};
     proj.floorPlan.imageData=ev.target.result;
+    // Also persist image in IndexedDB separately (not synced to CosmosDB to avoid size limit)
+    _idbSet('fp_img_'+pid, ev.target.result).catch(()=>{});
     markProjectDirty(pid); save();
     buildFloorPlanView(pid);
     showToast('✓ Floor plan uploaded','green');
@@ -10528,6 +10541,12 @@ function buildFloorPlanView(pid){
   const proj=getProject(pid); if(!proj) return;
   const el=document.getElementById('v-floorplan'); if(!el) return;
   const fp=proj.floorPlan||{pins:[]};
+  // If imageData was stripped from CosmosDB sync, restore from IndexedDB
+  if(!fp.imageData && fp.pins) {
+    _idbGet('fp_img_'+pid).then(saved=>{
+      if(saved){ fp.imageData=saved; if(proj.floorPlan) proj.floorPlan.imageData=saved; buildFloorPlanView(pid); }
+    }).catch(()=>{});
+  }
   const hasImage=!!fp.imageData;
 
   el.innerHTML=`
@@ -10542,7 +10561,7 @@ function buildFloorPlanView(pid){
     <div class="fp-canvas-wrap" id="fp-wrap" style="flex:1;overflow:auto;position:relative">
       ${hasImage
         ?`<div id="fp-inner" style="position:relative;display:inline-block">
-            <img id="fp-img" src="${fp.imageData}" style="display:block;max-width:100%;user-select:none" draggable="false">
+            <img id="fp-img" src="" style="display:block;max-width:100%;user-select:none" draggable="false">
             ${(fp.pins||[]).map(pin=>`
               <div class="fp-pin" data-pinid="${pin.id}" style="left:${pin.xPct}%;top:${pin.yPct}%"
                 title="${pin.siNum}: ${pin.siTitle}"
@@ -10561,6 +10580,11 @@ function buildFloorPlanView(pid){
       ${proj.items.slice(0,50).map(item=>`<div style="padding:8px 12px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center" onclick="_fpSelectSI('${pid}','${item.id}')" onmouseover="this.style.background='var(--accent-dim)'" onmouseout="this.style.background=''"><span style="font-family:var(--mono);font-size:10px;color:var(--accent)">${item.num}</span>${item.title}</div>`).join('')}
     </div>`:''}`;
 
+  // Set image src via JS (not template literal) to avoid backtick issues with base64
+  if(hasImage){
+    const fpImg=document.getElementById('fp-img');
+    if(fpImg && fp.imageData) fpImg.src=fp.imageData;
+  }
   // Wire up click-to-pin
   if(hasImage){
     window._fpAddMode=false;
