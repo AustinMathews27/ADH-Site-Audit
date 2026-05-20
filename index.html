@@ -2590,8 +2590,12 @@ async function _pollForRemoteChanges() {
     if (remoteTs <= _lastRemoteTs) return;
     _lastRemoteTs = remoteTs;
 
-    // Only update if cloud is actually newer than our local state
-    if ((cloudData._savedAt || 0) <= (store._savedAt || 0)) return;
+    // NOTE: removed the secondary `cloudData._savedAt <= store._savedAt` guard.
+    // _savedAt is the CLIENT clock at edit time and isn't comparable across
+    // devices (clock skew between iOS and Android caused deletes/edits from
+    // the slower-clocked device to be silently dropped on the faster one).
+    // Cosmos `_ts` is the only monotonic, cross-device-safe timestamp and is
+    // already checked above — that's sufficient to detect remote changes.
 
     console.log('[ADH] Remote change detected — merging from cloud');
     await _mergeCloudIntoLocal(cloudData);
@@ -2642,48 +2646,43 @@ async function _initStore() {
       try {
         const cloudTimeout = new Promise(r => setTimeout(() => r(null), 4000));
         const cloudData = await Promise.race([loadFromDatabase(), cloudTimeout]);
-        if (cloudData && (cloudData._savedAt || 0) > (store._savedAt || 0)) {
-          // Cloud is newer: take cloud data but restore local photos (never uploaded)
-          // AND preserve any local tombstones the cloud doesn't know about yet —
-          // otherwise a project deleted offline gets resurrected on next launch.
-          const localPhotos = {};
-          const localProjectTombstones = new Map();
-          const localContactTombstones = new Map();
-          (store.projects || []).forEach(p => {
-            if (p.coverPhoto) localPhotos['cover_' + p.id] = p.coverPhoto;
-            (p.items || []).forEach(i => { if (i.photos && i.photos.length) localPhotos[i.id] = i.photos; });
-            if (p._deleted) localProjectTombstones.set(p.id, { _deletedAt: p._deletedAt, _fieldTs: p._fieldTs });
-          });
-          (store.contacts || []).forEach(c => {
-            if (c._deleted) localContactTombstones.set(c.id, { _deletedAt: c._deletedAt, _fieldTs: c._fieldTs });
-          });
-          store = cloudData;
-          (store.projects || []).forEach(p => {
-            if (localPhotos['cover_' + p.id]) p.coverPhoto = localPhotos['cover_' + p.id];
-            (p.items || []).forEach(i => { if (localPhotos[i.id]) i.photos = localPhotos[i.id]; });
-            const t = localProjectTombstones.get(p.id);
-            if (t) {
-              p._deleted   = true;
-              p._deletedAt = t._deletedAt;
-              p._fieldTs   = Object.assign({}, p._fieldTs || {}, t._fieldTs || {}, { _deleted: t._deletedAt });
-            }
-          });
-          (store.contacts || []).forEach(c => {
-            const t = localContactTombstones.get(c.id);
-            if (t) {
-              c._deleted   = true;
-              c._deletedAt = t._deletedAt;
-              c._fieldTs   = Object.assign({}, c._fieldTs || {}, t._fieldTs || {}, { _deleted: t._deletedAt });
-            }
-          });
-          // If any tombstones existed only locally, flag a store push so they sync up
-          if (localProjectTombstones.size > 0 || localContactTombstones.size > 0) {
+        if (cloudData) {
+          // Cross-device note: we used to gate this on
+          //   cloudData._savedAt > store._savedAt
+          // but `_savedAt` is the CLIENT clock at edit time and isn't
+          // comparable across devices (Android and iOS clocks drift relative
+          // to each other). That gate caused deletes/edits from a slower-
+          // clocked device to never be picked up on launch by a device with
+          // a faster clock. We now always merge cloud changes; the merge
+          // helper preserves local-only tombstones and any in-flight items
+          // flagged _dirty, so this is safe.
+
+          // Snapshot what tombstones we hold locally BEFORE merging — used to
+          // detect if we're carrying a tombstone the cloud hasn't seen yet
+          // (e.g. user deleted offline, app closed before sync).
+          const preMergeLocalTombstones =
+            (store.projects || []).filter(p => p._deleted).length +
+            (store.contacts || []).filter(c => c._deleted).length;
+
+          await _mergeCloudIntoLocal(cloudData);
+          await _idbSet('fap_v3', store);
+
+          // Record the _ts so polling doesn't re-fire for this load
+          if (cloudData._ts) _lastRemoteTs = cloudData._ts;
+
+          // If we still have local tombstones after merging, some of them may
+          // not have made it to the cloud yet — flag the store dirty so the
+          // next sync pushes them up. (pendingOps queue handles in-flight
+          // patches, but tombstones created across reload boundaries with no
+          // sync attempt rely on this flag.)
+          const postMergeLocalTombstones =
+            (store.projects || []).filter(p => p._deleted).length +
+            (store.contacts || []).filter(c => c._deleted).length;
+          if (preMergeLocalTombstones > 0 || postMergeLocalTombstones > 0) {
             _dirtyStore = true;
           }
-          await _idbSet('fap_v3', store);
-          // Record the _ts so polling doesn't re-trigger for this load
-          if (cloudData._ts) _lastRemoteTs = cloudData._ts;
-          console.log('[ADH] Loaded newer data from cloud (_savedAt:', new Date(store._savedAt).toISOString(), ')');
+
+          console.log('[ADH] Merged cloud data into local on init (cloud _ts:', cloudData._ts || 'n/a', ')');
         }
       } catch (e) {
         console.warn('[ADH] Cloud load skipped:', e.message);
