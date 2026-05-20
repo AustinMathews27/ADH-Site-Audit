@@ -1660,9 +1660,356 @@ body.theme-dark .sched-current-week {
 .fp-pin { position:absolute;transform:translate(-50%,-50%);cursor:pointer;font-size:18px;text-shadow:0 1px 4px rgba(0,0,0,0.6);transition:transform 0.12s;z-index:10; }
 .fp-pin:hover { transform:translate(-50%,-50%) scale(1.3); }
 .fp-pin-label { position:absolute;top:100%;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:2px 6px;font-size:9px;font-family:var(--mono);color:var(--accent);white-space:nowrap;pointer-events:none;margin-top:2px; }
+/* ════════════════════════════════════════════════════════════════
+   ── PHONE LAYOUT v1 ──
+   Mobile-only overrides scoped under html.is-phone.
+   No effect on iPad / desktop. Toggled via JS at runtime
+   based on matchMedia('(max-width:640px)'). To preview on desktop:
+     document.documentElement.classList.add('is-phone')
+   ════════════════════════════════════════════════════════════════ */
+
+/* Shared phone-icon mask base */
+html.is-phone .nav-actions .btn-icon::before,
+html.is-phone .nav-back-btn::before,
+html.is-phone .mbn-item .mbn-icon::before,
+html.is-phone .camera-fab::before {
+  content: '';
+  display: block;
+  background-color: currentColor;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+}
+
+/* ── PHONE NAV BAR ──────────────────────────────────────────── */
+html.is-phone .left-panel { display: none !important; }
+html.is-phone .app-body { flex-direction: column; }
+html.is-phone .right-panel { flex: 1; overflow: hidden; }
+
+html.is-phone .nav-bar {
+  height: 56px;
+  padding: 0 10px;
+  gap: 6px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+html.is-phone .nav-logo { display: none !important; }
+
+/* Show only the LAST crumb as a clean title on phone */
+html.is-phone .breadcrumb { gap: 0; padding: 0 4px; }
+html.is-phone .breadcrumb .crumb:not(:last-child),
+html.is-phone .breadcrumb .crumb-sep { display: none; }
+html.is-phone .breadcrumb .crumb {
+  font-family: var(--sans);
+  font-size: 17px; font-weight: 600;
+  color: var(--text);
+  padding: 6px 4px;
+  letter-spacing: -0.01em;
+}
+/* When root crumb is the only one, show fallback */
+html.is-phone .breadcrumb .crumb.active:only-child:empty::after,
+html.is-phone .breadcrumb .crumb.active:has(img):only-child::after {
+  content: 'Projects';
+  font-family: var(--sans);
+  font-size: 17px; font-weight: 700;
+  color: var(--text);
+}
+html.is-phone .breadcrumb .crumb.active:has(img):only-child img { display: none; }
+
+/* Back button: bigger touch target */
+html.is-phone .nav-back-btn {
+  width: 40px; height: 40px;
+  border-radius: 12px;
+  border-color: var(--border);
+  font-size: 0;
+}
+html.is-phone .nav-back-btn::before {
+  width: 20px; height: 20px;
+  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='m15 18-6-6 6-6'/></svg>");
+          mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='m15 18-6-6 6-6'/></svg>");
+}
+
+/* Nav action buttons: bigger, SVG-only */
+html.is-phone .nav-actions { gap: 4px; }
+html.is-phone .nav-actions .btn-icon {
+  width: 40px; height: 40px;
+  border-radius: 12px;
+  font-size: 0;
+  color: var(--text2);
+  position: relative;
+  border-color: transparent;
+  background: transparent;
+}
+html.is-phone .nav-actions .btn-icon::before {
+  width: 22px; height: 22px;
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+}
+html.is-phone .nav-actions .btn-icon:active {
+  background: var(--surface3);
+  transform: scale(0.94);
+}
+
+/* SVG icon assignments by function */
+html.is-phone .nav-actions .btn-icon[onclick*="openGlobalSearch"]::before {
+  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='8'/><path d='m21 21-4.3-4.3'/></svg>");
+          mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='8'/><path d='m21 21-4.3-4.3'/></svg>");
+}
+html.is-phone .nav-actions .btn-icon[onclick*="syncChanges"]::before {
+  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'/><path d='M3 3v5h5'/><path d='M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16'/><path d='M16 16h5v5'/></svg>");
+          mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'/><path d='M3 3v5h5'/><path d='M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16'/><path d='M16 16h5v5'/></svg>");
+}
+html.is-phone .nav-actions .btn-icon[onclick*="showThemeModal"]::before {
+  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='4'/><path d='M12 2v2'/><path d='M12 20v2'/><path d='m4.93 4.93 1.41 1.41'/><path d='m17.66 17.66 1.41 1.41'/><path d='M2 12h2'/><path d='M20 12h2'/><path d='m6.34 17.66-1.41 1.41'/><path d='m19.07 4.93-1.41 1.41'/></svg>");
+          mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='4'/><path d='M12 2v2'/><path d='M12 20v2'/><path d='m4.93 4.93 1.41 1.41'/><path d='m17.66 17.66 1.41 1.41'/><path d='M2 12h2'/><path d='M20 12h2'/><path d='m6.34 17.66-1.41 1.41'/><path d='m19.07 4.93-1.41 1.41'/></svg>");
+}
+html.is-phone .nav-actions .btn-icon[onclick*="showShareModal"]::before {
+  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/><path d='m17 8-5-5-5 5'/><path d='M12 3v12'/></svg>");
+          mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/><path d='m17 8-5-5-5 5'/><path d='M12 3v12'/></svg>");
+}
+html.is-phone .nav-actions .btn-icon[onclick*="handleAdd"]::before {
+  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M5 12h14'/><path d='M12 5v14'/></svg>");
+          mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M5 12h14'/><path d='M12 5v14'/></svg>");
+}
+html.is-phone .nav-actions .btn-icon[onclick*="showLoginModal"]::before {
+  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect width='18' height='11' x='3' y='11' rx='2' ry='2'/><path d='M7 11V7a5 5 0 0 1 10 0v4'/></svg>");
+          mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect width='18' height='11' x='3' y='11' rx='2' ry='2'/><path d='M7 11V7a5 5 0 0 1 10 0v4'/></svg>");
+}
+html.is-phone .nav-actions .btn-icon[onclick*="toggleNotifications"]::before {
+  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9'/><path d='M10.3 21a1.94 1.94 0 0 0 3.4 0'/></svg>");
+          mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9'/><path d='M10.3 21a1.94 1.94 0 0 0 3.4 0'/></svg>");
+}
+
+/* Hide low-priority actions on phone (they remain accessible via bottom nav / modals) */
+html.is-phone .nav-actions .btn-icon[onclick*="showLoginModal"],
+html.is-phone .nav-actions .btn-icon[onclick*="showThemeModal"] {
+  display: none;
+}
+
+/* Notif badge: brighter on phone */
+html.is-phone .notif-badge {
+  top: 6px; right: 6px;
+  width: 9px; height: 9px;
+  border: 2px solid var(--surface);
+}
+
+/* ── PHONE BOTTOM NAV ───────────────────────────────────────── */
+html.is-phone .mobile-bottom-nav {
+  display: grid !important;
+  grid-template-columns: repeat(4, 1fr) !important;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 8px 4px calc(8px + var(--sab));
+  gap: 0;
+}
+html.is-phone .mbn-item {
+  padding: 8px 4px;
+  border-radius: 12px;
+  gap: 5px;
+  min-height: 56px;
+  color: var(--text3);
+}
+html.is-phone .mbn-item:active {
+  background: var(--surface2);
+}
+html.is-phone .mbn-item.active { color: var(--accent); }
+html.is-phone .mbn-icon {
+  font-size: 0;
+  width: 24px; height: 24px;
+  display: inline-block;
+  position: relative;
+}
+html.is-phone .mbn-item .mbn-icon::before {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+}
+html.is-phone .mbn-label {
+  font-family: var(--sans);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  text-transform: none;
+}
+
+/* Specific bottom-nav SVG icons */
+html.is-phone #mbn-home .mbn-icon::before {
+  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 9.5 12 3l9 6.5'/><path d='M5 9v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9'/><path d='M9 21V12h6v9'/></svg>");
+          mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 9.5 12 3l9 6.5'/><path d='M5 9v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9'/><path d='M9 21V12h6v9'/></svg>");
+}
+html.is-phone #mbn-contacts .mbn-icon::before {
+  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/><circle cx='9' cy='7' r='4'/><path d='M22 21v-2a4 4 0 0 0-3-3.87'/><path d='M16 3.13a4 4 0 0 1 0 7.75'/></svg>");
+          mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/><circle cx='9' cy='7' r='4'/><path d='M22 21v-2a4 4 0 0 0-3-3.87'/><path d='M16 3.13a4 4 0 0 1 0 7.75'/></svg>");
+}
+html.is-phone #mbn-add .mbn-icon::before {
+  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M5 12h14'/><path d='M12 5v14'/></svg>");
+          mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M5 12h14'/><path d='M12 5v14'/></svg>");
+}
+html.is-phone #mbn-share .mbn-icon::before {
+  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/><path d='m17 8-5-5-5 5'/><path d='M12 3v12'/></svg>");
+          mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/><path d='m17 8-5-5-5 5'/><path d='M12 3v12'/></svg>");
+}
+
+/* ── PHONE CAMERA FAB ───────────────────────────────────────── */
+html.is-phone .camera-fab {
+  width: 56px; height: 56px;
+  border-radius: 18px;
+  background: var(--accent);
+  bottom: calc(86px + var(--sab));
+  font-size: 0;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25), 0 2px 6px rgba(0,0,0,0.15);
+  color: #fff;
+}
+html.is-phone .camera-fab::before {
+  width: 24px; height: 24px;
+  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z'/><circle cx='12' cy='13' r='3'/></svg>");
+          mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z'/><circle cx='12' cy='13' r='3'/></svg>");
+}
+
+/* ── PHONE PROJECT/FOLDER CARDS — list rows ─────────────────── */
+html.is-phone .grid-wrap { padding: 12px 12px 100px; }
+
+html.is-phone .folder-grid,
+html.is-phone .proj-grid {
+  display: flex !important;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Folder cards as rows */
+html.is-phone .folder-card {
+  flex-direction: row;
+  align-items: center;
+  border-radius: 16px;
+  padding: 14px;
+  min-height: 64px;
+  gap: 14px;
+}
+html.is-phone .folder-card:hover { transform: none; box-shadow: none; }
+html.is-phone .folder-card:active { background: var(--surface2); }
+html.is-phone .fc-icon { font-size: 24px; flex-shrink: 0; }
+html.is-phone .fc-name { font-size: 15px; font-weight: 600; flex: 1; min-width: 0; }
+html.is-phone .fc-count { font-size: 11px; flex-shrink: 0; }
+html.is-phone .folder-card.new-card { min-height: 56px; padding: 12px; }
+
+/* Project cards as rows with thumbnail */
+html.is-phone .proj-card {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  border-radius: 16px;
+  padding: 0;
+  overflow: hidden;
+  min-height: 80px;
+  position: relative;
+}
+html.is-phone .proj-card:hover { transform: none; box-shadow: none; }
+html.is-phone .proj-card:active { background: var(--surface2); }
+html.is-phone .proj-card.new-card {
+  flex-direction: row;
+  justify-content: center;
+  min-height: 64px;
+  padding: 14px;
+  gap: 10px;
+}
+html.is-phone .pc-photo {
+  width: 84px; height: auto;
+  flex-shrink: 0;
+  font-size: 26px;
+  align-self: stretch;
+}
+html.is-phone .pc-body {
+  flex: 1;
+  padding: 12px 14px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+html.is-phone .pc-name {
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 3px;
+}
+html.is-phone .pc-meta { font-size: 11.5px; }
+html.is-phone .pc-stats { margin-top: 6px; gap: 4px; }
+html.is-phone .stat-pill { font-size: 9.5px; padding: 2px 6px; }
+html.is-phone .proj-card-menu-btn {
+  opacity: 1;
+  top: 8px; right: 8px;
+  width: 32px; height: 32px;
+  background: rgba(0,0,0,0.5);
+  font-size: 18px;
+}
+
+/* ── PHONE SECTION DIVIDERS ─────────────────────────────────── */
+html.is-phone .section-divider {
+  font-size: 11px;
+  margin: 12px 4px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+html.is-phone .section-divider::before {
+  content: '';
+  width: 3px;
+  height: 14px;
+  background: var(--accent);
+  border-radius: 2px;
+  display: inline-block;
+}
+
+/* ── PHONE SEARCH (in left panel, but visible at root) ──────── */
+html.is-phone .search-box {
+  margin: 0 0 12px;
+}
+html.is-phone .search-box input {
+  height: 44px;
+  font-size: 15px;
+  border-radius: 12px;
+}
+
+/* ── PHONE OFFLINE/UPDATE BANNERS ───────────────────────────── */
+html.is-phone .offline-banner,
+html.is-phone .update-banner {
+  font-size: 11px;
+  padding: 6px 12px;
+}
+
+/* ── PHONE MISC POLISH ──────────────────────────────────────── */
+html.is-phone body { padding-bottom: calc(64px + var(--sab)); }
+html.is-phone .empty-state { padding: 40px 24px; }
+html.is-phone .empty-state-icon { font-size: 48px; }
+html.is-phone .empty-state-text { font-size: 14px; }
+
+/* Dark-mode tweaks on phone (extends body.theme-dark) */
+html.is-phone body.theme-dark .nav-bar {
+  background: var(--surface);
+  border-bottom-color: var(--border);
+}
+html.is-phone body.theme-dark .mobile-bottom-nav {
+  background: var(--surface);
+  border-top-color: var(--border);
+}
+
+/* Touch-target safety */
+html.is-phone button,
+html.is-phone .btn-icon,
+html.is-phone .nav-back-btn { min-width: 40px; min-height: 40px; }
+
+/* ── END PHONE LAYOUT v1 ─────────────────────────────────────── */
+
 /* ── NOTIFICATION BELL ── */
 .notif-badge { position:absolute;top:2px;right:2px;width:8px;height:8px;border-radius:50%;background:var(--red);border:2px solid var(--surface); }
 </style>
+
 </head>
 <body>
 
@@ -1773,6 +2120,29 @@ body.theme-dark .sched-current-week {
 </div>
 
 <script>
+// ══════════════════════════════════════════════════════════════
+// PHONE LAYOUT DETECTION v1
+// Toggles `is-phone` on <html> based on viewport. Mobile-only
+// CSS overrides are scoped under html.is-phone in the stylesheet.
+// To preview phone layout on desktop devtools:
+//   document.documentElement.classList.add('is-phone')
+// ══════════════════════════════════════════════════════════════
+(function(){
+  // Catches phones in portrait (max-width 640px) AND phones in landscape
+  // (short viewport + touchscreen). Excludes iPad (smallest is 744px).
+  var mq = window.matchMedia(
+    '(max-width: 640px), (max-height: 480px) and (pointer: coarse)'
+  );
+  function apply(){
+    document.documentElement.classList.toggle('is-phone', mq.matches);
+  }
+  apply();
+  if (mq.addEventListener) mq.addEventListener('change', apply);
+  else if (mq.addListener) mq.addListener(apply); // older Safari
+  // Also re-check on orientation change (iOS sometimes lags matchMedia)
+  window.addEventListener('orientationchange', function(){ setTimeout(apply, 50); });
+})();
+
 // ── BULK SELECTION ────────────────────
 window._bulkSelected = new Set();
 
