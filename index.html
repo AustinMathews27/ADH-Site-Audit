@@ -4181,7 +4181,7 @@ window.showEditContactModal = function(id) {
     contact.email    = document.getElementById('c-email').value.trim();
     contact.notes    = document.getElementById('c-notes').value.trim();
 
-    save();
+    markStoreDirty(); save();
     closeModal();
     buildContactBookView();
     renderLeft(route());
@@ -4299,7 +4299,7 @@ window.handleContactCSV = function(e) {
     const list = parseContactCSV(ev.target.result);
     if (list.length > 0) {
       store.contacts = [...store.contacts, ...list];
-      save();
+      markStoreDirty(); save();
       buildContactBookView();
       showToast(`✓ Imported ${list.length} contacts`, 'green');
     } else {
@@ -4359,7 +4359,7 @@ window.handleContactVCF = function(e) {
     const list = parseContactVCF(ev.target.result);
     if (list.length > 0) {
       store.contacts = [...store.contacts, ...list];
-      save(); buildContactBookView();
+      markStoreDirty(); save(); buildContactBookView();
       showToast(`✓ Imported ${list.length} contacts`, 'green');
     } else {
       showToast('No valid vCards found in file', 'red');
@@ -4439,7 +4439,7 @@ window.handleContactXLSX = function(e) {
 
       if (list.length > 0) {
         store.contacts = [...store.contacts, ...list];
-        save(); buildContactBookView();
+        markStoreDirty(); save(); buildContactBookView();
         showToast(`✓ Imported ${list.length} contacts`, 'green');
       } else {
         showToast('No valid contacts found in file', 'red');
