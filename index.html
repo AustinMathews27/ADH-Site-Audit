@@ -1953,6 +1953,101 @@ function _idbSet(key, value) {
   }));
 }
 
+// ══════════════════════════════════════════════════════════════════
+// DURABLE OPS QUEUE — pendingOps survives reload/crash/tab-close
+// ══════════════════════════════════════════════════════════════════
+// Every patch is appended here BEFORE being sent. On confirmed save,
+// the matching op is removed. On startup and on online events, any
+// remaining ops are flushed. The Service Worker can also flush this
+// queue in the background via the Background Sync API.
+//
+// Format: [{ patch: {...}, ts: epochMs, attempts: int }, ...]
+
+const OPS_KEY = 'pending_ops_v1';
+let _opsFlushing = false;
+
+async function _opsGet() {
+  return (await _idbGet(OPS_KEY)) || [];
+}
+async function _opsAppend(patch) {
+  const ops = await _opsGet();
+  ops.push({ patch, ts: Date.now(), attempts: 0 });
+  // Cap to last 500 ops to prevent unbounded growth in pathological cases
+  if (ops.length > 500) ops.splice(0, ops.length - 500);
+  await _idbSet(OPS_KEY, ops);
+}
+async function _opsRemoveByTs(ts) {
+  const ops = await _opsGet();
+  await _idbSet(OPS_KEY, ops.filter(op => op.ts !== ts));
+}
+async function _opsClear() {
+  await _idbSet(OPS_KEY, []);
+}
+
+/**
+ * Flush all queued ops to /api/patchAudit. Idempotent — safe to call
+ * concurrently with the SW's flush; the server's deep-merge + ETag
+ * concurrency make duplicate POSTs harmless.
+ */
+async function _opsFlush() {
+  if (_opsFlushing || !navigator.onLine) return;
+  _opsFlushing = true;
+  try {
+    let ops = await _opsGet();
+    let progressed = false;
+    while (ops.length > 0 && navigator.onLine) {
+      const op = ops[0];
+      try {
+        const res = await fetch('/api/patchAudit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ patch: op.patch })
+        });
+        if (!res.ok) {
+          // Bump attempts; if a single op fails 5+ times, drop it (avoid poison pill)
+          op.attempts = (op.attempts || 0) + 1;
+          if (op.attempts >= 5) {
+            console.warn('[ADH][ops] Dropping op after 5 failed attempts:', op);
+            await _opsRemoveByTs(op.ts);
+          } else {
+            // Persist incremented attempt count and stop
+            const all = await _opsGet();
+            const target = all.find(x => x.ts === op.ts);
+            if (target) target.attempts = op.attempts;
+            await _idbSet(OPS_KEY, all);
+            break;
+          }
+        } else {
+          await _opsRemoveByTs(op.ts);
+          progressed = true;
+        }
+      } catch (err) {
+        // Network failure — stop and retry on next flush
+        break;
+      }
+      ops = await _opsGet();
+    }
+    if (progressed) {
+      console.log('[ADH][ops] Flushed pending operations queue');
+    }
+  } finally {
+    _opsFlushing = false;
+  }
+}
+
+/**
+ * Ask the browser to wake us up when connectivity returns so the queue
+ * gets flushed even if the app/tab is closed. Falls back silently on
+ * browsers without Background Sync (Safari/Firefox).
+ */
+function _registerBgSync() {
+  if (!('serviceWorker' in navigator)) return;
+  if (!('SyncManager' in window)) return;
+  navigator.serviceWorker.ready
+    .then(reg => reg.sync.register('adh-flush-ops'))
+    .catch(() => {/* permission denied or no SW; ignore */});
+}
+
 // ── In-memory store (populated during async init) ──
 let store = JSON.parse(JSON.stringify(SEED));
 
@@ -2064,13 +2159,24 @@ function markDirtyAndSave(si, changes) {
   // 1. Apply all changes at once
   Object.assign(si, changes);
 
-  // 2. Mark dirty so the CosmosDB sync picks it up
+  // 2. Stamp each changed field with a per-field timestamp so the server
+  //    can resolve concurrent edits to different fields without last-
+  //    writer-wins. Two supers editing notes vs status at the same
+  //    moment both survive.
+  const now = Date.now();
+  si._fieldTs = si._fieldTs || {};
+  Object.keys(changes).forEach(k => { si._fieldTs[k] = now; });
+
+  // 3. Mark dirty so the CosmosDB sync picks it up
   markAsDirty(si.id);
 
-  // 3. Persist to IndexedDB immediately (handled by save() inside markAsDirty)
+  // 4. Persist to IndexedDB immediately (handled by save() inside markAsDirty)
 
-  // 4. Schedule a debounced CosmosDB push
+  // 5. Schedule a debounced CosmosDB push
   scheduleDirtySync();
+
+  // 6. Wake the SW for Background Sync (no-op on unsupported browsers)
+  _registerBgSync();
 }
 
 // Debounce timer for sync
@@ -2249,9 +2355,26 @@ async function syncChanges(isAuto = false) {
       patch = { id: 'adh-store-v1', _savedAt: now, projectsById };
     }
 
+    // ── DURABLE QUEUE ────────────────────────────────────────────
+    // Append the patch to the ops log BEFORE sending. If the network
+    // request fails or the tab closes mid-flight, the op will be
+    // retried on next startup / online event / Background Sync.
+    const opTs = now;
+    try {
+      const ops = await _opsGet();
+      ops.push({ patch, ts: opTs, attempts: 0 });
+      if (ops.length > 500) ops.splice(0, ops.length - 500);
+      await _idbSet(OPS_KEY, ops);
+    } catch (e) {
+      console.warn('[ADH][ops] Could not enqueue op (proceeding anyway):', e.message);
+    }
+
     const result = await patchAuditToDatabase(patch);
 
     if (result.ok) {
+      // Remove the op from the durable queue
+      try { await _opsRemoveByTs(opTs); } catch(e) {}
+
       store._savedAt   = now;
       store.pendingSync = [];
 
@@ -2339,6 +2462,16 @@ async function _mergeCloudIntoLocal(cloudData) {
       }
     });
     const out = Object.assign({}, localProj, cloudProj);
+    // Tombstone preservation: never let a stale cloud doc resurrect a project
+    // that was deleted locally but hasn't synced its tombstone up yet.
+    // If EITHER side has _deleted, the merged result is deleted; the deletion
+    // _fieldTs decides which deletedAt wins.
+    if (localProj._deleted || cloudProj._deleted) {
+      out._deleted = true;
+      const lTs = (localProj._fieldTs && localProj._fieldTs._deleted) || localProj._deletedAt || 0;
+      const cTs = (cloudProj._fieldTs && cloudProj._fieldTs._deleted) || cloudProj._deletedAt || 0;
+      out._deletedAt = Math.max(lTs, cTs) || Date.now();
+    }
     if (localPhotos['cover_' + cloudProj.id]) out.coverPhoto = localPhotos['cover_' + cloudProj.id];
     out.items = [...localItemMap.values()];
     return out;
@@ -2405,12 +2538,45 @@ async function _mergeCloudIntoLocal(cloudData) {
 
   if (cloudData.contacts) {
     if (!_dirtyStore) {
-      store.contacts = cloudData.contacts;
+      // Even when accepting cloud wholesale, preserve any LOCAL tombstones the
+      // cloud hasn't seen yet — otherwise a stale cloud doc will resurrect
+      // contacts that were deleted locally just before sync.
+      const localTombstones = new Map(
+        (store.contacts || []).filter(c => c._deleted).map(c => [c.id, c])
+      );
+      store.contacts = (cloudData.contacts || []).map(c => {
+        const t = localTombstones.get(c.id);
+        if (t) return Object.assign({}, c, {
+          _deleted: true,
+          _deletedAt: t._deletedAt,
+          _fieldTs: Object.assign({}, c._fieldTs || {}, t._fieldTs || {}, { _deleted: t._deletedAt })
+        });
+        // Also respect cloud-side tombstones
+        return c;
+      });
+      // Include any local tombstones not in cloud at all (deleted while cloud-offline)
+      const cloudIds = new Set(store.contacts.map(c => c.id));
+      localTombstones.forEach((t, id) => { if (!cloudIds.has(id)) store.contacts.push(t); });
     } else {
       const localById = new Map((store.contacts || []).map(c => [c.id, c]));
       const cloudById = new Map((cloudData.contacts || []).map(c => [c.id, c]));
       const mergedIds = new Set([...localById.keys(), ...cloudById.keys()]);
-      store.contacts = [...mergedIds].map(id => localById.get(id) || cloudById.get(id));
+      store.contacts = [...mergedIds].map(id => {
+        const l = localById.get(id), c = cloudById.get(id);
+        if (l && c) {
+          // Tombstone wins if either side has it
+          if (l._deleted || c._deleted) {
+            const lTs = (l._fieldTs && l._fieldTs._deleted) || l._deletedAt || 0;
+            const cTs = (c._fieldTs && c._fieldTs._deleted) || c._deletedAt || 0;
+            const base = Object.assign({}, c, l);
+            base._deleted = true;
+            base._deletedAt = Math.max(lTs, cTs) || Date.now();
+            return base;
+          }
+          return l; // prefer local for conflicts (existing behavior)
+        }
+        return l || c;
+      });
     }
   }
 } 
@@ -2478,16 +2644,42 @@ async function _initStore() {
         const cloudData = await Promise.race([loadFromDatabase(), cloudTimeout]);
         if (cloudData && (cloudData._savedAt || 0) > (store._savedAt || 0)) {
           // Cloud is newer: take cloud data but restore local photos (never uploaded)
+          // AND preserve any local tombstones the cloud doesn't know about yet —
+          // otherwise a project deleted offline gets resurrected on next launch.
           const localPhotos = {};
+          const localProjectTombstones = new Map();
+          const localContactTombstones = new Map();
           (store.projects || []).forEach(p => {
             if (p.coverPhoto) localPhotos['cover_' + p.id] = p.coverPhoto;
             (p.items || []).forEach(i => { if (i.photos && i.photos.length) localPhotos[i.id] = i.photos; });
+            if (p._deleted) localProjectTombstones.set(p.id, { _deletedAt: p._deletedAt, _fieldTs: p._fieldTs });
+          });
+          (store.contacts || []).forEach(c => {
+            if (c._deleted) localContactTombstones.set(c.id, { _deletedAt: c._deletedAt, _fieldTs: c._fieldTs });
           });
           store = cloudData;
           (store.projects || []).forEach(p => {
             if (localPhotos['cover_' + p.id]) p.coverPhoto = localPhotos['cover_' + p.id];
             (p.items || []).forEach(i => { if (localPhotos[i.id]) i.photos = localPhotos[i.id]; });
+            const t = localProjectTombstones.get(p.id);
+            if (t) {
+              p._deleted   = true;
+              p._deletedAt = t._deletedAt;
+              p._fieldTs   = Object.assign({}, p._fieldTs || {}, t._fieldTs || {}, { _deleted: t._deletedAt });
+            }
           });
+          (store.contacts || []).forEach(c => {
+            const t = localContactTombstones.get(c.id);
+            if (t) {
+              c._deleted   = true;
+              c._deletedAt = t._deletedAt;
+              c._fieldTs   = Object.assign({}, c._fieldTs || {}, t._fieldTs || {}, { _deleted: t._deletedAt });
+            }
+          });
+          // If any tombstones existed only locally, flag a store push so they sync up
+          if (localProjectTombstones.size > 0 || localContactTombstones.size > 0) {
+            _dirtyStore = true;
+          }
           await _idbSet('fap_v3', store);
           // Record the _ts so polling doesn't re-trigger for this load
           if (cloudData._ts) _lastRemoteTs = cloudData._ts;
@@ -2578,6 +2770,24 @@ _migrateManpower(store);
     }
   }, 30000); // 30 seconds
 
+  // ── Durable ops queue: flush any patches that never completed last session ──
+  if (navigator.onLine) {
+    _opsFlush().catch(()=>{});
+  }
+  // Also periodically retry the queue (covers network blips even with no dirty data)
+  setInterval(() => { if (navigator.onLine) _opsFlush().catch(()=>{}); }, 45000);
+
+  // Listen for Background Sync completions broadcast by the Service Worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', evt => {
+      if (evt.data && evt.data.type === 'OPS_FLUSHED') {
+        console.log('[ADH] SW flushed', evt.data.flushed, 'queued ops');
+        // After SW pushes our changes up, pull anything new down
+        _pollForRemoteChanges();
+      }
+    });
+  }
+
   // Pause polling when tab is hidden, resume + immediate check when visible
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
@@ -2585,6 +2795,8 @@ _migrateManpower(store);
     } else {
       _startPolling();
       _pollForRemoteChanges(); // check immediately on tab focus
+      // Tab regained focus — try draining the durable queue
+      if (navigator.onLine) _opsFlush().catch(()=>{});
     }
   });
 
@@ -2595,6 +2807,8 @@ _migrateManpower(store);
       _startPolling();
       _pollForRemoteChanges();
       syncChanges(true); // Flush dirty queue when back online
+      _opsFlush().catch(()=>{}); // Drain durable queue
+      _registerBgSync();
     } else {
       _stopPolling();
     }
@@ -2852,6 +3066,7 @@ function renderLeft(r) {
   if (r.view === 'contacts') {
     title.textContent = 'CONTACTS';
     const list = store.contacts.filter(c => {
+      if (c._deleted) return false;
       const name = (c.name || '').toLowerCase();
       const comp = (c.company || '').toLowerCase();
       const role = (c.role || '').toLowerCase();
@@ -2956,7 +3171,7 @@ function renderLeft(r) {
         </div>`).join('') || emptyMsg('No subfolders');
     } else {
       title.textContent = 'PROJECTS';
-      const projs = (folder.projects || []).map(id => getProject(id)).filter(p => p && (!q || p.name.toLowerCase().includes(q)));
+      const projs = (folder.projects || []).map(id => getProject(id)).filter(p => p && !p._deleted && (!q || p.name.toLowerCase().includes(q)));
       scroll.innerHTML = projs.map(p => {
         const ready = p.items.filter(i => i.status === 'completed').length;
         return `<div class="si-row ${r.projectId === p.id ? 'active' : ''}" onclick="navToProject('${p.id}','${r.folderId}')">
@@ -3227,7 +3442,7 @@ function buildRootView() {
     </div>
     <div class="section-divider" style="margin-top:4px">All Projects</div>
     <div class="proj-grid">
-      ${store.projects.map(p=>projCardHTML(p,'')).join('')}
+      ${store.projects.filter(p=>!p._deleted).map(p=>projCardHTML(p,'')).join('')}
       <div class="proj-card new-card" onclick="showNewProjectModal('')">
         <div style="font-size:22px;opacity:0.4">＋</div>
         <div style="font-size:12px">New Project</div>
@@ -3286,6 +3501,7 @@ function buildContactBookView(highlightId = null) {
   const proj = window.contactProjectFilter  || 'All';
 
   const contacts = store.contacts.filter(c => {
+    if (c._deleted) return false;
     const name = (c.name    || '').toLowerCase();
     const comp = (c.company || '').toLowerCase();
     const matchesSearch = !q    || name.includes(q) || comp.includes(q);
@@ -3474,7 +3690,14 @@ function showNewContactModal() {
 window.deleteContact = function(id) {
   if(!confirm('Delete this contact?')) return;
   window.selectedContacts.delete(id);
-  store.contacts = store.contacts.filter(c => c.id !== id);
+  // Tombstone instead of hard filter so deletion survives offline merges
+  const _delContact = store.contacts.find(c => c.id === id);
+  if (_delContact) {
+    _delContact._deleted   = true;
+    _delContact._deletedAt = Date.now();
+    _delContact._fieldTs   = _delContact._fieldTs || {};
+    _delContact._fieldTs._deleted = _delContact._deletedAt;
+  }
   markStoreDirty(); save(); buildContactBookView(); renderLeft(route());
   showToast('Contact deleted');
 };
@@ -3625,6 +3848,7 @@ window.toggleSelectAllContacts = function() {
   const cat  = window.contactCategoryFilter || 'All';
   const proj = window.contactProjectFilter  || 'All';
   const visible = store.contacts.filter(c => {
+    if (c._deleted) return false;
     const name = (c.name || '').toLowerCase();
     const comp = (c.company || '').toLowerCase();
     const matchesSearch = !q    || name.includes(q) || comp.includes(q);
@@ -8149,8 +8373,16 @@ function confirmDeleteProject(pid,fid) {
     </div>`,()=>{
     // Remove from all folders
     store.folders.forEach(f=>{ f.projects=f.projects.filter(id=>id!==pid); });
-    // Remove project
-    store.projects=store.projects.filter(p=>p.id!==pid);
+    // Tombstone the project — kept in the array with _deleted flag so the
+    // deletion propagates to other devices even if they were offline.
+    // Render paths filter out _deleted projects. Garbage-collected later.
+    const _delProj = store.projects.find(p=>p.id===pid);
+    if (_delProj) {
+      _delProj._deleted   = true;
+      _delProj._deletedAt = Date.now();
+      _delProj._fieldTs   = _delProj._fieldTs || {};
+      _delProj._fieldTs._deleted = _delProj._deletedAt;
+    }
     markStoreDirty(); save(); closeModal();
     // If we were inside this project, go back
     if(route().projectId===pid) fid?navToFolder(fid):navToRoot();

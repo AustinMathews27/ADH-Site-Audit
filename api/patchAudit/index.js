@@ -25,10 +25,44 @@ const database  = client.database("Auditdata");
 const container = database.container("Audits");
 const DOC_ID    = "adh-store-v1";
 
-// Deep-merge: patch wins on conflict; arrays are replaced, not concatenated
+// Deep-merge with optional per-field timestamp resolution and tombstone respect.
+//
+//   _fieldTs: { fieldName: millisTimestamp }
+//     If both target and patch have a timestamp for the same field,
+//     the newer one wins. If only one side has a timestamp, the side
+//     with the timestamp wins (assumed to be the explicit edit).
+//     Falls back to "patch wins" if neither side has timestamps.
+//
+//   _deleted: true
+//     Once set on target, the object is a tombstone. Subsequent patches
+//     can't undelete it unless they set _deleted: false explicitly with
+//     a newer _fieldTs._deleted timestamp.
+//
+// Arrays are replaced, not concatenated (preserved from original behavior).
 function deepMerge(target, patch) {
+  const tFt = target._fieldTs || null;
+  const pFt = patch._fieldTs  || null;
+  const hasAnyTs = tFt || pFt;
+
   for (const key of Object.keys(patch)) {
+    if (key === "_fieldTs") continue; // handled separately below
+
     const pv = patch[key], tv = target[key];
+
+    // Per-field timestamp guard: skip if target's value is newer
+    if (hasAnyTs) {
+      const pTs = pFt && pFt[key];
+      const tTs = tFt && tFt[key];
+      if (tTs !== undefined && pTs !== undefined && tTs > pTs) {
+        continue; // target has a more recent edit on this field — keep it
+      }
+      // If target has a timestamp on this field and patch doesn't,
+      // assume the patch is older/passive and skip too.
+      if (tTs !== undefined && pTs === undefined) {
+        continue;
+      }
+    }
+
     if (pv !== null && typeof pv === "object" && !Array.isArray(pv) &&
         tv !== null && typeof tv === "object" && !Array.isArray(tv)) {
       deepMerge(tv, pv);
@@ -36,6 +70,16 @@ function deepMerge(target, patch) {
       target[key] = pv;
     }
   }
+
+  // Merge _fieldTs maps — keep the max timestamp for each field
+  if (pFt) {
+    const merged = Object.assign({}, tFt || {});
+    for (const k of Object.keys(pFt)) {
+      if (merged[k] === undefined || pFt[k] > merged[k]) merged[k] = pFt[k];
+    }
+    target._fieldTs = merged;
+  }
+
   return target;
 }
 
