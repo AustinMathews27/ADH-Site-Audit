@@ -2435,215 +2435,362 @@ function save() {
   }, 80);   // 80 ms debounce keeps UI snappy
 }
 
-// ══════════════════════════════════════════════════════════════════
-// SYNC ENGINE v4 — Item-level patching
-// ══════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
+// SYNC ENGINE v5 — Per-Project Document Architecture
+// ══════════════════════════════════════════════════════════════════════════════
 //
-// HOW IT WORKS:
-//   - _dirtyItems   : Set of SI item IDs that changed (most granular)
-//   - _dirtyProjects: Set of project IDs with structural changes
-//                     (new/deleted items, sections, project meta)
-//   - _dirtyStore   : flag for folders / contacts / settings changes
+// HOW TO INSTALL:
+//   In index.html, find the block that starts with:
+//     "// ══════ SYNC ENGINE v4 — Item-level patching"
+//   and ends just before:
+//     "// ══════════════════════════════════════════"
+//     "// 6-WEEK LOOK AHEAD SCHEDULE"
+//   Replace that entire block with this file's contents.
 //
-// AUTO-SYNC (every 2 min, only if dirty):
-//   Sends itemsById: { si_abc: {...}, si_xyz: {...} }
-//   The server merges ONLY those items into their parent projects.
-//   Superintendent A editing SI 0101 notes and Superintendent B
-//   editing SI 0202 status → both changes survive even on the same
-//   project, even if they sync at the same moment.
+// ARCHITECTURE:
+//   CLOUD:  adh-index-v1      → folders, contacts, settings, projectIds[]
+//           adh-proj-{id}     → one independent document per project
+//   LOCAL:  store (unchanged shape in IndexedDB)
 //
-// MANUAL SYNC (🔄 button):
-//   Sends the full store as a clean confirmed baseline.
-//   Still a deep-merge on the server — never a full overwrite.
+// DIRTY TRACKING:
+//   _dirtyIndex      : boolean  — folders / contacts / settings changed
+//   _dirtyProjectIds : Set<id>  — which projects need pushing
+//   Both are persisted in IDB across page reloads via "adh_dirty_v1"
+//
+// PUSH:
+//   Auto every 30s (if dirty) + immediately on markDirtyAndSave()
+//   Manual via 🔄 button → full push of all dirty items
 //
 // POLL (every 15s):
-//   Merges cloud changes at the item level into local store.
-//   Local photos are always preserved (never uploaded to cloud).
+//   Check index _ts  → if changed, merge and re-render
+//   Check current open project _ts → if changed, merge and re-render
+//   Check for new projectIds in index → fetch and add locally
 //
-// OFFLINE:
-//   All changes save to IndexedDB immediately.
-//   When reconnected, dirty items sync automatically.
-// ══════════════════════════════════════════════════════════════════
+// STARTUP:
+//   Load IDB → fetch index → fetch all projects in parallel (4s timeout)
+// ══════════════════════════════════════════════════════════════════════════════
 
-const _dirtyItems    = new Set(); // SI item IDs
-const _dirtyProjects = new Set(); // project IDs (structural changes)
-let   _dirtyStore    = false;     // folders / contacts / settings
+// ── In-memory store ───────────────────────────────────────────────────────────
+let store = JSON.parse(JSON.stringify(SEED));
 
-/**
- * Call when an SI item field changes (notes, status, tags, etc.)
- * This is the most granular — only that one item is synced.
- */
+// ── Dirty tracking ────────────────────────────────────────────────────────────
+let _dirtyIndex = false;
+const _dirtyProjectIds = new Set();
+
+// IDB key for persisting dirty state across reloads
+const DIRTY_IDB_KEY = 'adh_dirty_v1';
+
+async function _loadDirtyState() {
+  try {
+    const saved = await _idbGet(DIRTY_IDB_KEY);
+    if (saved) {
+      if (saved.index)      _dirtyIndex = true;
+      if (saved.projects)   saved.projects.forEach(id => _dirtyProjectIds.add(id));
+    }
+  } catch(e) {}
+}
+
+async function _persistDirtyState() {
+  try {
+    await _idbSet(DIRTY_IDB_KEY, {
+      index:    _dirtyIndex,
+      projects: [..._dirtyProjectIds]
+    });
+  } catch(e) {}
+}
+
+async function _clearDirtyState() {
+  _dirtyIndex = false;
+  _dirtyProjectIds.clear();
+  try { await _idbSet(DIRTY_IDB_KEY, { index: false, projects: [] }); } catch(e) {}
+}
+
+// ── Cloud timestamp cache ─────────────────────────────────────────────────────
+// Tracks the last _ts we received from Cosmos for each document.
+// Used to avoid re-fetching unchanged documents during poll.
+const TS_IDB_KEY = 'adh_ts_v5';
+let _cloudTs = { index: 0, projects: {} };
+
+async function _loadCloudTs() {
+  try {
+    const saved = await _idbGet(TS_IDB_KEY);
+    if (saved) _cloudTs = saved;
+  } catch(e) {}
+}
+
+async function _saveCloudTs() {
+  try { await _idbSet(TS_IDB_KEY, _cloudTs); } catch(e) {}
+}
+
+// ── Mark dirty helpers ────────────────────────────────────────────────────────
+
+/** Call when any SI item field changes. */
 function markAsDirty(itemId) {
-  _dirtyItems.add(itemId);
-  // Also track the parent project for structural awareness
   const proj = store.projects.find(p => p.items && p.items.some(i => i.id === itemId));
-  if (proj) _dirtyProjects.add(proj.id);
   if (proj) {
+    _dirtyProjectIds.add(proj.id);
     const item = proj.items.find(i => i.id === itemId);
     if (item) {
-      item._dirty = true;
+      item._dirty        = true;
       item._lastModified = new Date().toISOString();
     }
-    _dirtyProjects.add(proj.id);
   }
-  _dirtyItems.add(itemId);
-  if (!store.pendingSync) store.pendingSync = [];
-  if (!store.pendingSync.includes(itemId)) store.pendingSync.push(itemId);
   store.lastUpdated = Date.now();
   save();
+  _persistDirtyState();
 }
 
-/**
- * Run once on app startup.
- * Flags all existing items as _dirty so the next sync pushes
- * the complete dataset to CosmosDB.
- */
-async function migrateMarkAllDirty() {
-  const MIGRATED_KEY = 'adh_dirty_migration_v1';
-  if (localStorage.getItem(MIGRATED_KEY)) return; // already ran
-
-  console.log('[Migration] Marking all IDB items as dirty for full CosmosDB re-sync…');
-  store.projects.forEach(p => {
-    (p.items || []).forEach(item => {
-      item._dirty = true;
-      item._lastModified = item._lastModified || new Date().toISOString();
-      _dirtyItems.add(item.id);
-      _dirtyProjects.add(p.id);
-    });
-  });
-  
+/** Call when project structure changes (new/deleted SI, section changes, project meta). */
+function markProjectDirty(projectId) {
+  _dirtyProjectIds.add(projectId);
+  store.lastUpdated = Date.now();
   save();
-  localStorage.setItem(MIGRATED_KEY, '1');
-  console.log('[Migration] ✓ Done. Scheduling full sync…');
-  scheduleDirtySync(500); 
+  _persistDirtyState();
+}
+
+/** Call when folders, contacts, or settings change. */
+function markStoreDirty() {
+  _dirtyIndex = true;
+  store.lastUpdated = Date.now();
+  save();
+  _persistDirtyState();
 }
 
 /**
- * Central function — call this any time ANY field on an SI changes.
- * Replaces scattered direct saves throughout the codebase.
- *
- * @param {object} si      - The SI object being edited
- * @param {object} changes - Key/value pairs of changed fields
+ * Central save helper for SI field changes.
+ * Stamps each changed field with a per-field timestamp for conflict resolution.
  */
 function markDirtyAndSave(si, changes) {
-  // 1. Apply all changes at once
   Object.assign(si, changes);
-
-  // 2. Stamp each changed field with a per-field timestamp so the server
-  //    can resolve concurrent edits to different fields without last-
-  //    writer-wins. Two supers editing notes vs status at the same
-  //    moment both survive.
   const now = Date.now();
   si._fieldTs = si._fieldTs || {};
   Object.keys(changes).forEach(k => { si._fieldTs[k] = now; });
-
-  // 3. Mark dirty so the CosmosDB sync picks it up
   markAsDirty(si.id);
-
-  // 4. Persist to IndexedDB immediately (handled by save() inside markAsDirty)
-
-  // 5. Schedule a debounced CosmosDB push
   scheduleDirtySync();
-
-  // 6. Wake the SW for Background Sync (no-op on unsupported browsers)
-  _registerBgSync();
 }
 
-// Debounce timer for sync
+// ── Debounced auto-sync ───────────────────────────────────────────────────────
 let _syncTimer = null;
 function scheduleDirtySync(delayMs = 2000) {
   clearTimeout(_syncTimer);
   _syncTimer = setTimeout(() => syncChanges(true), delayMs);
 }
 
-/**
- * Call when a project's structure changes (new/deleted SI, section
- * changes, project meta edits, new project added).
- */
-function markProjectDirty(projectId) {
-  _dirtyProjects.add(projectId);
-  store.lastUpdated = Date.now();
-  save();
+// ── Local save (IndexedDB) ────────────────────────────────────────────────────
+let _saveTimer = null;
+function save() {
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    _idbSet('fap_v3', store).catch(err => {
+      console.error('[ADH] IndexedDB save failed:', err);
+      showToast('⚠️ Error saving data locally');
+    });
+    _idbSet('section_rules', SECTION_RULES).catch(() => {});
+  }, 80);
 }
 
-/**
- * Call when folders, contacts, or settings change.
- */
-function markStoreDirty() {
-  _dirtyStore = true;
-  store.lastUpdated = Date.now();
-  save();
-}
+// ── Payload builders ──────────────────────────────────────────────────────────
 
-// ── Strip photos from an item (photos live in IndexedDB only) ────
-function _buildItemPayload(item) {
-  // Strip all base64 binary data before CosmosDB sync — only metadata + URLs go to cloud.
-  const cloudPhotos = (item.photos || [])
-    .filter(p => p.url)
-    .map(p => ({ url: p.url, caption: p.caption || '', takenAt: p.takenAt || '' }));
-  // Attachments: keep metadata but strip base64 data (too large for Cosmos)
-  const cloudAttachments = (item.attachments || [])
-    .map(a => ({ id: a.id, name: a.name, type: a.type, ext: a.ext, icon: a.icon, size: a.size, addedAt: a.addedAt, addedBy: a.addedBy }));
-  return Object.assign({}, item, { photos: cloudPhotos, attachments: cloudAttachments });
-}
+/** Strip binary data before sending a project to Cosmos. */
+function _buildProjectPayload(proj) {
+  const cleanFloorPlan = proj.floorPlan
+    ? Object.assign({}, proj.floorPlan, { imageData: null })
+    : undefined;
 
-// ── Strip photos from a project ──────────────────────────────────
-function _buildProjectPayload(p) {
-  // Strip large binary data before sending to CosmosDB (2MB doc limit)
-  const fp = p.floorPlan ? Object.assign({}, p.floorPlan, { imageData: null }) : undefined;
-  const out = Object.assign({}, p, {
-    coverPhoto: null,
-    items: (p.items || []).map(_buildItemPayload)
+  const out = Object.assign({}, proj, {
+    coverPhoto: null,  // stays in IndexedDB only
+    items: (proj.items || []).map(item => {
+      const cloudPhotos = (item.photos || [])
+        .filter(p => p.url)
+        .map(p => ({ url: p.url, caption: p.caption || '', takenAt: p.takenAt || '' }));
+      const cloudAttachments = (item.attachments || [])
+        .map(a => ({ id: a.id, name: a.name, type: a.type, ext: a.ext,
+                     icon: a.icon, size: a.size, addedAt: a.addedAt, addedBy: a.addedBy }));
+      return Object.assign({}, item, { photos: cloudPhotos, attachments: cloudAttachments });
+    })
   });
-  if (fp !== undefined) out.floorPlan = fp;
+  if (cleanFloorPlan !== undefined) out.floorPlan = cleanFloorPlan;
   return out;
 }
 
-// ── POST a patch to /api/patchAudit ──────────────────────────────
-async function patchAuditToDatabase(patch) {
-  try {
-    const response = await fetch('/api/patchAudit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ patch })
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return await response.json();
-  } catch (err) {
-    console.warn('[Sync] Cloud patch failed:', err.message);
-    return { ok: false };
+/** Build the index payload. */
+function _buildIndexPayload() {
+  return {
+    folders:    store.folders,
+    contacts:   store.contacts,
+    settings:   store.settings,
+    projectIds: store.projects.filter(p => !p._deleted).map(p => p.id),
+    _savedAt:   Date.now()
+  };
+}
+
+// ── API wrappers ──────────────────────────────────────────────────────────────
+
+async function _apiGetIndex() {
+  const res = await fetch('/api/getIndex');
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`getIndex HTTP ${res.status}`);
+  return res.json();
+}
+
+async function _apiSaveIndex(payload) {
+  const res = await fetch('/api/saveIndex', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(payload)
+  });
+  if (!res.ok) throw new Error(`saveIndex HTTP ${res.status}`);
+  return res.json();
+}
+
+async function _apiGetProject(pid) {
+  const res = await fetch(`/api/getProject?id=${encodeURIComponent(pid)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`getProject HTTP ${res.status} (${pid})`);
+  return res.json();
+}
+
+async function _apiSaveProject(proj) {
+  const res = await fetch('/api/saveProject', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ project: proj })
+  });
+  if (!res.ok) throw new Error(`saveProject HTTP ${res.status} (${proj.id})`);
+  return res.json();
+}
+
+// ── Merge helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * Merge index fields from cloud into local store.
+ * Called on startup and during poll when index _ts changes.
+ */
+function _mergeIndexIntoLocal(cloudIndex) {
+  // Folders: union by ID, incoming wins on conflict
+  if (cloudIndex.folders) {
+    const localById = new Map((store.folders || []).map(f => [f.id, f]));
+    const cloudById = new Map((cloudIndex.folders || []).map(f => [f.id, f]));
+    // Keep local-only folders (created offline), accept all cloud folders
+    cloudById.forEach((f, id) => localById.set(id, f));
+    store.folders = [...localById.values()];
   }
-}
 
-async function saveAuditToDatabase(data) {
-  const result = await patchAuditToDatabase(data);
-  return result.ok === true;
-}
+  // Contacts: merge by ID with tombstone respect
+  if (cloudIndex.contacts) {
+    const localById = new Map((store.contacts || []).map(c => [c.id, c]));
+    const cloudById = new Map((cloudIndex.contacts || []).map(c => [c.id, c]));
 
-async function loadFromDatabase() {
-  try {
-    const response = await fetch('/api/getAudit');
-    if (response.status === 404) return null;
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return await response.json();
-  } catch (err) {
-    console.warn('[Sync] Cloud load failed:', err.message);
-    return null;
+    // Start from cloud, then overlay local tombstones / unsaved additions
+    const mergedIds = new Set([...localById.keys(), ...cloudById.keys()]);
+    store.contacts = [...mergedIds].map(id => {
+      const local = localById.get(id);
+      const cloud = cloudById.get(id);
+      if (!cloud) return local; // local-only (created offline)
+      if (!local) return cloud; // cloud-only (added by another device)
+      // Both exist — tombstone wins, else cloud wins (newer server version)
+      if (local._deleted) return local;  // preserve our tombstone
+      if (cloud._deleted) return cloud;  // accept cloud tombstone
+      return cloud; // cloud has the latest confirmed version
+    });
+  }
+
+  // Settings: cloud wins if we don't have unsaved local changes
+  if (cloudIndex.settings && !_dirtyIndex) {
+    store.settings = cloudIndex.settings;
   }
 }
 
 /**
- * Main sync function.
+ * Derive the local project ID from a cloud project document.
+ * Cloud docs store id as "adh-proj-{pid}", and preserve original in projectId field.
+ */
+function _localPidFrom(cloudProj) {
+  return cloudProj.projectId || cloudProj.id.replace(/^adh-proj-/, '');
+}
+
+/**
+ * Merge a single cloud project document into the local store.
+ * - Preserves local photos (never uploaded to Cosmos).
+ * - Skips items flagged _dirty (user has unsaved changes).
+ * - Adds project if it doesn't exist locally yet.
+ */
+function _mergeProjectIntoLocal(cloudProj) {
+  const localPid = _localPidFrom(cloudProj);
+
+  // Snapshot local photos before merge
+  const localPhotos = {};
+  const localProj = store.projects.find(p => p.id === localPid);
+
+  if (localProj) {
+    if (localProj.coverPhoto) localPhotos['_cover'] = localProj.coverPhoto;
+    (localProj.items || []).forEach(i => {
+      if (i.photos && i.photos.length) localPhotos[i.id] = i.photos;
+    });
+  }
+
+  function restorePhotos(item) {
+    const out = Object.assign({}, item);
+    const local = localPhotos[item.id] || [];
+    // Cloud only has URL photos; local may also have base64 (not yet uploaded)
+    const cloudUrls   = (item.photos || []).filter(p => p.url);
+    const localUrlSet = new Set(local.map(p => p.url).filter(Boolean));
+    const freshCloud  = cloudUrls.filter(p => !localUrlSet.has(p.url));
+    out.photos = [...local, ...freshCloud];
+    return out;
+  }
+
+  if (!localProj) {
+    // New project from another device — add it
+    const newProj = Object.assign({}, cloudProj, {
+      id:        localPid,
+      items:     (cloudProj.items || []).map(restorePhotos)
+    });
+    delete newProj.projectId; // only needed for Cosmos key lookup
+    store.projects.push(newProj);
+    return;
+  }
+
+  // Merge items: skip _dirty local items, merge the rest field-by-field
+  const localItemMap = new Map((localProj.items || []).map(i => [i.id, i]));
+  (cloudProj.items || []).forEach(ci => {
+    const li = localItemMap.get(ci.id);
+    if (!li) {
+      // New item from another device
+      localItemMap.set(ci.id, restorePhotos(ci));
+    } else if (!li._dirty) {
+      // Safe to merge — no unsaved local changes
+      const merged = Object.assign({}, li, ci);
+      merged.photos = restorePhotos(ci).photos;
+      localItemMap.set(ci.id, merged);
+    }
+    // else: li._dirty → skip, preserve local version
+  });
+
+  // Merge project-level fields (cloud wins for confirmed data)
+  const mergedProj = Object.assign({}, localProj, cloudProj, {
+    id:        localPid,  // always keep local ID format
+    items:     [...localItemMap.values()]
+  });
+  // Restore cover photo (never in Cosmos)
+  if (localPhotos['_cover']) mergedProj.coverPhoto = localPhotos['_cover'];
+  // Restore floor plan image data (never in Cosmos)
+  if (localProj.floorPlan && localProj.floorPlan.imageData && mergedProj.floorPlan) {
+    mergedProj.floorPlan.imageData = localProj.floorPlan.imageData;
+  }
+  delete mergedProj.projectId; // cleanup
+
+  const idx = store.projects.findIndex(p => p.id === localPid);
+  if (idx >= 0) store.projects[idx] = mergedProj;
+}
+
+// ── Main sync function ────────────────────────────────────────────────────────
+
+/**
+ * Push dirty local data to the cloud.
  *
- * AUTO (isAuto=true, runs every 2 min):
- *   - Skips if nothing dirty
- *   - Sends itemsById if only items changed (most granular)
- *   - Sends projectsById if project structure changed
- *   - Sends full store if store-level data changed
- *
- * MANUAL (isAuto=false, 🔄 button):
- *   - Always sends full store as confirmed baseline
- *   - Server still deep-merges — never a full overwrite
+ * isAuto=true  : only pushes dirty items, silent on success
+ * isAuto=false : pushes everything (full baseline), shows toast
  */
 async function syncChanges(isAuto = false) {
   if (!navigator.onLine) {
@@ -2654,118 +2801,64 @@ async function syncChanges(isAuto = false) {
   const syncBtn = document.getElementById('sync-btn');
   if (syncBtn) { syncBtn.style.opacity = '0.5'; syncBtn.classList.add('spinning'); }
 
+  let anyError = false;
+
   try {
-    const now = Date.now();
-    const nothingDirty = _dirtyItems.size === 0 && _dirtyProjects.size === 0 && !_dirtyStore;
+    const nothingDirty = !_dirtyIndex && _dirtyProjectIds.size === 0;
+    if (isAuto && nothingDirty) return;
 
-    if (isAuto && nothingDirty) return; // nothing to do
-
-    // ── PULL BEFORE PUSH (manual sync only) ───────────────────────
-    // Before sending anything, fetch the latest cloud state and merge
-    // it into local store. This guarantees we never overwrite data from
-    // other devices that this device hasn't seen yet.
-    // Auto-sync skips this because it only sends granular item/project
-    // patches that don't touch other users' data anyway.
-    if (!isAuto) {
+    // ── Push index ──────────────────────────────────────────────────────────
+    if (_dirtyIndex || !isAuto) {
       try {
-        const cloudData = await loadFromDatabase();
-        if (cloudData && (cloudData._ts || 0) > _lastRemoteTs) {
-          // There's newer cloud data — merge it in before we push
-          await _mergeCloudIntoLocal(cloudData);
-          _lastRemoteTs = cloudData._ts;
-          console.log('[ADH] Pull-before-push: merged cloud changes locally');
+        const result = await _apiSaveIndex(_buildIndexPayload());
+        if (result.ok) {
+          _dirtyIndex = false;
+          if (result._ts) _cloudTs.index = result._ts;
+        } else {
+          anyError = true;
+          console.warn('[Sync] Index push returned not-ok');
         }
-      } catch (e) {
-        console.warn('[ADH] Pull-before-push fetch failed, proceeding with push:', e.message);
+      } catch(err) {
+        console.warn('[Sync] Index push failed:', err.message);
+        anyError = true;
       }
     }
 
-    let patch;
+    // ── Push projects ───────────────────────────────────────────────────────
+    // Auto: only dirty projects. Manual: all non-deleted projects.
+    const projectsToPush = isAuto
+      ? [..._dirtyProjectIds].map(pid => store.projects.find(p => p.id === pid)).filter(Boolean)
+      : store.projects.filter(p => !p._deleted);
 
-    if (!isAuto || _dirtyStore) {
-      // Manual sync OR store-level change: full store baseline
-      // Safe now because we just pulled and merged cloud state above
-      patch = {
-        id:       'adh-store-v1',
-        _savedAt: now,
-        settings: store.settings,
-        folders:  store.folders,
-        contacts: store.contacts,
-        projects: store.projects.map(_buildProjectPayload)
-      };
-
-    } else if (_dirtyItems.size > 0 && _dirtyProjects.size === 0) {
-      // ── Most granular: only specific items changed ──
-      const itemsById = {};
-      _dirtyItems.forEach(itemId => {
-        const proj = store.projects.find(p => p.items && p.items.some(i => i.id === itemId));
-        if (!proj) return;
-        const item = proj.items.find(i => i.id === itemId);
-        if (!item) return;
-        itemsById[itemId] = {
-          projectId: proj.id,
-          item: _buildItemPayload(item)
-        };
-      });
-      if (Object.keys(itemsById).length === 0) return;
-      patch = { id: 'adh-store-v1', _savedAt: now, itemsById };
-
-    } else {
-      // ── Project-level: structural changes ──
-      const projectsById = {};
-      _dirtyItems.forEach(itemId => {
-        const proj = store.projects.find(p => p.items && p.items.some(i => i.id === itemId));
-        if (proj) _dirtyProjects.add(proj.id);
-      });
-      _dirtyProjects.forEach(pid => {
-        const p = store.projects.find(pr => pr.id === pid);
-        if (p) projectsById[pid] = _buildProjectPayload(p);
-      });
-      if (Object.keys(projectsById).length === 0) return;
-      patch = { id: 'adh-store-v1', _savedAt: now, projectsById };
+    for (const proj of projectsToPush) {
+      try {
+        const payload = _buildProjectPayload(proj);
+        const result  = await _apiSaveProject(payload);
+        if (result.ok) {
+          _dirtyProjectIds.delete(proj.id);
+          if (result._ts) _cloudTs.projects[proj.id] = result._ts;
+          // Clear item-level dirty flags
+          (proj.items || []).forEach(i => { i._dirty = false; });
+        } else {
+          console.warn(`[Sync] Project ${proj.id} push returned not-ok`);
+          anyError = true;
+        }
+      } catch(err) {
+        console.warn(`[Sync] Project ${proj.id} push failed:`, err.message);
+        anyError = true;
+      }
     }
 
-    // ── DURABLE QUEUE ────────────────────────────────────────────
-    // Append the patch to the ops log BEFORE sending. If the network
-    // request fails or the tab closes mid-flight, the op will be
-    // retried on next startup / online event / Background Sync.
-    const opTs = now;
-    try {
-      const ops = await _opsGet();
-      ops.push({ patch, ts: opTs, attempts: 0 });
-      if (ops.length > 500) ops.splice(0, ops.length - 500);
-      await _idbSet(OPS_KEY, ops);
-    } catch (e) {
-      console.warn('[ADH][ops] Could not enqueue op (proceeding anyway):', e.message);
+    // Persist updated timestamps and dirty state
+    await _saveCloudTs();
+    await _persistDirtyState();
+    await _idbSet('fap_v3', store);
+
+    if (!isAuto) {
+      showToast(anyError ? '⚠️ Some items failed to sync' : '✓ Synced to cloud', anyError ? 'red' : 'green');
     }
 
-    const result = await patchAuditToDatabase(patch);
-
-    if (result.ok) {
-      // Remove the op from the durable queue
-      try { await _opsRemoveByTs(opTs); } catch(e) {}
-
-      store._savedAt   = now;
-      store.pendingSync = [];
-
-      // Clear the dirty flag only after a confirmed save
-      _dirtyItems.forEach(itemId => {
-        store.projects.forEach(p => {
-          const item = p.items?.find(i => i.id === itemId);
-          if (item) item._dirty = false;
-        });
-      });
-
-      _dirtyItems.clear();
-      _dirtyProjects.clear();
-      _dirtyStore      = false;
-      _lastRemoteTs    = result._ts || _lastRemoteTs;
-      await _idbSet('fap_v3', store);
-      if (!isAuto) showToast('✓ Synced to cloud', 'green');
-    } else {
-      if (!isAuto) showToast('⚠️ Cloud sync failed', 'red');
-    }
-  } catch (err) {
+  } catch(err) {
     console.error('[Sync Error]', err);
     if (!isAuto) showToast('Sync failed — check connection', 'red');
   } finally {
@@ -2773,207 +2866,63 @@ async function syncChanges(isAuto = false) {
   }
 }
 
-// ── Remote-change polling ─────────────────────────────────────────
-// Every 15s checks cloud _ts. If newer, merges at the item level:
-//   - Cloud items overwrite matching local items
-//   - Local-only items (created offline) are kept
-//   - Local photos always preserved (never in cloud)
-let _lastRemoteTs   = 0;
-let _pollIntervalId = null;
-const POLL_MS = 15000;
+// ── Poll for remote changes ───────────────────────────────────────────────────
 
-// ── Shared merge helper ───────────────────────────────────────────
-// Merges cloudData into local store at the item level.
-// Used by both _pollForRemoteChanges and the pull-before-push in syncChanges.
-// Never replaces the whole store — always merges project by project,
-// item by item, so local unsaved changes survive.
-async function _mergeCloudIntoLocal(cloudData) {
-  // Snapshot local photos (never in cloud)
-  const localPhotos = {};
-  (store.projects || []).forEach(p => {
-    if (p.coverPhoto) localPhotos['cover_' + p.id] = p.coverPhoto;
-    (p.items || []).forEach(i => {
-      if (i.photos && i.photos.length) localPhotos[i.id] = i.photos;
-    });
-  });
+let _pollIntervalId  = null;
+const POLL_MS        = 15000;
 
-  function _restoreItemPhotos(item) {
-    const out = Object.assign({}, item);
-    const local = localPhotos[item.id] || [];
-    const cloudUrls = (item.photos || []).filter(p => p.url);
-    // Build merged photo array:
-    //   - Keep all local base64 photos (IndexedDB-only, no URL yet)
-    //   - Add cloud URL photos that aren't already represented locally
-    const localUrlSet = new Set(local.map(p => p.url).filter(Boolean));
-    const newCloudPhotos = cloudUrls.filter(p => !localUrlSet.has(p.url));
-    out.photos = [...local, ...newCloudPhotos];
-    return out;
-  }
-
-  function _mergeProjectItems(localProj, cloudProj) {
-    const localItemMap = new Map((localProj.items || []).map(i => [i.id, i]));
-    const cloudItemMap = new Map((cloudProj.items || []).map(i => [i.id, i]));
-    // Cloud items win field-by-field via deepMerge; local-only items kept
-    cloudItemMap.forEach((ci, id) => {
-      if (localItemMap.has(id)) {
-        const localItem = localItemMap.get(id);
-        // BUG FIX: Never overwrite a locally-dirty item with cloud data.
-        // If the user has unsaved notes/changes, the 15-second poll was
-        // clobbering them with the old cloud version before auto-sync ran.
-        if (localItem._dirty) return;
-        // Deep-merge so concurrent edits on different fields both survive
-        const merged = Object.assign({}, localItem);
-        Object.keys(ci).forEach(k => {
-          if (k !== 'photos') merged[k] = ci[k]; // photos always local
-        });
-        localItemMap.set(id, merged);
-      } else {
-        localItemMap.set(id, _restoreItemPhotos(ci));
-      }
-    });
-    const out = Object.assign({}, localProj, cloudProj);
-    // Tombstone preservation: never let a stale cloud doc resurrect a project
-    // that was deleted locally but hasn't synced its tombstone up yet.
-    // If EITHER side has _deleted, the merged result is deleted; the deletion
-    // _fieldTs decides which deletedAt wins.
-    if (localProj._deleted || cloudProj._deleted) {
-      out._deleted = true;
-      const lTs = (localProj._fieldTs && localProj._fieldTs._deleted) || localProj._deletedAt || 0;
-      const cTs = (cloudProj._fieldTs && cloudProj._fieldTs._deleted) || cloudProj._deletedAt || 0;
-      out._deletedAt = Math.max(lTs, cTs) || Date.now();
-    }
-    if (localPhotos['cover_' + cloudProj.id]) out.coverPhoto = localPhotos['cover_' + cloudProj.id];
-    out.items = [...localItemMap.values()];
-    return out;
-  }
-
-  const localProjMap = new Map((store.projects || []).map(p => [p.id, p]));
-
-  // Apply itemsById (most granular)
-  if (cloudData.itemsById) {
-    Object.entries(cloudData.itemsById).forEach(([itemId, { projectId, item }]) => {
-      const proj = localProjMap.get(projectId);
-      if (!proj) return;
-      const updatedProj = Object.assign({}, proj);
-      const idx = (updatedProj.items || []).findIndex(i => i.id === itemId);
-      const cloudItem = _restoreItemPhotos(item);
-      if (idx >= 0) {
-        updatedProj.items = [...updatedProj.items];
-        // BUG FIX: Same as _mergeProjectItems — skip dirty items so the poll
-        // never overwrites notes/fields the user has typed but not yet synced.
-        if (!updatedProj.items[idx]._dirty) {
-          Object.keys(cloudItem).forEach(k => {
-            if (k !== 'photos') updatedProj.items[idx][k] = cloudItem[k];
-          });
-        }
-      } else {
-        updatedProj.items = [...(updatedProj.items || []), cloudItem];
-      }
-      localProjMap.set(projectId, updatedProj);
-    });
-  }
-
-  // Apply projectsById
-  if (cloudData.projectsById) {
-    Object.values(cloudData.projectsById).forEach(cp => {
-      const local = localProjMap.get(cp.id);
-      localProjMap.set(cp.id, local ? _mergeProjectItems(local, cp) : { ...cp, items: (cp.items || []).map(_restoreItemPhotos) });
-    });
-  }
-
-  // Apply full projects array
-  (cloudData.projects || []).forEach(cp => {
-    const local = localProjMap.get(cp.id);
-    localProjMap.set(cp.id, local ? _mergeProjectItems(local, cp) : { ...cp, items: (cp.items || []).map(_restoreItemPhotos) });
-  });
-
-  // Apply non-project fields — but ONLY if local doesn't have unsynced store changes.
-  // If _dirtyStore is true, the user just created a folder/contact/setting that
-  // hasn't been pushed yet. A full replace from cloud would wipe it out.
-  // Instead, merge by ID so local additions survive until next push.
-  if (cloudData.settings && !_dirtyStore) store.settings = cloudData.settings;
-
-  if (cloudData.folders) {
-    if (!_dirtyStore) {
-      // Safe to fully accept cloud — no pending local folder changes
-      store.folders = cloudData.folders;
-    } else {
-      // Merge by ID: keep local-only folders, accept cloud-only folders, prefer local for conflicts
-      const localById = new Map((store.folders || []).map(f => [f.id, f]));
-      const cloudById = new Map((cloudData.folders || []).map(f => [f.id, f]));
-      const mergedIds = new Set([...localById.keys(), ...cloudById.keys()]);
-      store.folders = [...mergedIds].map(id => localById.get(id) || cloudById.get(id));
-    }
-  }
-
-  if (cloudData.contacts) {
-    if (!_dirtyStore) {
-      // Even when accepting cloud wholesale, preserve any LOCAL tombstones the
-      // cloud hasn't seen yet — otherwise a stale cloud doc will resurrect
-      // contacts that were deleted locally just before sync.
-      const localTombstones = new Map(
-        (store.contacts || []).filter(c => c._deleted).map(c => [c.id, c])
-      );
-      store.contacts = (cloudData.contacts || []).map(c => {
-        const t = localTombstones.get(c.id);
-        if (t) return Object.assign({}, c, {
-          _deleted: true,
-          _deletedAt: t._deletedAt,
-          _fieldTs: Object.assign({}, c._fieldTs || {}, t._fieldTs || {}, { _deleted: t._deletedAt })
-        });
-        // Also respect cloud-side tombstones
-        return c;
-      });
-      // Include any local tombstones not in cloud at all (deleted while cloud-offline)
-      const cloudIds = new Set(store.contacts.map(c => c.id));
-      localTombstones.forEach((t, id) => { if (!cloudIds.has(id)) store.contacts.push(t); });
-    } else {
-      const localById = new Map((store.contacts || []).map(c => [c.id, c]));
-      const cloudById = new Map((cloudData.contacts || []).map(c => [c.id, c]));
-      const mergedIds = new Set([...localById.keys(), ...cloudById.keys()]);
-      store.contacts = [...mergedIds].map(id => {
-        const l = localById.get(id), c = cloudById.get(id);
-        if (l && c) {
-          // Tombstone wins if either side has it
-          if (l._deleted || c._deleted) {
-            const lTs = (l._fieldTs && l._fieldTs._deleted) || l._deletedAt || 0;
-            const cTs = (c._fieldTs && c._fieldTs._deleted) || c._deletedAt || 0;
-            const base = Object.assign({}, c, l);
-            base._deleted = true;
-            base._deletedAt = Math.max(lTs, cTs) || Date.now();
-            return base;
-          }
-          return l; // prefer local for conflicts (existing behavior)
-        }
-        return l || c;
-      });
-    }
-  }
-} 
 async function _pollForRemoteChanges() {
   if (!navigator.onLine) return;
+
   try {
-    const cloudData = await loadFromDatabase();
-    if (!cloudData) return;
+    // ── 1. Check index ──────────────────────────────────────────────────────
+    const cloudIndex = await _apiGetIndex();
+    if (cloudIndex && (cloudIndex._ts || 0) > _cloudTs.index) {
+      _mergeIndexIntoLocal(cloudIndex);
+      _cloudTs.index = cloudIndex._ts;
+      console.log('[Poll] Index updated from cloud');
 
-    const remoteTs = cloudData._ts || 0;
-    if (remoteTs <= _lastRemoteTs) return;
-    _lastRemoteTs = remoteTs;
+      // ── 2. Check for project IDs that we don't have locally ──────────────
+      const localIds = new Set(store.projects.map(p => p.id));
+      const newIds   = (cloudIndex.projectIds || []).filter(id => !localIds.has(id));
+      for (const newId of newIds) {
+        try {
+          const cp = await _apiGetProject(newId);
+          if (cp) {
+            _mergeProjectIntoLocal(cp);
+            _cloudTs.projects[newId] = cp._ts || 0;
+            console.log(`[Poll] New project ${newId} pulled from cloud`);
+          }
+        } catch(e) { console.warn(`[Poll] Could not fetch new project ${newId}:`, e.message); }
+      }
 
-    // NOTE: removed the secondary `cloudData._savedAt <= store._savedAt` guard.
-    // _savedAt is the CLIENT clock at edit time and isn't comparable across
-    // devices (clock skew between iOS and Android caused deletes/edits from
-    // the slower-clocked device to be silently dropped on the faster one).
-    // Cosmos `_ts` is the only monotonic, cross-device-safe timestamp and is
-    // already checked above — that's sufficient to detect remote changes.
+      if (newIds.length > 0) {
+        await _idbSet('fap_v3', store);
+        render();
+        showToast('🔄 New project available', 'green');
+      }
+    }
 
-    console.log('[ADH] Remote change detected — merging from cloud');
-    await _mergeCloudIntoLocal(cloudData);
-    await _idbSet('fap_v3', store);
-    render();
-    showToast('🔄 Updated from cloud', 'green');
+    // ── 3. Check currently open project ────────────────────────────────────
+    const r = route();
+    if (r.projectId) {
+      const lastTs = _cloudTs.projects[r.projectId] || 0;
+      try {
+        const cp = await _apiGetProject(r.projectId);
+        if (cp && (cp._ts || 0) > lastTs) {
+          _mergeProjectIntoLocal(cp);
+          _cloudTs.projects[r.projectId] = cp._ts;
+          await _idbSet('fap_v3', store);
+          render();
+          showToast('🔄 Updated from cloud', 'green');
+          console.log(`[Poll] Project ${r.projectId} updated from cloud`);
+        }
+      } catch(e) { console.warn(`[Poll] Project ${r.projectId} check failed:`, e.message); }
+    }
 
-  } catch (e) {
+    await _saveCloudTs();
+
+  } catch(e) {
     console.warn('[Poll] Error:', e.message);
   }
 }
@@ -2988,7 +2937,7 @@ function _stopPolling() {
   _pollIntervalId = null;
 }
 
-// ── Migrate any existing localStorage data once, then delete it ──
+// ── Migrate from localStorage (one-time, legacy) ──────────────────────────────
 async function _migrateFromLocalStorage() {
   try {
     const raw = localStorage.getItem('fap_v3');
@@ -2998,111 +2947,106 @@ async function _migrateFromLocalStorage() {
     localStorage.removeItem('fap_v3');
     console.log('[ADH] Migrated data from localStorage → IndexedDB');
     return data;
-  } catch(e) {
-    return null;
-  }
+  } catch(e) { return null; }
 }
 
-// ── Bootstrap: load from IDB (or migrate from LS), then start the app ──
+// ── Bootstrap ─────────────────────────────────────────────────────────────────
 async function _initStore() {
+  // Restore dirty state and timestamp cache from IDB
+  await _loadDirtyState();
+  await _loadCloudTs();
+
   try {
-    // 1. Load local data first (instant)
+    // ── Step 1: Load local data instantly (works offline) ──────────────────
     let data = await _migrateFromLocalStorage();
     if (!data) data = await _idbGet('fap_v3');
     if (data) store = data;
 
-    // 2. Try cloud — 4 s timeout so offline users don't wait
+    // ── Step 2: Merge from cloud if online ──────────────────────────────────
     if (navigator.onLine) {
       try {
-        const cloudTimeout = new Promise(r => setTimeout(() => r(null), 4000));
-        const cloudData = await Promise.race([loadFromDatabase(), cloudTimeout]);
-        if (cloudData) {
-          // Cross-device note: we used to gate this on
-          //   cloudData._savedAt > store._savedAt
-          // but `_savedAt` is the CLIENT clock at edit time and isn't
-          // comparable across devices (Android and iOS clocks drift relative
-          // to each other). That gate caused deletes/edits from a slower-
-          // clocked device to never be picked up on launch by a device with
-          // a faster clock. We now always merge cloud changes; the merge
-          // helper preserves local-only tombstones and any in-flight items
-          // flagged _dirty, so this is safe.
+        const timeout = ms => new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms));
 
-          // Snapshot what tombstones we hold locally BEFORE merging — used to
-          // detect if we're carrying a tombstone the cloud hasn't seen yet
-          // (e.g. user deleted offline, app closed before sync).
-          const preMergeLocalTombstones =
-            (store.projects || []).filter(p => p._deleted).length +
-            (store.contacts || []).filter(c => c._deleted).length;
+        // Fetch index (fast, small doc)
+        const cloudIndex = await Promise.race([_apiGetIndex(), timeout(4000)]);
 
-          await _mergeCloudIntoLocal(cloudData);
+        if (cloudIndex) {
+          _mergeIndexIntoLocal(cloudIndex);
+          _cloudTs.index = cloudIndex._ts || 0;
+
+          // Fetch all projects in parallel (4s timeout each)
+          const projectIds = cloudIndex.projectIds || [];
+          const fetches = projectIds.map(pid =>
+            Promise.race([_apiGetProject(pid), timeout(4000)]).catch(() => null)
+          );
+          const cloudProjects = await Promise.all(fetches);
+
+          let fetched = 0;
+          cloudProjects.forEach((cp, i) => {
+            if (!cp) return;
+            _mergeProjectIntoLocal(cp);
+            _cloudTs.projects[projectIds[i]] = cp._ts || 0;
+            fetched++;
+          });
+
           await _idbSet('fap_v3', store);
-
-          // Record the _ts so polling doesn't re-fire for this load
-          if (cloudData._ts) _lastRemoteTs = cloudData._ts;
-
-          // If we still have local tombstones after merging, some of them may
-          // not have made it to the cloud yet — flag the store dirty so the
-          // next sync pushes them up. (pendingOps queue handles in-flight
-          // patches, but tombstones created across reload boundaries with no
-          // sync attempt rely on this flag.)
-          const postMergeLocalTombstones =
-            (store.projects || []).filter(p => p._deleted).length +
-            (store.contacts || []).filter(c => c._deleted).length;
-          if (preMergeLocalTombstones > 0 || postMergeLocalTombstones > 0) {
-            _dirtyStore = true;
-          }
-
-          console.log('[ADH] Merged cloud data into local on init (cloud _ts:', cloudData._ts || 'n/a', ')');
+          await _saveCloudTs();
+          console.log(`[ADH] Loaded ${fetched}/${projectIds.length} projects from cloud`);
         }
-      } catch (e) {
-        console.warn('[ADH] Cloud load skipped:', e.message);
+      } catch(e) {
+        console.warn('[ADH] Cloud load on startup skipped:', e.message);
       }
     }
+
   } catch(e) {
     console.warn('[ADH] Storage load error, using seed:', e);
     store = JSON.parse(JSON.stringify(SEED));
   }
 
-  // Ensure new fields exist in migrated / old data
-  if(!store.settings) store.settings = { isAdmin: false, theme: 'light' };
-  if(store.settings.theme === undefined || store.settings.theme === 'default') store.settings.theme = 'light';
-  if(!store.settings.displayName) store.settings.displayName = '';
-  if(!store.folders)  store.folders  = [];
-  if(!store.projects) store.projects = [];
-  if(!store.contacts) store.contacts = [];
-  if(!store.pendingSync) store.pendingSync = [];
-  store.folders.forEach(f => { if(f.parentId === undefined) f.parentId = null; });
-  store.contacts.forEach(c => { if(!c.project) c.project = 'Office'; });
+  // ── Ensure required fields on migrated/old data ──────────────────────────
+  if (!store.settings) store.settings = { isAdmin: false, theme: 'light' };
+  if (store.settings.theme === undefined || store.settings.theme === 'default') store.settings.theme = 'light';
+  if (!store.settings.displayName) store.settings.displayName = '';
+  if (!store.folders)  store.folders  = [];
+  if (!store.projects) store.projects = [];
+  if (!store.contacts) store.contacts = [];
+  if (!store.pendingSync) store.pendingSync = [];
+  store.folders.forEach(f => { if (f.parentId === undefined) f.parentId = null; });
+  store.contacts.forEach(c => { if (!c.project) c.project = 'Office'; });
 
-  // Update branded folder icons to use theme variables for existing users
-  ['fld_ast', 'fld_ami', 'fld_acd', 'fld_acs', 'fld_adh', 'fld_acm'].forEach(id => {
-    const f = store.folders.find(folder => folder.id === id);
+  // Refresh branded SVG folder icons to use current CSS vars
+  ['fld_ast','fld_ami','fld_acd','fld_acs','fld_adh','fld_acm'].forEach(id => {
+    const f     = store.folders.find(folder => folder.id === id);
     const seedF = SEED.folders.find(sf => sf.id === id);
     if (f && seedF) f.icon = seedF.icon;
   });
 
-  // One-time migration: add ACM main folder if missing
+  // One-time: add ACM folder if missing
   if (!store.folders.find(f => f.id === 'fld_acm')) {
     const seedAcm = SEED.folders.find(f => f.id === 'fld_acm');
     if (seedAcm) store.folders.push(JSON.parse(JSON.stringify(seedAcm)));
   }
 
-  // Ensure laborSettings exists on all existing projects
+  // Ensure new per-project fields
   store.projects.forEach(p => {
-    if (!p.laborSettings) p.laborSettings = { show:false, workers:4, hoursPerDay:8, workDays:5 };
-    // Ensure towerWork field exists on all SI items
-    (p.items || []).forEach(i => { if (!i.towerWork) i.towerWork = { enabled:false, rooms:[] }; });
+    if (!p.laborSettings) p.laborSettings = { show: false, workers: 4, hoursPerDay: 8, workDays: 5 };
+    (p.items || []).forEach(i => {
+      if (!i.towerWork) i.towerWork = { enabled: false, rooms: [] };
+    });
   });
-_migrateManpower(store);
+  _migrateManpower(store);
+
+  // UI state init
   window.contactCategoryFilter = 'All';
   window.contactProjectFilter  = 'All';
   window.importMenuOpen        = false;
   window.exportMenuOpen        = false;
   window.selectedContacts      = new Set();
+
   isAdmin = store.settings.isAdmin;
   applyTheme(store.settings.theme);
 
-  // Load section_rules from IDB (migrate from LS if present)
+  // Load section_rules (migrate from localStorage if present)
   try {
     const srLS = localStorage.getItem('section_rules');
     if (srLS) {
@@ -3114,81 +3058,110 @@ _migrateManpower(store);
       const srIDB = await _idbGet('section_rules');
       if (srIDB) SECTION_RULES = srIDB;
     }
-  } catch(e) { /* keep default SECTION_RULES */ }
+  } catch(e) { /* keep default */ }
 
   render();
 
-  // Remember the _ts of the cloud data we just loaded so polling
-  // doesn't immediately fire onChange for our own initial load
-  if (navigator.onLine) {
-    try {
-      const initial = await loadFromDatabase();
-      if (initial && initial._ts) _lastRemoteTs = initial._ts;
-    } catch(e) {}
-  }
-
-  // Start polling for remote changes every 15 seconds
+  // ── Start polling and auto-sync ────────────────────────────────────────────
   _startPolling();
-    if (navigator.onLine && (_dirtyItems.size > 0 || _dirtyProjects.size > 0 || _dirtyStore)) syncChanges(true);
-  
 
-  // Auto-sync local changes to cloud every 30 seconds (if online and dirty)
+  // Auto-sync every 30s if we have dirty data
   setInterval(() => {
-    if (navigator.onLine && (_dirtyItems.size > 0 || _dirtyProjects.size > 0 || _dirtyStore)) {
+    if (navigator.onLine && (_dirtyIndex || _dirtyProjectIds.size > 0)) {
       syncChanges(true);
     }
-  }, 30000); // 30 seconds
+  }, 30000);
 
-  // ── Durable ops queue: flush any patches that never completed last session ──
-  if (navigator.onLine) {
-    _opsFlush().catch(()=>{});
-  }
-  // Also periodically retry the queue (covers network blips even with no dirty data)
-  setInterval(() => { if (navigator.onLine) _opsFlush().catch(()=>{}); }, 45000);
-
-  // Listen for Background Sync completions broadcast by the Service Worker
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.addEventListener('message', evt => {
-      if (evt.data && evt.data.type === 'OPS_FLUSHED') {
-        console.log('[ADH] SW flushed', evt.data.flushed, 'queued ops');
-        // After SW pushes our changes up, pull anything new down
-        _pollForRemoteChanges();
-      }
-    });
-  }
-
-  // Pause polling when tab is hidden, resume + immediate check when visible
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      _stopPolling();
-    } else {
-      _startPolling();
-      _pollForRemoteChanges(); // check immediately on tab focus
-      // Tab regained focus — try draining the durable queue
-      if (navigator.onLine) _opsFlush().catch(()=>{});
-    }
-  });
-
-  // Handle online/offline status changes
+  // ── Online / offline handlers ──────────────────────────────────────────────
   function updateOnlineStatus() {
     document.body.classList.toggle('is-offline', !navigator.onLine);
     if (navigator.onLine) {
       _startPolling();
       _pollForRemoteChanges();
-      syncChanges(true); // Flush dirty queue when back online
-      _opsFlush().catch(()=>{}); // Drain durable queue
-      _registerBgSync();
+      // Flush any dirty data that accumulated while offline
+      if (_dirtyIndex || _dirtyProjectIds.size > 0) syncChanges(true);
     } else {
       _stopPolling();
     }
   }
   window.addEventListener('online',  updateOnlineStatus);
   window.addEventListener('offline', updateOnlineStatus);
-  updateOnlineStatus(); // Initial check
+  updateOnlineStatus();
+
+  // ── Visibility change: pause poll when tab hidden ──────────────────────────
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      _stopPolling();
+    } else {
+      _startPolling();
+      _pollForRemoteChanges();
+    }
+  });
 }
 
 // isAdmin declared here so _initStore can set it before render()
 let isAdmin = false;
+
+// ── Compatibility shims (functions the rest of the app calls) ─────────────────
+// These kept the same signature so no other code in index.html needs changing.
+
+async function saveAuditToDatabase(data) {
+  // Legacy shim — routes to new per-project API
+  const proj = data.projects && data.projects[0];
+  if (!proj) return false;
+  try {
+    const result = await _apiSaveProject(_buildProjectPayload(proj));
+    return result.ok;
+  } catch(e) { return false; }
+}
+
+async function loadFromDatabase() {
+  // Legacy shim — returns index (used by old code that checks _ts)
+  try { return await _apiGetIndex(); } catch(e) { return null; }
+}
+
+async function patchAuditToDatabase(patch) {
+  // Legacy shim — if called with itemsById or projectsById, route correctly
+  if (patch.projectsById) {
+    let ok = true;
+    for (const [pid, proj] of Object.entries(patch.projectsById)) {
+      try {
+        const result = await _apiSaveProject(_buildProjectPayload(proj));
+        if (!result.ok) ok = false;
+      } catch(e) { ok = false; }
+    }
+    return { ok };
+  }
+  // itemsById or full store — push the affected projects
+  if (patch.itemsById) {
+    const affectedPids = new Set(
+      Object.values(patch.itemsById).map(v => v.projectId).filter(Boolean)
+    );
+    let ok = true;
+    for (const pid of affectedPids) {
+      const proj = store.projects.find(p => p.id === pid);
+      if (!proj) continue;
+      try {
+        const result = await _apiSaveProject(_buildProjectPayload(proj));
+        if (!result.ok) ok = false;
+      } catch(e) { ok = false; }
+    }
+    return { ok };
+  }
+  // Full store fallback
+  try {
+    const ir = await _apiSaveIndex(_buildIndexPayload());
+    if (!ir.ok) return { ok: false };
+    for (const proj of store.projects.filter(p => !p._deleted)) {
+      await _apiSaveProject(_buildProjectPayload(proj));
+    }
+    return { ok: true };
+  } catch(e) { return { ok: false, error: e.message }; }
+}
+// ══════════════════════════════════════════════════════════════════════════════
+// END SYNC ENGINE v5
+// ══════════════════════════════════════════════════════════════════════════════
+
 
 function resetToSeed() {
   if(confirm('Are you sure? This will delete all your audit data and reset to the default template.')) {
