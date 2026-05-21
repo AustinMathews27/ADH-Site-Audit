@@ -2470,9 +2470,6 @@ function save() {
 //   Load IDB → fetch index → fetch all projects in parallel (4s timeout)
 // ══════════════════════════════════════════════════════════════════════════════
 
-// ── In-memory store ───────────────────────────────────────────────────────────
-let store = JSON.parse(JSON.stringify(SEED));
-
 // ── Dirty tracking ────────────────────────────────────────────────────────────
 let _dirtyIndex = false;
 const _dirtyProjectIds = new Set();
