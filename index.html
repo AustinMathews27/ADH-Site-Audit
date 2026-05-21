@@ -2008,6 +2008,66 @@ html.is-phone .nav-back-btn { min-width: 40px; min-height: 40px; }
 
 /* ── NOTIFICATION BELL ── */
 .notif-badge { position:absolute;top:2px;right:2px;width:8px;height:8px;border-radius:50%;background:var(--red);border:2px solid var(--surface); }
+
+/* ── EXPORT CHECK (contacts selection checkbox) ── */
+.export-check {
+  width:18px; height:18px; border-radius:5px;
+  border:1.5px solid var(--border); background:var(--surface2);
+  cursor:pointer; display:flex; align-items:center;
+  justify-content:center; font-size:11px; flex-shrink:0;
+  transition:all 0.1s; color:transparent;
+}
+.export-check.checked { background:var(--accent); border-color:var(--accent); color:#000; }
+
+/* ── PDF PROGRESS OVERLAY ── */
+.pdf-progress-overlay {
+  position:fixed; inset:0; z-index:800;
+  background:rgba(0,0,0,0.75); backdrop-filter:blur(4px);
+  display:flex; align-items:center; justify-content:center; padding:24px;
+}
+.pdf-progress-box {
+  background:var(--surface); border:1px solid var(--border2);
+  border-radius:16px; padding:28px 32px; max-width:340px; width:100%;
+  text-align:center; box-shadow:0 24px 60px rgba(0,0,0,0.5);
+}
+.pdf-progress-title { font-size:15px; font-weight:600; color:var(--text); margin-bottom:6px; }
+.pdf-progress-sub {
+  font-size:11px; font-family:var(--mono); color:var(--text2);
+  margin-bottom:14px; min-height:16px;
+}
+.pdf-progress-track {
+  height:6px; background:var(--surface3); border-radius:3px; overflow:hidden; margin-bottom:8px;
+}
+.pdf-progress-fill {
+  height:100%; background:var(--accent); border-radius:3px; transition:width 0.3s ease;
+}
+
+/* ── SHARE MODAL HELPERS ── */
+.share-section-label {
+  font-size:9px; font-weight:700; letter-spacing:1px;
+  text-transform:uppercase; color:var(--text3); font-family:var(--mono); margin-bottom:8px;
+}
+.export-opt-row {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 0; border-bottom:1px solid var(--border);
+}
+.export-opt-label { font-size:12px; color:var(--text2); }
+
+/* ── FILESIZE INDICATOR ── */
+.filesize-val { font-family:var(--mono); font-size:12px; color:var(--text2); }
+.filesize-val.warn { color:var(--red); }
+.filesize-fill { height:100%; background:var(--accent); border-radius:3px; transition:width 0.3s; }
+.filesize-fill.warn { background:var(--red); }
+.filesize-warning {
+  display:none; font-size:10px; color:var(--red); font-family:var(--mono); margin-top:4px;
+}
+.filesize-warning.show { display:block; }
+
+/* ── SHARE / TEMPLATE LAYOUT ── */
+.share-layout { display:grid; grid-template-columns:1fr 220px; gap:16px; }
+.share-preview-col { display:flex; flex-direction:column; gap:10px; }
+.tpl-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+
 </style>
 
 </head>
@@ -2420,20 +2480,6 @@ function _registerBgSync() {
 
 // ── In-memory store (populated during async init) ──
 let store = JSON.parse(JSON.stringify(SEED));
-
-// Debounced async save — fire-and-forget, never blocks the UI
-let _saveTimer = null;
-function save() {
-  clearTimeout(_saveTimer);
-  _saveTimer = setTimeout(() => {
-    _idbSet('fap_v3', store).catch(err => {
-      console.error('[ADH] IndexedDB save failed:', err);
-      showToast('⚠️ Error saving data', 'red');
-    });
-    // Also persist section_rules if it has been modified
-    _idbSet('section_rules', SECTION_RULES).catch(() => {});
-  }, 80);   // 80 ms debounce keeps UI snappy
-}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // SYNC ENGINE v5 — Per-Project Document Architecture
@@ -6905,17 +6951,7 @@ window.handleBrandingUpload = function(e, type) {
   reader.readAsDataURL(file);
 };
 
-window.handleBrandingUpload = function(e, type) {
-  const file = e.target.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    window._pdfBranding[type] = ev.target.result;
-    showToast(type.charAt(0).toUpperCase() + type.slice(1) + ' uploaded', 'green');
-    if(type === 'logo') refreshPreview();
-  };
-  reader.readAsDataURL(file);
-};
+// (duplicate handleBrandingUpload removed — per-company version above is authoritative)
 
 function deletePhoto(pid,sid,idx) {
   const item=getSI(pid,sid); if(!item) return;
