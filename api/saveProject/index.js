@@ -149,6 +149,7 @@ module.exports = async function (context, req) {
         docToWrite = Object.assign({}, incoming, {
           id:        docId,        // Cosmos document ID
           projectId: incoming.id,  // Original app-level ID preserved here
+          ownedBy:   incoming.ownedBy || '',  // User identity — never overwritten
           items: mergeItems([], incoming.items || []),
           coverPhoto: null,        // Never in Cosmos — too large
           floorPlan: incoming.floorPlan
@@ -157,12 +158,24 @@ module.exports = async function (context, req) {
           _savedAt: incoming._savedAt || Date.now()
         });
       } else {
-        // Existing project — merge carefully
-        // Top-level scalar fields: incoming wins (last writer)
-        // Items: field-level timestamp merge
+        // Existing project — merge carefully.
+        // ownedBy is immutable once set — never let incoming overwrite it
+        // unless the current doc has no owner yet (legacy migration).
+        const ownedBy = current.ownedBy || incoming.ownedBy || '';
+
+        // Safety guard: if the project already has an owner and the incoming
+        // request is from a different user, reject the write.
+        if (current.ownedBy && incoming.ownedBy && current.ownedBy !== incoming.ownedBy) {
+          context.log.warn(`[saveProject] Ownership mismatch on ${incoming.id}: owner=${current.ownedBy} requester=${incoming.ownedBy}`);
+          context.res.status = 403;
+          context.res.body   = { ok: false, error: "Forbidden — you do not own this project." };
+          return;
+        }
+
         docToWrite = Object.assign({}, current, incoming, {
           id:        docId,
           projectId: incoming.id,
+          ownedBy:   ownedBy,  // Preserve original owner
           items:     mergeItems(current.items || [], incoming.items || []),
           coverPhoto: null,
           floorPlan: incoming.floorPlan

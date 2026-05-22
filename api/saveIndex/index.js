@@ -1,17 +1,16 @@
 // api/saveIndex/index.js
 // POST /api/saveIndex
-// Body: { folders, contacts, settings, projectIds, _savedAt }
+// Body: { userId, folders, contacts, settings, projectIds, _savedAt }
 //
-// Saves the shared index document with ETag-based optimistic concurrency.
-// Merges by ID so concurrent saves from different devices both survive.
-// Up to 5 retries on ETag conflict (412).
+// Saves the per-user index document — adh-index-{userId}.
+// ETag-based optimistic concurrency with up to 5 retries.
+// Two users can never conflict because they write to separate documents.
 
 const { CosmosClient } = require("@azure/cosmos");
 
-const client    = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
-const database  = client.database("Auditdata");
-const container = database.container("Audits");
-const INDEX_ID  = "adh-index-v1";
+const client      = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
+const database    = client.database("Auditdata");
+const container   = database.container("Audits");
 const MAX_RETRIES = 5;
 
 module.exports = async function (context, req) {
@@ -24,11 +23,13 @@ module.exports = async function (context, req) {
 
   if (!req.body) {
     context.res.status = 400;
-    context.res.body = { ok: false, error: "Request body required" };
+    context.res.body   = { ok: false, error: "Request body required" };
     return;
   }
 
   const incoming = req.body;
+  const userId   = (incoming.userId || '').trim();
+  const INDEX_ID = userId ? `adh-index-${userId}` : 'adh-index-v1';
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -43,43 +44,35 @@ module.exports = async function (context, req) {
         else throw e;
       }
 
-      // ── 2. Merge folders by ID (union of both sides) ──────────────────────
-      // Incoming wins for IDs that exist on both sides.
-      // IDs that only exist on current are kept (created by other devices).
+      // ── 2. Merge folders by ID — incoming wins on conflict ────────────────
       const folderMap = new Map((current.folders || []).map(f => [f.id, f]));
       (incoming.folders || []).forEach(f => folderMap.set(f.id, f));
 
-      // ── 3. Merge contacts by ID with tombstone respect ────────────────────
+      // ── 3. Merge contacts with tombstone respect ──────────────────────────
       const contactMap = new Map((current.contacts || []).map(c => [c.id, c]));
       (incoming.contacts || []).forEach(c => {
         const existing = contactMap.get(c.id);
-        if (existing) {
-          // Tombstone wins — deleted beats any update
-          if (existing._deleted && !c._deleted) {
-            // Keep the tombstone unless incoming has a newer _fieldTs._deleted
-            const existTs = (existing._fieldTs && existing._fieldTs._deleted) || existing._deletedAt || 0;
-            const incTs   = (c._fieldTs && c._fieldTs._deleted) || 0;
-            if (incTs > existTs) contactMap.set(c.id, c); // newer explicit delete wins
-            // else keep existing tombstone
-          } else {
-            contactMap.set(c.id, c); // normal update wins
-          }
+        if (existing && existing._deleted && !c._deleted) {
+          const existTs = (existing._fieldTs && existing._fieldTs._deleted) || existing._deletedAt || 0;
+          const incTs   = (c._fieldTs && c._fieldTs._deleted) || 0;
+          if (incTs > existTs) contactMap.set(c.id, c);
         } else {
           contactMap.set(c.id, c);
         }
       });
 
-      // ── 4. Merge projectIds (union) ───────────────────────────────────────
+      // ── 4. Merge projectIds (union of both sides) ─────────────────────────
       const allProjectIds = new Set([
-        ...(current.projectIds || []),
+        ...(current.projectIds  || []),
         ...(incoming.projectIds || [])
       ]);
 
-      // ── 5. Settings: incoming wins (last writer) ──────────────────────────
+      // ── 5. Settings: incoming wins ────────────────────────────────────────
       const mergedSettings = Object.assign({}, current.settings || {}, incoming.settings || {});
 
       const updated = {
         id:         INDEX_ID,
+        userId:     userId,
         folders:    [...folderMap.values()],
         contacts:   [...contactMap.values()],
         settings:   mergedSettings,
@@ -94,7 +87,7 @@ module.exports = async function (context, req) {
 
       const { resource: saved } = await container.items.upsert(updated, upsertOptions);
 
-      context.log(`[saveIndex] ✓ Saved (attempt ${attempt}). folders:${updated.folders.length} contacts:${updated.contacts.length} projects:${updated.projectIds.length}`);
+      context.log(`[saveIndex] ✓ ${INDEX_ID} folders:${updated.folders.length} projects:${updated.projectIds.length}`);
       context.res.status = 200;
       context.res.body   = { ok: true, _ts: saved._ts, _savedAt: saved._savedAt };
       return;

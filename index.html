@@ -2090,12 +2090,21 @@ html.is-phone .nav-back-btn { min-width: 40px; min-height: 40px; }
   </div>
   <div class="nav-actions">
     <div class="btn-icon" onclick="openGlobalSearch()" title="Global Search (⌘K)">⌕</div>
-    <div class="btn-icon" onclick="syncChanges()" title="Sync Changes" id="sync-btn">🔄</div>
+    <div class="btn-icon" onclick="syncChanges()" title="Sync" id="sync-btn">🔄</div>
     <div class="btn-icon" onclick="showThemeModal()" title="Themes">🎨</div>
     <div class="btn-icon" onclick="showShareModal()" title="Share">📤</div>
     <div class="btn-icon" onclick="handleAdd()" title="Add">＋</div>
     <div class="btn-icon" onclick="showLoginModal()" id="admin-lock-btn" title="Admin Login">🔓</div>
     <div class="btn-icon" onclick="toggleNotifications()" id="notif-btn" title="Notifications" style="position:relative">🔔</div>
+    <div id="user-chip" onclick="showUserMenu()" title="Account"
+      style="display:flex;align-items:center;gap:5px;padding:4px 9px;border-radius:8px;
+      border:1px solid var(--border);background:var(--surface2);cursor:pointer;
+      font-size:11px;font-family:var(--mono);color:var(--text2);white-space:nowrap;
+      transition:all 0.15s;max-width:120px;overflow:hidden;text-overflow:ellipsis"
+      onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+      onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'">
+      👤 <span id="user-chip-name">…</span>
+    </div>
   </div>
 </div>
 
@@ -2482,6 +2491,84 @@ function _registerBgSync() {
 let store = JSON.parse(JSON.stringify(SEED));
 
 // ══════════════════════════════════════════════════════════════════════════════
+// ENTRA ID AUTH — via Azure Static Web Apps built-in /.auth endpoint
+// No MSAL.js needed. SWA handles the OAuth flow automatically.
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _currentUser = null; // { userId, userDetails, userRoles }
+
+/**
+ * Get the authenticated user from SWA's /.auth/me endpoint.
+ * - Online + authenticated  → returns clientPrincipal, caches in IDB
+ * - Online + not logged in  → redirects to Entra login, returns null
+ * - Offline                 → returns cached user from IDB (works after first login)
+ * - localhost (dev)         → returns a dev identity, no redirect
+ */
+async function _getAuthUser() {
+  // Dev/local bypass — no auth server running locally
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    const devUser = { userId: 'dev-local', userDetails: 'dev@local.test', userRoles: ['authenticated'] };
+    await _idbSet('adh_user', devUser);
+    return devUser;
+  }
+
+  try {
+    const res = await fetch('/.auth/me', { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.clientPrincipal) {
+        // Authenticated — cache and return
+        await _idbSet('adh_user', data.clientPrincipal);
+        return data.clientPrincipal;
+      }
+      // Response OK but no principal = not logged in → redirect
+      window.location.href = '/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(window.location.pathname);
+      return null;
+    }
+  } catch(e) {
+    // Network error — fall through to offline cache
+    console.warn('[Auth] /.auth/me unreachable, trying IDB cache');
+  }
+
+  // Offline fallback — use last-known user
+  const cached = await _idbGet('adh_user');
+  if (cached) {
+    console.log('[Auth] Offline — using cached user:', cached.userDetails);
+    return cached;
+  }
+
+  // No cache and can't reach auth — show a friendly wall
+  document.body.innerHTML = `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+      height:100vh;gap:16px;font-family:sans-serif;color:#475569;background:#f1f5f9">
+      <div style="font-size:48px">🔒</div>
+      <div style="font-size:18px;font-weight:600;color:#0f172a">Sign in required</div>
+      <div style="font-size:13px;max-width:320px;text-align:center;line-height:1.6">
+        You need to be online to sign in for the first time.<br>
+        Once signed in, the app works offline.
+      </div>
+      <button onclick="window.location.href='/.auth/login/aad'"
+        style="background:#2563eb;color:#fff;border:none;border-radius:10px;
+        padding:12px 28px;font-size:14px;font-weight:600;cursor:pointer">
+        Sign in with Microsoft
+      </button>
+    </div>`;
+  return null;
+}
+
+/** Cosmos index document ID scoped to the current user */
+function _userIndexId() {
+  return _currentUser ? `adh-index-${_currentUser.userId}` : 'adh-index-v1';
+}
+
+/** Display-friendly name from the Entra principal */
+function _userName() {
+  if (!_currentUser) return '';
+  const email = _currentUser.userDetails || '';
+  return email.includes('@') ? email.split('@')[0] : email;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // SYNC ENGINE v5 — Per-Project Document Architecture
 // ══════════════════════════════════════════════════════════════════════════════
 //
@@ -2658,11 +2745,16 @@ function _buildProjectPayload(proj) {
 
 /** Build the index payload. */
 function _buildIndexPayload() {
+  const userId = _currentUser?.userId || '';
   return {
+    userId,
     folders:    store.folders,
     contacts:   store.contacts,
     settings:   store.settings,
-    projectIds: store.projects.filter(p => !p._deleted).map(p => p.id),
+    // Only register projects owned by this user in their index
+    projectIds: store.projects
+      .filter(p => !p._deleted && (!p.ownedBy || p.ownedBy === userId))
+      .map(p => p.id),
     _savedAt:   Date.now()
   };
 }
@@ -2670,7 +2762,8 @@ function _buildIndexPayload() {
 // ── API wrappers ──────────────────────────────────────────────────────────────
 
 async function _apiGetIndex() {
-  const res = await fetch('/api/getIndex');
+  const userId = _currentUser?.userId || '';
+  const res = await fetch(`/api/getIndex?userId=${encodeURIComponent(userId)}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`getIndex HTTP ${res.status}`);
   return res.json();
@@ -2680,7 +2773,7 @@ async function _apiSaveIndex(payload) {
   const res = await fetch('/api/saveIndex', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(payload)
+    body:    JSON.stringify(payload)  // payload already includes userId from _buildIndexPayload
   });
   if (!res.ok) throw new Error(`saveIndex HTTP ${res.status}`);
   return res.json();
@@ -2694,10 +2787,11 @@ async function _apiGetProject(pid) {
 }
 
 async function _apiSaveProject(proj) {
+  const userId = _currentUser?.userId || '';
   const res = await fetch('/api/saveProject', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ project: proj })
+    body:    JSON.stringify({ project: { ...proj, ownedBy: proj.ownedBy || userId } })
   });
   if (!res.ok) throw new Error(`saveProject HTTP ${res.status} (${proj.id})`);
   return res.json();
@@ -2841,69 +2935,177 @@ async function syncChanges(isAuto = false) {
     return;
   }
 
+  // ── Context-aware manual sync ─────────────────────────────────────────────
+  if (!isAuto) {
+    const r = route();
+    const inProject = r.projectId &&
+      ['project','si','schedule','env','manpower','activity','floorplan'].includes(r.view);
+    if (inProject) {
+      return _syncSingleProject(r.projectId);
+    } else {
+      return _pullAll();
+    }
+  }
+
+  // ── Auto sync: push dirty OWNED items only ────────────────────────────────
   const syncBtn = document.getElementById('sync-btn');
   if (syncBtn) { syncBtn.style.opacity = '0.5'; syncBtn.classList.add('spinning'); }
 
-  let anyError = false;
-
   try {
     const nothingDirty = !_dirtyIndex && _dirtyProjectIds.size === 0;
-    if (isAuto && nothingDirty) return;
+    if (nothingDirty) return;
 
-    // ── Push index ──────────────────────────────────────────────────────────
-    if (_dirtyIndex || !isAuto) {
+    if (_dirtyIndex) {
       try {
         const result = await _apiSaveIndex(_buildIndexPayload());
         if (result.ok) {
           _dirtyIndex = false;
           if (result._ts) _cloudTs.index = result._ts;
-        } else {
-          anyError = true;
-          console.warn('[Sync] Index push returned not-ok');
         }
-      } catch(err) {
-        console.warn('[Sync] Index push failed:', err.message);
-        anyError = true;
-      }
+      } catch(err) { console.warn('[Sync] Index push failed:', err.message); }
     }
 
-    // ── Push projects ───────────────────────────────────────────────────────
-    // Auto: only dirty projects. Manual: all non-deleted projects.
-    const projectsToPush = isAuto
-      ? [..._dirtyProjectIds].map(pid => store.projects.find(p => p.id === pid)).filter(Boolean)
-      : store.projects.filter(p => !p._deleted);
+    const userId = _currentUser?.userId || '';
+    const projectsToPush = [..._dirtyProjectIds]
+      .map(pid => store.projects.find(p => p.id === pid))
+      .filter(Boolean)
+      .filter(p => !p.ownedBy || p.ownedBy === userId); // NEVER push foreign projects
 
     for (const proj of projectsToPush) {
       try {
-        const payload = _buildProjectPayload(proj);
-        const result  = await _apiSaveProject(payload);
+        const result = await _apiSaveProject(_buildProjectPayload(proj));
         if (result.ok) {
           _dirtyProjectIds.delete(proj.id);
           if (result._ts) _cloudTs.projects[proj.id] = result._ts;
-          // Clear item-level dirty flags
           (proj.items || []).forEach(i => { i._dirty = false; });
-        } else {
-          console.warn(`[Sync] Project ${proj.id} push returned not-ok`);
-          anyError = true;
         }
-      } catch(err) {
-        console.warn(`[Sync] Project ${proj.id} push failed:`, err.message);
-        anyError = true;
-      }
+      } catch(err) { console.warn(`[Sync] Project ${proj.id} failed:`, err.message); }
     }
 
-    // Persist updated timestamps and dirty state
     await _saveCloudTs();
     await _persistDirtyState();
     await _idbSet('fap_v3', store);
 
-    if (!isAuto) {
-      showToast(anyError ? '⚠️ Some items failed to sync' : '✓ Synced to cloud', anyError ? 'red' : 'green');
-    }
-
   } catch(err) {
     console.error('[Sync Error]', err);
-    if (!isAuto) showToast('Sync failed — check connection', 'red');
+  } finally {
+    if (syncBtn) { syncBtn.style.opacity = '1'; syncBtn.classList.remove('spinning'); }
+  }
+}
+
+/**
+ * Push+pull a single project. Called when the user hits 🔄 inside a project.
+ * Push: upload any dirty local changes (only if we own the project).
+ * Pull: download the latest cloud version and merge.
+ */
+async function _syncSingleProject(pid) {
+  const syncBtn = document.getElementById('sync-btn');
+  if (syncBtn) { syncBtn.style.opacity = '0.5'; syncBtn.classList.add('spinning'); }
+
+  let anyError = false;
+  const proj   = store.projects.find(p => p.id === pid);
+  const userId = _currentUser?.userId || '';
+
+  if (!proj) {
+    showToast('Project not found', 'red');
+    if (syncBtn) { syncBtn.style.opacity = '1'; syncBtn.classList.remove('spinning'); }
+    return;
+  }
+
+  const isOwned = !proj.ownedBy || proj.ownedBy === userId;
+
+  // ── Push (only if we own it and it's dirty) ────────────────────────────
+  if (isOwned && _dirtyProjectIds.has(pid)) {
+    try {
+      const result = await _apiSaveProject(_buildProjectPayload(proj));
+      if (result.ok) {
+        _dirtyProjectIds.delete(pid);
+        if (result._ts) _cloudTs.projects[pid] = result._ts;
+        (proj.items || []).forEach(i => { i._dirty = false; });
+        await _persistDirtyState();
+      } else { anyError = true; }
+    } catch(err) {
+      anyError = true;
+      console.warn('[SyncProject] Push failed:', err.message);
+    }
+  }
+
+  // ── Pull latest ────────────────────────────────────────────────────────
+  try {
+    const cp = await _apiGetProject(pid);
+    if (cp) {
+      const remoteTs = cp._ts || 0;
+      const localTs  = _cloudTs.projects[pid] || 0;
+      if (remoteTs > localTs) {
+        _mergeProjectIntoLocal(cp);
+        _cloudTs.projects[pid] = remoteTs;
+        await _idbSet('fap_v3', store);
+        await _saveCloudTs();
+        render();
+      }
+    }
+  } catch(err) {
+    anyError = true;
+    console.warn('[SyncProject] Pull failed:', err.message);
+  }
+
+  if (syncBtn) { syncBtn.style.opacity = '1'; syncBtn.classList.remove('spinning'); }
+  showToast(
+    anyError ? '⚠️ Sync had errors' : (isOwned ? '✓ Project synced' : '✓ Project refreshed'),
+    anyError ? '' : 'green'
+  );
+}
+
+/**
+ * Pull everything from the cloud for this user.
+ * Called when the user hits 🔄 from the home/root view.
+ * Only fetches projects that belong to this user's index.
+ */
+async function _pullAll() {
+  const syncBtn = document.getElementById('sync-btn');
+  if (syncBtn) { syncBtn.style.opacity = '0.5'; syncBtn.classList.add('spinning'); }
+  showToast('⬇ Pulling your latest data…');
+
+  try {
+    const timeout = ms => new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms));
+
+    // Also push any dirty index/project data before pulling
+    if (_dirtyIndex) {
+      try {
+        await _apiSaveIndex(_buildIndexPayload());
+        _dirtyIndex = false;
+      } catch(e) { console.warn('[PullAll] Index push failed:', e.message); }
+    }
+
+    const cloudIndex = await Promise.race([_apiGetIndex(), timeout(8000)]);
+    if (cloudIndex) {
+      _mergeIndexIntoLocal(cloudIndex);
+      _cloudTs.index = cloudIndex._ts || 0;
+
+      const projectIds = cloudIndex.projectIds || [];
+      const fetches = projectIds.map(pid =>
+        Promise.race([_apiGetProject(pid), timeout(6000)]).catch(() => null)
+      );
+      const cloudProjects = await Promise.all(fetches);
+
+      let fetched = 0;
+      cloudProjects.forEach((cp, i) => {
+        if (!cp) return;
+        _mergeProjectIntoLocal(cp);
+        _cloudTs.projects[projectIds[i]] = cp._ts || 0;
+        fetched++;
+      });
+
+      await _idbSet('fap_v3', store);
+      await _saveCloudTs();
+      render();
+      showToast(`✓ ${fetched} project${fetched !== 1 ? 's' : ''} up to date`, 'green');
+    } else {
+      showToast('Nothing new from cloud', '');
+    }
+  } catch(err) {
+    console.error('[PullAll]', err);
+    showToast('Pull failed — check connection', 'red');
   } finally {
     if (syncBtn) { syncBtn.style.opacity = '1'; syncBtn.classList.remove('spinning'); }
   }
@@ -2995,6 +3197,15 @@ async function _migrateFromLocalStorage() {
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 async function _initStore() {
+  // ── Auth first — must know who we are before touching cloud ───────────────
+  _currentUser = await _getAuthUser();
+  if (!_currentUser) return; // redirect in progress or no cache offline
+
+  // Set display name from Entra email (email prefix = first part before @)
+  if (!store.settings.displayName && _currentUser.userDetails) {
+    store.settings.displayName = _userName();
+  }
+
   // Restore dirty state and timestamp cache from IDB
   await _loadDirtyState();
   await _loadCloudTs();
@@ -3221,6 +3432,42 @@ const getSI      = (pid,sid) => getProject(pid)?.items.find(i=>i.id===sid);
 
 const MAIN_FOLDERS = ['A.S.S.T', 'AMI', 'ACD', 'ACS', 'ADH', 'ACM'];
 
+function showUserMenu() {
+  const email = _currentUser?.userDetails || 'Unknown';
+  const name  = _userName() || email;
+  const isLocal = _currentUser?.userId === 'dev-local';
+
+  makeModal('Account', `
+    <div style="text-align:center;padding:8px 0 16px">
+      <div style="font-size:40px;margin-bottom:10px">👤</div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:4px">${name}</div>
+      <div style="font-size:12px;color:var(--text3);font-family:var(--mono)">${email}</div>
+      ${isLocal ? '<div style="margin-top:6px;font-size:10px;color:var(--yellow);font-family:var(--mono)">⚠ Dev mode — no real auth</div>' : ''}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div class="field-group">
+        <div class="field-label">Display name (shown on edits)</div>
+        <input class="field-input" id="disp-name-menu" value="${store.settings.displayName || name}"
+          placeholder="Your name" />
+      </div>
+    </div>
+    ${!isLocal ? `
+    <button onclick="window.location.href='/.auth/logout?post_logout_redirect_uri=/'"
+      style="width:100%;margin-top:16px;padding:10px;background:var(--red-dim);color:var(--red);
+      border:1px solid var(--red-dim);border-radius:9px;font-family:var(--mono);font-size:12px;
+      font-weight:700;cursor:pointer;transition:all 0.15s"
+      onmouseover="this.style.background='rgba(220,38,38,0.18)'"
+      onmouseout="this.style.background='var(--red-dim)'">
+      Sign out
+    </button>` : ''}
+  `, () => {
+    const newName = document.getElementById('disp-name-menu')?.value.trim();
+    if (newName) { store.settings.displayName = newName; markStoreDirty(); save(); }
+    closeModal();
+    showToast('✓ Profile updated', 'green');
+  });
+}
+
 function showLoginModal() {
   if (isAdmin) {
     if(confirm('Log out of Admin?')) {
@@ -3369,6 +3616,24 @@ function render() {
 function renderNavBar(r) {
   document.getElementById('back-btn').className = 'nav-back-btn'+(stack.length===0?' disabled':'');
   document.getElementById('admin-lock-btn').textContent = isAdmin ? '🔐' : '🔓';
+
+  // User chip
+  const chip = document.getElementById('user-chip-name');
+  if (chip) chip.textContent = _userName() || '…';
+
+  // Context-aware sync button title
+  const syncBtn = document.getElementById('sync-btn');
+  if (syncBtn) {
+    const inProject = r.projectId &&
+      ['project','si','schedule','env','manpower','activity','floorplan'].includes(r.view);
+    if (inProject) {
+      const proj = getProject(r.projectId);
+      const isOwned = !proj?.ownedBy || proj?.ownedBy === (_currentUser?.userId || '');
+      syncBtn.title = isOwned ? `⇅ Sync project: ${proj?.name || ''}` : `⬇ Refresh: ${proj?.name || ''}`;
+    } else {
+      syncBtn.title = '⬇ Pull all my data from cloud';
+    }
+  }
   
   const bc = document.getElementById('breadcrumb');
   const logoSrc = store.settings.theme === 'dark' ? 'logo-white.png' : 'logo.png';
@@ -7047,6 +7312,7 @@ function showNewProjectModal(fid) {
     if(!name) return showToast('Project name required');
     const proj={
       id:'proj_'+Date.now(),name,
+      ownedBy: _currentUser?.userId || '',
       client:document.getElementById('m-client')?.value||'—',
       company:document.getElementById('m-company')?.value||'—',
       auditor:document.getElementById('m-auditor')?.value||'—',
@@ -9490,6 +9756,7 @@ function createProjectFromImport(items, folderId) {
   const project = {
     id: pid,
     name: 'Imported Project ' + new Date().toLocaleDateString(),
+    ownedBy: _currentUser?.userId || '',
     client: '',
     company: '',
     auditor: '',
@@ -10803,6 +11070,7 @@ function createProjectFromWorkOrders(items, projectName, folderId) {
   const siItems = items.map(it => _woBuildSIItem(it, section.id));
   const project = {
     id: pid, name: projectName || 'Work Orders Import',
+    ownedBy: _currentUser?.userId || '',
     client: '', company: '', auditor: '', date: new Date().toLocaleDateString(),
     projectType: '', coverPhoto: null, sections: [section], items: siItems,
     schedule: {}, importLog: []
