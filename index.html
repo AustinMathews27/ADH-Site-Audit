@@ -3758,7 +3758,7 @@ function renderLeft(r) {
       if(!items.length&&q) return;
       html+=`<div class="section-group">${sec.name}<span class="section-count">${items.length}</span></div>`;
       items.forEach(item=>{
-        const thumb=item.photos.length?`<img src="${item.photos[0].url || item.photos[0].data}" />`:`<span>📷</span>`;
+        const thumb=item.photos.length?`<img src="${item.photos[0].url || item.photos[0].data}" loading="lazy" />`:`<span>📷</span>`;
         const tw = item.towerWork;
         const twEnabled = tw && tw.enabled && tw.rooms && tw.rooms.length > 0;
         const twDone = twEnabled ? tw.rooms.filter(r=>r.status==='completed').length : 0;
@@ -4840,7 +4840,7 @@ function projCardHTML(p,fid) {
   const changed      =p.items.filter(i=>i.status==='on-hold').length;
   const hasActivity  = completed||punchOngoing||notReady||inProgress||changed;
   return `<div class="proj-card" style="position:relative" onclick="navToProject('${p.id}','${fid}')">
-    <div class="pc-photo">${p.coverPhoto ? `<img src="${p.coverPhoto}" alt="">` : '<span class="pc-placeholder">🏗</span>'}</div>
+    <div class="pc-photo">${p.coverPhoto ? `<img src="${p.coverPhoto}" alt="" loading="lazy">` : '<span class="pc-placeholder">🏗</span>'}</div>
     <button class="proj-card-menu-btn" title="Options"
       onclick="event.stopPropagation();showProjMenu(event,'${p.id}','${fid}')">⋯</button>
     <div class="pc-body">
@@ -4872,7 +4872,7 @@ function buildProjectView(pid) {
   document.getElementById('v-project').innerHTML=`<div class="summary-wrap">
     <div class="proj-summary-card">
       <div class="proj-summary-photo">
-        ${proj.coverPhoto ? `<img src="${proj.coverPhoto}" alt="Project photo">` : '<span class="proj-summary-photo-placeholder">🏗</span>'}
+        ${proj.coverPhoto ? `<img src="${proj.coverPhoto}" alt="Project photo" loading="lazy">` : '<span class="proj-summary-photo-placeholder">🏗</span>'}
         <div class="proj-summary-photo-overlay">
           <button class="overlay-btn" onclick="triggerCoverPhotoUpload('${pid}')">📷 ${proj.coverPhoto ? 'Change' : 'Add Photo'}</button>
           ${proj.coverPhoto ? `<button class="overlay-btn danger" onclick="removeCoverPhoto('${pid}')">🗑 Remove</button>` : ''}
@@ -5021,7 +5021,7 @@ function buildSIEditor(pid,sid) {
         const ts = p.takenAt ? `<span style="position:absolute;bottom:4px;right:5px;font-size:9px;font-family:var(--mono);color:rgba(255,255,255,0.85);background:rgba(0,0,0,0.5);padding:1px 5px;border-radius:3px;pointer-events:none">${p.takenAt}</span>` : '';
         return `
         <div class="photo-card" onclick="previewPhoto('${pid}','${sid}',${i})">
-          <img src="${src}" />
+          <img src="${src}" loading="lazy" />
           <div class="photo-card-overlay">
             <span class="photo-num">${i+1}</span>
             <div style="display:flex;gap:3px">
