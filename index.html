@@ -7134,7 +7134,25 @@ async function _getBlobSasUrl() {
   return _cachedSasUrl;
 }
 
-async function _uploadPhotoToAzureBlob(blob, projectId, siId) {
+async function preparePhotoForUpload(dbPhotoData) {
+  // If it's already a Blob (New Method), it is ready for Azure!
+  if (dbPhotoData instanceof Blob) {
+    return dbPhotoData;
+  }
+  
+  // If it's a legacy Base64 string, we must convert it to a Blob before 
+  // PUTting it to the Azure SAS URL. 
+  // (Using fetch() on a data URL is a highly efficient shortcut to convert it to a Blob)
+  if (typeof dbPhotoData === 'string' && dbPhotoData.startsWith('data:image')) {
+    const response = await fetch(dbPhotoData);
+    return await response.blob();
+  }
+  
+  throw new Error("Invalid photo data format");
+}
+
+async function _uploadPhotoToAzureBlob(dbPhotoData, projectId, siId) {
+  const blobToUpload = await preparePhotoForUpload(dbPhotoData);
   const sasContainerUrl = await _getBlobSasUrl();
   const ext      = 'jpg';
   const blobName = `${projectId}/${siId}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
@@ -7143,7 +7161,7 @@ async function _uploadPhotoToAzureBlob(blob, projectId, siId) {
   const uploadRes = await fetch(putUrl, {
     method : 'PUT',
     headers: { 'x-ms-blob-type': 'BlockBlob', 'Content-Type': 'image/jpeg' },
-    body   : blob,
+    body   : blobToUpload,
   });
   if (!uploadRes.ok) throw new Error(`Blob PUT failed: ${uploadRes.status}`);
   return `${baseUrl}/${blobName}`;
