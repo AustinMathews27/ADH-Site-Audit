@@ -15,8 +15,15 @@
 //     by stale incoming data (last-modified-wins per item)
 
 const { CosmosClient } = require("@azure/cosmos");
+const https = require("https");
 
-const client    = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
+// Enforce TCP connection reuse to prevent socket exhaustion
+const keepAliveAgent = new https.Agent({ keepAlive: true });
+
+const client    = new CosmosClient({
+  connectionString: process.env.COSMOS_DB_CONNECTION_STRING,
+  agent: keepAliveAgent
+});
 const database  = client.database("Auditdata");
 const container = database.container("Audits");
 const MAX_RETRIES = 5;
