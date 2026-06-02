@@ -3430,14 +3430,24 @@ const getFolder  = id => store.folders.find(f=>f.id===id);
 const getProject = id => store.projects.find(p=>p.id===id);
 const getSI      = (pid,sid) => getProject(pid)?.items.find(i=>i.id===sid);
 
-// Helper to render Azure Blob URLs, local Blobs, or legacy Base64 photos
-function getPhotoSrc(p) {
-  if (p.url) return p.url;
+// Helper function to parse mixed photo formats from IndexedDB
+function getPhotoSrcForDisplay(p) {
+  if (p.url) return p.url; // Remote Azure Blob URL
+  
+  // 1. Is it the new Blob format?
   if (p.data instanceof Blob) {
+    // Convert the raw binary blob into a temporary local URL for the <img> tag
+    // Cached internally as _blobUrl to prevent memory leaks during frequent UI re-renders
     if (!p._blobUrl) p._blobUrl = URL.createObjectURL(p.data);
     return p._blobUrl;
   }
-  return p.data || '';
+  
+  // 2. Is it the legacy Base64 string?
+  if (typeof p.data === 'string' && p.data.startsWith('data:image')) {
+    return p.data;
+  }
+  
+  return p.data || null; // Fallback for corrupted data
 }
 
 const MAIN_FOLDERS = ['A.S.S.T', 'AMI', 'ACD', 'ACS', 'ADH', 'ACM'];
@@ -3768,7 +3778,7 @@ function renderLeft(r) {
       if(!items.length&&q) return;
       html+=`<div class="section-group">${sec.name}<span class="section-count">${items.length}</span></div>`;
       items.forEach(item=>{
-        const thumb=item.photos.length?`<img src="${getPhotoSrc(item.photos[0])}" loading="lazy" />`:`<span>📷</span>`;
+        const thumb=item.photos.length?`<img src="${getPhotoSrcForDisplay(item.photos[0])}" loading="lazy" />`:`<span>📷</span>`;
         const tw = item.towerWork;
         const twEnabled = tw && tw.enabled && tw.rooms && tw.rooms.length > 0;
         const twDone = twEnabled ? tw.rooms.filter(r=>r.status==='completed').length : 0;
@@ -5027,7 +5037,7 @@ function buildSIEditor(pid,sid) {
   const photosHTML = item.photos.length===0
     ? `<div class="photo-empty"><div class="photo-empty-icon">📷</div>No photos yet</div>`
     : item.photos.map((p,i)=>{
-        const src = getPhotoSrc(p); // Azure Blob URL preferred; fall back to local Blob/base64
+        const src = getPhotoSrcForDisplay(p); // Azure Blob URL preferred; fall back to local Blob/base64
         const ts = p.takenAt ? `<span style="position:absolute;bottom:4px;right:5px;font-size:9px;font-family:var(--mono);color:rgba(255,255,255,0.85);background:rgba(0,0,0,0.5);padding:1px 5px;border-radius:3px;pointer-events:none">${p.takenAt}</span>` : '';
         return `
         <div class="photo-card" onclick="previewPhoto('${pid}','${sid}',${i})">
@@ -7236,6 +7246,11 @@ function deletePhoto(pid,sid,idx) {
   markAsDirty(sid); save();
   buildSIEditor(pid,sid); renderLeft(route());
 
+  // Free memory if it was a local blob (crucial memory cleanup)
+  if (removed && removed._blobUrl) {
+    URL.revokeObjectURL(removed._blobUrl);
+  }
+
   // If the photo was uploaded to Azure Blob, delete it server-side too
   if (removed && removed.url) {
     fetch('/api/deleteBlob', {
@@ -7249,7 +7264,7 @@ function previewPhoto(pid,sid,idx) {
   const item=getSI(pid,sid); if(!item) return;
   const ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;z-index:999;background:rgba(0,0,0,0.93);display:flex;align-items:center;justify-content:center;cursor:pointer;';
-  ov.innerHTML=`<img src="${getPhotoSrc(item.photos[idx])}" style="max-width:92%;max-height:92%;border-radius:10px;object-fit:contain;" />`;
+  ov.innerHTML=`<img src="${getPhotoSrcForDisplay(item.photos[idx])}" style="max-width:92%;max-height:92%;border-radius:10px;object-fit:contain;" />`;
   ov.onclick=()=>document.body.removeChild(ov);
   document.body.appendChild(ov);
 }
@@ -8546,7 +8561,7 @@ async function exportPDF(pid) {
           try {
             const tsLabel = inclTS ? (ph.takenAt || null) : null;
             // Support Azure Blob URL photos, local Blobs, and legacy base64 photos
-            const photoSrc = getPhotoSrc(ph) || null;
+            const photoSrc = getPhotoSrcForDisplay(ph) || null;
             const compressed = photoSrc ? await compressImage(photoSrc, quality, tsLabel) : null;
             if(compressed) {
               const px = 14 + col * (photoW + GAP);
