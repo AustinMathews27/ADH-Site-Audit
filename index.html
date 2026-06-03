@@ -3703,9 +3703,18 @@ function navToAWI() {
 // ══════════════════════════════════════════
 function render() {
   const r = route();
+  
+  // 1. Instantly draw the nav bar
   renderNavBar(r);
+  
+  // 2. Instantly draw the left panel (if on desktop/iPad)
   renderLeft(r);
-  renderRight(r);
+  
+  // 3. Yield the thread for a millisecond to let the browser paint the screen,
+  // THEN do the heavy lifting of rendering the right panel grids.
+  setTimeout(() => {
+    renderRight(r);
+  }, 0);
 }
 
 // ── NAV BAR ──────────────────────────────
@@ -3805,6 +3814,11 @@ function updateMobileNav(r) {
 
 // ── LEFT PANEL ───────────────────────────
 function renderLeft(r) {
+  // NEW: Do not waste CPU building the left panel if it is hidden on mobile
+  if (document.documentElement.classList.contains('is-phone')) {
+    return;
+  }
+
   const title = document.getElementById('left-panel-title');
   const scroll = document.getElementById('list-scroll');
   const q = (document.getElementById('search-input')?.value || '').toLowerCase();
@@ -9964,11 +9978,20 @@ function showToast(msg,type='') {
 // ══════════════════════════════════════════
 // INIT — load IndexedDB then render
 // ══════════════════════════════════════════
+function startApp() {
+  // Force the browser to paint the skeleton loaders BEFORE unpacking IndexedDB
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      _initStore();
+      _initMobileQoL();
+    });
+  });
+}
+
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => { _initStore(); _initMobileQoL(); });
+  document.addEventListener('DOMContentLoaded', startApp);
 } else {
-  _initStore();
-  _initMobileQoL();
+  startApp();
 }
 
 // ── MOBILE QoL ENHANCEMENTS ───────────────
