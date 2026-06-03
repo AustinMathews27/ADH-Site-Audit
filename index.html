@@ -2923,6 +2923,28 @@ function _mergeProjectIntoLocal(cloudProj) {
 
 // ── Main sync function ────────────────────────────────────────────────────────
 
+async function _flushPendingPhotos(proj) {
+  for (const item of proj.items || []) {
+    for (const p of item.photos || []) {
+      
+      // Check if the URL is completely missing, OR if it is a temporary local string
+      const isTemporaryUrl = p.url && (p.url.startsWith('data:') || p.url.startsWith('blob:'));
+
+      // If it doesn't have a permanent Azure URL, upload it!
+      if ((!p.url || isTemporaryUrl) && p.data) {
+        try {
+          const newUrl = await _uploadPhotoToAzureBlob(p.data, proj.id, item.id);
+          if (newUrl) {
+             p.url = newUrl; // Overwrite the temporary string with the real Azure link
+          }
+        } catch(uploadErr) {
+          console.warn('[Sync] Pending photo upload failed:', uploadErr.message);
+        }
+      }
+    }
+  }
+}
+
 /**
  * Push dirty local data to the cloud.
  *
@@ -2973,6 +2995,7 @@ async function syncChanges(isAuto = false) {
 
     for (const proj of projectsToPush) {
       try {
+        await _flushPendingPhotos(proj);
         const result = await _apiSaveProject(_buildProjectPayload(proj));
         if (result.ok) {
           _dirtyProjectIds.delete(proj.id);
@@ -3017,6 +3040,7 @@ async function _syncSingleProject(pid) {
   // ── Push (only if we own it and it's dirty) ────────────────────────────
   if (isOwned && _dirtyProjectIds.has(pid)) {
     try {
+      await _flushPendingPhotos(proj);
       const result = await _apiSaveProject(_buildProjectPayload(proj));
       if (result.ok) {
         _dirtyProjectIds.delete(pid);
