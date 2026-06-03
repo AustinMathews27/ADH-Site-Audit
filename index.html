@@ -455,6 +455,51 @@ body.is-offline .offline-banner { display: block; }
 .action-desc { font-size:11px; color:var(--text2); margin-top:1px; }
 .action-arrow { color:var(--text3); font-size:15px; }
 
+/* Styling for Empty State Component blocks */
+.empty-project-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+  background: var(--surface2);
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  text-align: center;
+  margin: 10px 0 20px 0;
+}
+.empty-project-icon {
+  font-size: 36px;
+  margin-bottom: 12px;
+  opacity: 0.6;
+}
+.empty-project-box h4 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.empty-project-box p {
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.5;
+  max-width: 290px;
+  margin-bottom: 20px;
+}
+
+/* Touch target optimized CTA button for Android & iOS thumbs */
+.btn-project-cta {
+  width: 100%; max-width: 280px; min-height: 48px; padding: 12px 24px;
+  background: var(--accent); color: #ffffff; border: none; border-radius: 10px;
+  font-family: var(--sans); font-size: 14px; font-weight: 600; cursor: pointer;
+  box-shadow: 0 4px 12px var(--accent-dim);
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.btn-project-cta:active { transform: scale(0.97); opacity: 0.9; }
+
+/* Adjust button color variables specifically inside dark mode overrides */
+body.theme-dark .btn-project-cta { color: #000000; }
+
 /* ── SI EDITOR ── */
 .edit-header {
   padding:12px 16px; border-bottom:1px solid var(--border);
@@ -1802,7 +1847,8 @@ html.is-phone .nav-actions .btn-icon[onclick*="toggleNotifications"]::before {
 
 /* Hide low-priority actions on phone (they remain accessible via bottom nav / modals) */
 html.is-phone .nav-actions .btn-icon[onclick*="showLoginModal"],
-html.is-phone .nav-actions .btn-icon[onclick*="showThemeModal"] {
+html.is-phone .nav-actions .btn-icon[onclick*="showThemeModal"],
+html.is-phone .nav-actions .btn-icon[onclick*="handleAdd"] {
   display: none;
 }
 
@@ -4979,6 +5025,7 @@ function buildProjectView(pid) {
   const changed    =proj.items.filter(i=>i.status==='on-hold').length;
   const pending    =proj.items.filter(i=>i.status==='pending').length;
   const r=route();
+  const hasSIs     = proj.items && proj.items.length > 0;
   document.getElementById('v-project').innerHTML=`<div class="summary-wrap">
     <div class="proj-summary-card">
       <div class="proj-summary-photo">
@@ -5007,6 +5054,25 @@ function buildProjectView(pid) {
       <div class="stat-card"><div class="stat-num" style="color:#f97316">${changed}</div><div class="stat-label">On Hold</div></div>
     </div>
     <div class="action-list">
+      ${hasSIs ? `
+        <div class="action-row" onclick="openFirstSI('${pid}')">
+          <div class="action-icon" style="background:var(--accent-dim)">📝</div>
+          <div class="action-body">
+            <div class="action-title">Edit Site Items</div>
+            <div class="action-desc">Manage, edit, or check current project items</div>
+          </div>
+          <div class="action-arrow">›</div>
+        </div>
+      ` : `
+        <div class="empty-project-box">
+          <div class="empty-project-icon">📋</div>
+          <h4>No items yet</h4>
+          <p>This project has no Site Items (SIs) assigned to it yet. Get started by clicking below.</p>
+          <button class="btn-project-cta" onclick="showNewSIModal('${pid}')">
+            ＋ Add First Site Item (SI)
+          </button>
+        </div>
+      `}
       <div class="action-row" onclick="showImportLog(getProject('${pid}'))">
         <div class="action-icon" style="background:var(--surface2)">🧾</div>
         <div class="action-body"><div class="action-title">View Import History</div><div class="action-desc">Review previous spreadsheet synchronization logs</div></div>
@@ -5045,11 +5111,6 @@ function buildProjectView(pid) {
       <div class="action-row" onclick="navToEnv('${pid}')">
         <div class="action-icon" style="background:rgba(52,211,153,0.1)">🌡️</div>
         <div class="action-body"><div class="action-title">Environmental Conditions</div><div class="action-desc">Temperature & humidity charts from sensor data</div></div>
-        <div class="action-arrow">›</div>
-      </div>
-      <div class="action-row" onclick="openFirstSI('${pid}')">
-        <div class="action-icon" style="background:var(--accent-dim)">📝</div>
-        <div class="action-body"><div class="action-title">Edit Site Items</div><div class="action-desc">Add photos & field condition notes</div></div>
         <div class="action-arrow">›</div>
       </div>
       <div class="action-row" onclick="showShareModal()">
