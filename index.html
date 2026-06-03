@@ -353,6 +353,22 @@ body.is-offline .offline-banner { display: block; }
   gap:6px; min-height:140px; border-style:dashed; color:var(--text3);
 }
 .proj-card.new-card:hover { border-color:var(--accent); color:var(--accent); }
+
+/* Skeleton Loaders */
+@keyframes skeleton-pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.4; }
+  100% { opacity: 1; }
+}
+.skeleton-card {
+  background: var(--surface3); border: 1px solid var(--border); border-radius: 12px; height: 180px;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+.skeleton-folder {
+  background: var(--surface3); border: 1px solid var(--border); border-radius: 12px; height: 74px;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
 .proj-card-menu-btn {
   position:absolute; top:8px; right:8px;
   width:28px; height:28px; border-radius:7px;
@@ -2136,11 +2152,28 @@ html.is-phone .nav-back-btn { min-width: 40px; min-height: 40px; }
 
   <!-- RIGHT PANEL -->
   <div class="right-panel">
-    <div class="empty-state" id="v-empty">
+    <div class="empty-state" id="v-empty" style="display:none;">
       <div class="empty-state-icon">📁</div>
       <div class="empty-state-text">Select a folder or create a new one to get started</div>
     </div>
-    <div id="v-root" style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
+    <div id="v-root" style="display:flex;flex:1;overflow:hidden;flex-direction:column;">
+      <div class="grid-wrap">
+        <div class="section-divider">Folders</div>
+        <div class="folder-grid" style="margin-bottom:24px">
+          <div class="skeleton-folder"></div>
+          <div class="skeleton-folder"></div>
+          <div class="skeleton-folder"></div>
+          <div class="skeleton-folder"></div>
+        </div>
+        <div class="section-divider" style="margin-top:4px">All Projects</div>
+        <div class="proj-grid">
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+        </div>
+      </div>
+    </div>
     <div id="v-folder" style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
     <div id="v-project" style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
     <div id="v-si" style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
@@ -2509,6 +2542,8 @@ async function _getAuthUser() {
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
     const devUser = { userId: 'dev-local', userDetails: 'dev@local.test', userRoles: ['authenticated'] };
     await _idbSet('adh_user', devUser);
+    localStorage.setItem('adh_auth_token', 'valid_user_session');
+    localStorage.setItem('adh_user_id', devUser.userId);
     return devUser;
   }
 
@@ -2519,9 +2554,13 @@ async function _getAuthUser() {
       if (data.clientPrincipal) {
         // Authenticated — cache and return
         await _idbSet('adh_user', data.clientPrincipal);
+        localStorage.setItem('adh_auth_token', 'valid_user_session');
+        localStorage.setItem('adh_user_id', data.clientPrincipal.userId);
         return data.clientPrincipal;
       }
       // Response OK but no principal = not logged in → redirect
+      localStorage.removeItem('adh_auth_token');
+      localStorage.removeItem('adh_user_id');
       window.location.href = '/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(window.location.pathname);
       return null;
     }
@@ -2534,10 +2573,14 @@ async function _getAuthUser() {
   const cached = await _idbGet('adh_user');
   if (cached) {
     console.log('[Auth] Offline — using cached user:', cached.userDetails);
+    localStorage.setItem('adh_auth_token', 'valid_user_session');
+    localStorage.setItem('adh_user_id', cached.userId);
     return cached;
   }
 
   // No cache and can't reach auth — show a friendly wall
+  localStorage.removeItem('adh_auth_token');
+  localStorage.removeItem('adh_user_id');
   document.body.innerHTML = `
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
       height:100vh;gap:16px;font-family:sans-serif;color:#475569;background:#f1f5f9">
@@ -2554,6 +2597,12 @@ async function _getAuthUser() {
       </button>
     </div>`;
   return null;
+}
+
+// When the app starts up (even in airplane mode):
+function verifyLoginTokenLocally() {
+  const token = localStorage.getItem('adh_auth_token');
+  return token !== null; // Instantly returns true without needing the internet
 }
 
 /** Cosmos index document ID scoped to the current user */
@@ -3221,61 +3270,11 @@ async function _migrateFromLocalStorage() {
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 async function _initStore() {
-  // ── Auth first — must know who we are before touching cloud ───────────────
-  _currentUser = await _getAuthUser();
-  if (!_currentUser) return; // redirect in progress or no cache offline
-
-  // Set display name from Entra email (email prefix = first part before @)
-  if (!store.settings.displayName && _currentUser.userDetails) {
-    store.settings.displayName = _userName();
-  }
-
-  // Restore dirty state and timestamp cache from IDB
-  await _loadDirtyState();
-  await _loadCloudTs();
-
   try {
-    // ── Step 1: Load local data instantly (works offline) ──────────────────
+    // ── 1. Load local data instantly (works offline) ───────────────────────
     let data = await _migrateFromLocalStorage();
     if (!data) data = await _idbGet('fap_v3');
     if (data) store = data;
-
-    // ── Step 2: Merge from cloud if online ──────────────────────────────────
-    if (navigator.onLine) {
-      try {
-        const timeout = ms => new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms));
-
-        // Fetch index (fast, small doc)
-        const cloudIndex = await Promise.race([_apiGetIndex(), timeout(4000)]);
-
-        if (cloudIndex) {
-          _mergeIndexIntoLocal(cloudIndex);
-          _cloudTs.index = cloudIndex._ts || 0;
-
-          // Fetch all projects in parallel (4s timeout each)
-          const projectIds = cloudIndex.projectIds || [];
-          const fetches = projectIds.map(pid =>
-            Promise.race([_apiGetProject(pid), timeout(4000)]).catch(() => null)
-          );
-          const cloudProjects = await Promise.all(fetches);
-
-          let fetched = 0;
-          cloudProjects.forEach((cp, i) => {
-            if (!cp) return;
-            _mergeProjectIntoLocal(cp);
-            _cloudTs.projects[projectIds[i]] = cp._ts || 0;
-            fetched++;
-          });
-
-          await _idbSet('fap_v3', store);
-          await _saveCloudTs();
-          console.log(`[ADH] Loaded ${fetched}/${projectIds.length} projects from cloud`);
-        }
-      } catch(e) {
-        console.warn('[ADH] Cloud load on startup skipped:', e.message);
-      }
-    }
-
   } catch(e) {
     console.warn('[ADH] Storage load error, using seed:', e);
     store = JSON.parse(JSON.stringify(SEED));
@@ -3338,7 +3337,60 @@ async function _initStore() {
     }
   } catch(e) { /* keep default */ }
 
+  // Instantly draw the UI using whatever is in the local IndexedDB
   render();
+
+  // ── 2. NOW check the auth token in the background ─────────────────────────
+  _currentUser = await _getAuthUser();
+  if (!_currentUser) return; // redirect in progress or no cache offline
+
+  // Set display name from Entra email (email prefix = first part before @)
+  if (!store.settings.displayName && _currentUser.userDetails) {
+    store.settings.displayName = _userName();
+  }
+
+  // Restore dirty state and timestamp cache from IDB
+  await _loadDirtyState();
+  await _loadCloudTs();
+
+  // ── 3. Merge from cloud if online ─────────────────────────────────────────
+  if (navigator.onLine) {
+    try {
+      const timeout = ms => new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms));
+
+      // Fetch index (fast, small doc)
+      const cloudIndex = await Promise.race([_apiGetIndex(), timeout(4000)]);
+
+      if (cloudIndex) {
+        _mergeIndexIntoLocal(cloudIndex);
+        _cloudTs.index = cloudIndex._ts || 0;
+
+        // Fetch all projects in parallel (4s timeout each)
+        const projectIds = cloudIndex.projectIds || [];
+        const fetches = projectIds.map(pid =>
+          Promise.race([_apiGetProject(pid), timeout(4000)]).catch(() => null)
+        );
+        const cloudProjects = await Promise.all(fetches);
+
+        let fetched = 0;
+        cloudProjects.forEach((cp, i) => {
+          if (!cp) return;
+          _mergeProjectIntoLocal(cp);
+          _cloudTs.projects[projectIds[i]] = cp._ts || 0;
+          fetched++;
+        });
+
+        await _idbSet('fap_v3', store);
+        await _saveCloudTs();
+        console.log(`[ADH] Loaded ${fetched}/${projectIds.length} projects from cloud`);
+        
+        // Re-render after cloud data comes in
+        render();
+      }
+    } catch(e) {
+      console.warn('[ADH] Cloud load on startup skipped:', e.message);
+    }
+  }
 
   // ── Start polling and auto-sync ────────────────────────────────────────────
   _startPolling();
@@ -3496,7 +3548,7 @@ function showUserMenu() {
       </div>
     </div>
     ${!isLocal ? `
-    <button onclick="window.location.href='/.auth/logout?post_logout_redirect_uri=/'"
+    <button onclick="localStorage.removeItem('adh_auth_token'); localStorage.removeItem('adh_user_id'); window.location.href='/.auth/logout?post_logout_redirect_uri=/'"
       style="width:100%;margin-top:16px;padding:10px;background:var(--red-dim);color:var(--red);
       border:1px solid var(--red-dim);border-radius:9px;font-family:var(--mono);font-size:12px;
       font-weight:700;cursor:pointer;transition:all 0.15s"
