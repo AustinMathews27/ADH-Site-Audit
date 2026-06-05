@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "dependencies": {
     "@azure/cosmos": "^4.0.0",
-    "@azure/storage-blob": "^12.17.0"
+    "@azure/storage-blob": "^12.17.0",
+    "pdfkit": "^0.15.0"
   }
 }
