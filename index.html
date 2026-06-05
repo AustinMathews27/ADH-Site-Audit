@@ -2229,6 +2229,8 @@ html.is-phone .nav-back-btn { min-width: 40px; min-height: 40px; }
     <div id="v-schedule" style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
     <div id="v-toolbox"  style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
     <div id="v-awi"      style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
+    <div id="v-resources" style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
+    <div id="v-tblog"    style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
     <div id="v-manpower" style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
     <div id="v-activity"  style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
     <div id="v-floorplan" style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
@@ -3057,7 +3059,7 @@ async function syncChanges(isAuto = false) {
   if (!isAuto) {
     const r = route();
     const inProject = r.projectId &&
-      ['project','si','schedule','env','manpower','activity','floorplan'].includes(r.view);
+      ['project','si','schedule','env','manpower','activity','floorplan','tblog'].includes(r.view);
     if (inProject) {
       return _syncSingleProject(r.projectId);
     } else {
@@ -3745,6 +3747,20 @@ function navToAWI() {
   render();
 }
 
+function navToResources() {
+  stack = [{view:'resources'}];
+  render();
+}
+
+// Per-project Toolbox Talk log (mirrors navToActivity)
+function navToTbLog(pid){
+  const cur=route();
+  stack=stack.filter(r=>r.view!=='activity'&&r.view!=='si'&&r.view!=='env'&&r.view!=='schedule'&&r.view!=='manpower'&&r.view!=='tblog');
+  if(!stack.find(r=>r.view==='project'&&r.projectId===pid)) stack.push({view:'project',folderId:cur.folderId||'',projectId:pid});
+  stack.push({view:'tblog',folderId:cur.folderId||'',projectId:pid});
+  render();
+}
+
 // ══════════════════════════════════════════
 // RENDER COORDINATOR
 // ══════════════════════════════════════════
@@ -3777,7 +3793,7 @@ function renderNavBar(r) {
   const syncBtn = document.getElementById('sync-btn');
   if (syncBtn) {
     const inProject = r.projectId &&
-      ['project','si','schedule','env','manpower','activity','floorplan'].includes(r.view);
+      ['project','si','schedule','env','manpower','activity','floorplan','tblog'].includes(r.view);
     if (inProject) {
       const proj = getProject(r.projectId);
       const isOwned = !proj?.ownedBy || proj?.ownedBy === (_currentUser?.userId || '');
@@ -3842,6 +3858,14 @@ function renderNavBar(r) {
     crumbs.push(`<span class="crumb-sep">›</span>`);
     crumbs.push(`<span class="crumb active">📐 AWI Standards</span>`);
   }
+  if (r.view==='resources') {
+    crumbs.push(`<span class="crumb-sep">›</span>`);
+    crumbs.push(`<span class="crumb active">📂 Resources</span>`);
+  }
+  if (r.view==='tblog') {
+    crumbs.push(`<span class="crumb-sep">›</span>`);
+    crumbs.push(`<span class="crumb active">🦺 Toolbox Log</span>`);
+  }
   if (r.view==='activity') {
     crumbs.push(`<span class="crumb-sep">›</span>`);
     crumbs.push(`<span class="crumb active">📋 Activity Feed</span>`);
@@ -3900,6 +3924,18 @@ function renderLeft(r) {
   if (r.view === 'awi') {
     title.textContent = 'AWI STANDARDS';
     scroll.innerHTML = emptyMsg('Content coming soon');
+    return;
+  }
+
+  if (r.view === 'resources') {
+    title.textContent = 'RESOURCES';
+    scroll.innerHTML = emptyMsg('Field forms, QC & safety docs');
+    return;
+  }
+
+  if (r.view === 'tblog') {
+    title.textContent = 'TOOLBOX LOG';
+    scroll.innerHTML = emptyMsg('Per-project weekly log');
     return;
   }
 
@@ -4199,12 +4235,14 @@ renderLeft = function(r) {
 
 // ── RIGHT PANEL ──────────────────────────
 function renderRight(r) {
-  const views=['v-empty','v-root','v-folder','v-project','v-si','v-env','v-contacts','v-schedule','v-toolbox','v-awi','v-manpower','v-activity','v-floorplan'];
+  const views=['v-empty','v-root','v-folder','v-project','v-si','v-env','v-contacts','v-schedule','v-toolbox','v-awi','v-resources','v-tblog','v-manpower','v-activity','v-floorplan'];
   views.forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display='none'; });
 
   if (r.view==='contacts') { buildContactBookView(); show('v-contacts'); }
   else if (r.view==='toolbox') { buildToolboxView(); show('v-toolbox'); }
   else if (r.view==='awi')     { buildAWIView();     show('v-awi'); }
+  else if (r.view==='resources'){ buildResourcesView(); show('v-resources'); }
+  else if (r.view==='tblog')    { buildTbLogView(r.projectId); show('v-tblog'); }
   else if (r.view==='env') { buildEnvView(r.projectId); show('v-env'); }
   else if (r.view==='schedule') { buildScheduleView(r.projectId); show('v-schedule'); }
   else if (r.view==='manpower')  { buildManpowerView(r.projectId);  show('v-manpower');  }
@@ -4238,12 +4276,17 @@ function buildRootView() {
       <div class="folder-card" onclick="navToToolbox()" style="border-color:rgba(239,68,68,0.25)">
         <div class="fc-icon">🦺</div>
         <div class="fc-name">Toolbox Talk</div>
-        <div class="fc-count">Safety Checklist</div>
+        <div class="fc-count">Browse & Print</div>
       </div>
       <div class="folder-card" onclick="navToAWI()" style="border-color:rgba(245,158,11,0.3)">
         <div class="fc-icon">📐</div>
         <div class="fc-name">AWI Standards</div>
         <div class="fc-count">Reference Guide</div>
+      </div>
+      <div class="folder-card" onclick="navToResources()" style="border-color:rgba(96,165,250,0.3)">
+        <div class="fc-icon">📂</div>
+        <div class="fc-name">Resources</div>
+        <div class="fc-count">Forms · QC · Safety</div>
       </div>
     </div>
 
@@ -4275,20 +4318,242 @@ function folderCardHTML(f) {
 }
 
 // TOOLBOX TALK / SAFETY CHECKLIST VIEW
+// ══════════════════════════════════════════
+// DOCUMENT LIBRARY (manifest-driven, static files in /resources)
+// ══════════════════════════════════════════
+let _docManifest = null;
+function loadDocManifest() {
+  if (_docManifest) return Promise.resolve(_docManifest);
+  return fetch('resources/manifest.json', { cache: 'no-store' })
+    .then(r => r.json())
+    .then(j => { _docManifest = j; return j; })
+    .catch(() => { _docManifest = { toolboxTalks: [], categories: [] }; return _docManifest; });
+}
+function _docHref(file) {
+  return 'resources/' + String(file).split('/').map(encodeURIComponent).join('/');
+}
+function _esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g,
+    c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+function _ensureDocStyles() {
+  if (document.getElementById('doc-styles')) return;
+  const st = document.createElement('style');
+  st.id = 'doc-styles';
+  st.textContent = `
+  .doc-wrap{padding-bottom:30px}
+  .doc-sub{font-size:12px;color:var(--text3);margin:4px 2px 14px;line-height:1.55}
+  .doc-search{width:100%;padding:11px 13px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font:inherit;font-size:14px;margin-bottom:12px;outline:none}
+  .doc-search:focus{border-color:var(--accent)}
+  .doc-row{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:11px;margin-bottom:8px;text-decoration:none;color:var(--text)}
+  .doc-row:active{border-color:var(--accent)}
+  .tb-wk{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--red);background:var(--red-dim);padding:4px 8px;border-radius:6px;flex:0 0 auto;letter-spacing:.5px}
+  .tb-ttl{font-size:14px;font-weight:500;line-height:1.3;flex:1;min-width:0}
+  .doc-open{font-size:12px;font-weight:600;color:var(--accent);flex:0 0 auto;white-space:nowrap}
+  .doc-cat{font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text2);margin:18px 2px 8px}
+  .doc-grp{background:var(--surface);border:1px solid var(--border);border-radius:11px;margin-bottom:8px;overflow:hidden}
+  .doc-ghead{display:flex;align-items:center;gap:9px;padding:12px 14px;font-size:13.5px;font-weight:600;color:var(--text);cursor:pointer}
+  .doc-ghead svg{transition:.2s;flex:0 0 auto;color:var(--text3)}
+  .doc-grp.open .doc-ghead svg{transform:rotate(180deg)}
+  .doc-gcount{margin-left:auto;font-size:11px;color:var(--text3);background:var(--surface2);padding:2px 9px;border-radius:20px}
+  .doc-glist{display:none;padding:0 8px 6px}
+  .doc-grp.open .doc-glist{display:block}
+  .doc-item{display:flex;align-items:center;gap:10px;padding:10px 8px;border-top:1px solid var(--border);text-decoration:none;color:var(--text)}
+  .doc-ic{width:32px;height:32px;border-radius:7px;flex:0 0 auto;display:grid;place-items:center;font-size:9px;font-weight:800;color:#fff;background:var(--red)}
+  .doc-ic.docx{background:var(--accent)}
+  .doc-itt{flex:1;min-width:0;font-size:13px;font-weight:500;line-height:1.3}
+  .tbl-prog{display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 16px;margin-bottom:14px}
+  .tbl-ring{--p:0;width:54px;height:54px;border-radius:50%;flex:0 0 auto;background:conic-gradient(var(--green) calc(var(--p)*1%), var(--surface3) 0);display:grid;place-items:center}
+  .tbl-ring span{background:var(--surface);width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:12px;color:var(--text)}
+  .tbl-card{background:var(--surface);border:1px solid var(--border);border-radius:11px;margin-bottom:8px;overflow:hidden}
+  .tbl-row{display:flex;align-items:center;gap:12px;padding:12px 14px;cursor:pointer}
+  .tbl-row.done{background:var(--green-dim)}
+  .tbl-box{width:24px;height:24px;border:2.5px solid var(--border2);border-radius:6px;flex:0 0 auto;position:relative;cursor:pointer}
+  .tbl-row.done .tbl-box{background:var(--green);border-color:var(--green)}
+  .tbl-row.done .tbl-box::after{content:"";position:absolute;left:7px;top:2px;width:6px;height:11px;border:solid #fff;border-width:0 3px 3px 0;transform:rotate(43deg)}
+  .tbl-meta{font-size:11px;color:var(--text3);margin-top:3px}
+  .tbl-chev{margin-left:auto;color:var(--text3);transition:.2s;flex:0 0 auto}
+  .tbl-card.open .tbl-chev{transform:rotate(180deg)}
+  .tbl-panel{display:none;padding:12px 14px;border-top:1px solid var(--border)}
+  .tbl-card.open .tbl-panel{display:block}
+  .tbl-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+  .tbl-fields label{font-size:10px;color:var(--text3);font-weight:600;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:.4px}
+  .tbl-fields input,.tbl-fields textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font:inherit;font-size:13px;outline:none}
+  .tbl-fields input:focus,.tbl-fields textarea:focus{border-color:var(--accent)}
+  .tbl-full{grid-column:1/-1}
+  .tbl-open{display:inline-block;padding:9px 14px;background:var(--accent);color:#fff;border-radius:8px;font-size:12.5px;font-weight:600;text-decoration:none}`;
+  document.head.appendChild(st);
+}
+
+// ── GLOBAL TOOLBOX TALKS (browse / print, no per-job state) ──
+let _tbSearch = '';
 function buildToolboxView() {
-  document.getElementById('v-toolbox').innerHTML = `
-    <div class="grid-wrap">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-        <div class="env-header-title">🦺 Toolbox Talk / Safety Checklist</div>
-      </div>
-      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 24px;text-align:center;color:var(--text3)">
-        <div style="font-size:64px;margin-bottom:20px;opacity:0.4">🦺</div>
-        <div style="font-size:16px;font-weight:600;color:var(--text2);margin-bottom:8px">Content Coming Soon</div>
-        <div style="font-size:13px;line-height:1.6;max-width:340px">
-          Toolbox talks, job-site safety checklists, and pre-task planning templates will be added here.
-        </div>
-      </div>
+  _ensureDocStyles();
+  const el = document.getElementById('v-toolbox'); if (!el) return;
+  el.innerHTML = `<div class="grid-wrap doc-wrap"><div class="env-header-title">🦺 Toolbox Talks</div><div class="doc-sub">Loading…</div></div>`;
+  loadDocManifest().then(m => {
+    if (route().view !== 'toolbox') return;
+    const talks = m.toolboxTalks || [];
+    el.innerHTML = `<div class="grid-wrap doc-wrap">
+      <div class="env-header-title">🦺 Toolbox Talks</div>
+      <div class="doc-sub">Open or print any weekly safety talk plus its 30-slot crew sign-in sheet. To record a talk for a specific job, open that project and use the <b>Toolbox Talk Log</b>.</div>
+      <input class="doc-search" placeholder="Search ${talks.length} weeks…" oninput="_tbFilter(this.value)" value="${_esc(_tbSearch)}">
+      <div id="tb-list">${_tbRows(talks, _tbSearch)}</div>
     </div>`;
+  });
+}
+function _tbRows(talks, q) {
+  q = (q || '').toLowerCase();
+  const f = talks.filter(t => !q || t.title.toLowerCase().includes(q) || ('week ' + t.week).includes(q) || String(t.week) === q);
+  return f.map(t => `<a class="doc-row" href="${_docHref(t.file)}" target="_blank" rel="noopener">
+    <span class="tb-wk">WK ${String(t.week).padStart(2,'0')}</span>
+    <span class="tb-ttl">${_esc(t.title)}</span>
+    <span class="doc-open">Open ↗</span>
+  </a>`).join('') || emptyMsg('No matches');
+}
+function _tbFilter(q) {
+  _tbSearch = q;
+  const c = document.getElementById('tb-list');
+  if (c) c.innerHTML = _tbRows((_docManifest && _docManifest.toolboxTalks) || [], q);
+}
+
+// ── RESOURCES (Forms / QC / Site Safety) ──
+const _CAT_LABEL = { 'Forms & Templates': 'Allegheny Field Forms' };
+let _resSearch = '';
+let _resOpen = {};
+function buildResourcesView() {
+  _ensureDocStyles();
+  const el = document.getElementById('v-resources'); if (!el) return;
+  el.innerHTML = `<div class="grid-wrap doc-wrap"><div class="env-header-title">📂 Resources</div><div class="doc-sub">Loading…</div></div>`;
+  loadDocManifest().then(m => {
+    if (route().view !== 'resources') return;
+    el.innerHTML = `<div class="grid-wrap doc-wrap">
+      <div class="env-header-title">📂 Resources</div>
+      <div class="doc-sub">Field forms, quality-control plans, and site-safety programs. Tap any document to open or download.</div>
+      <input class="doc-search" placeholder="Search all documents…" oninput="_resFilter(this.value)" value="${_esc(_resSearch)}">
+      <div id="res-list">${_resBody(m.categories || [], _resSearch)}</div>
+    </div>`;
+  });
+}
+function _resBody(cats, q) {
+  q = (q || '').toLowerCase();
+  let html = '';
+  cats.forEach((cat, ci) => {
+    const label = _CAT_LABEL[cat.name] || cat.name;
+    let cathtml = ''; let any = false;
+    (cat.groups || []).forEach((g, gi) => {
+      const items = (g.items || []).filter(it => !q ||
+        it.title.toLowerCase().includes(q) || (g.name || '').toLowerCase().includes(q) || label.toLowerCase().includes(q));
+      if (!items.length) return; any = true;
+      const rows = items.map(it => `<a class="doc-item" href="${_docHref(it.file)}" target="_blank" rel="noopener">
+        <span class="doc-ic ${it.type === 'docx' ? 'docx' : ''}">${(it.type || 'pdf').toUpperCase()}</span>
+        <span class="doc-itt">${_esc(it.title)}</span><span class="doc-open">↗</span></a>`).join('');
+      if (!g.name) {
+        cathtml += `<div class="doc-grp open">${rows}</div>`;
+      } else {
+        const key = ci + '-' + gi;
+        const open = q ? true : !!_resOpen[key];
+        cathtml += `<div class="doc-grp ${open ? 'open' : ''}">
+          <div class="doc-ghead" onclick="_resToggle('${key}')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg> ${_esc(g.name)}<span class="doc-gcount">${items.length}</span></div>
+          <div class="doc-glist">${rows}</div></div>`;
+      }
+    });
+    if (any) html += `<div class="doc-cat">${_esc(label)}</div>` + cathtml;
+  });
+  return html || emptyMsg('No matches');
+}
+function _resFilter(q) {
+  _resSearch = q;
+  const c = document.getElementById('res-list');
+  if (c) c.innerHTML = _resBody((_docManifest && _docManifest.categories) || [], q);
+}
+function _resToggle(key) {
+  _resOpen[key] = !_resOpen[key];
+  const c = document.getElementById('res-list');
+  if (c) c.innerHTML = _resBody((_docManifest && _docManifest.categories) || [], _resSearch);
+}
+
+// ── PER-PROJECT TOOLBOX TALK LOG (stored on the project, synced) ──
+let _tbLogOpen = null;
+function buildTbLogView(pid) {
+  _ensureDocStyles();
+  const el = document.getElementById('v-tblog'); if (!el) return;
+  const proj = getProject(pid);
+  el.innerHTML = `<div class="grid-wrap doc-wrap"><div class="env-header-title">🦺 Toolbox Talk Log</div><div class="doc-sub">Loading…</div></div>`;
+  loadDocManifest().then(m => {
+    const r = route();
+    if (r.view !== 'tblog' || r.projectId !== pid) return;
+    const talks = m.toolboxTalks || [];
+    const log = (proj && proj.toolboxTalks) || {};
+    const done = talks.filter(t => log[t.week] && log[t.week].done).length;
+    const pct = talks.length ? Math.round(done / talks.length * 100) : 0;
+    const rows = talks.map(t => {
+      const s = log[t.week] || {};
+      const isOpen = _tbLogOpen === t.week;
+      const meta = [];
+      if (s.date) meta.push('📅 ' + s.date);
+      if (s.supervisor) meta.push('👷 ' + _esc(s.supervisor));
+      if (s.attendees) meta.push('👥 ' + _esc(s.attendees));
+      return `<div class="tbl-card ${isOpen ? 'open' : ''}">
+        <div class="tbl-row ${s.done ? 'done' : ''}" onclick="tbLogToggleOpen('${pid}',${t.week})">
+          <div class="tbl-box" onclick="event.stopPropagation();tbLogToggleDone('${pid}',${t.week})"></div>
+          <div style="min-width:0">
+            <span class="tb-wk">WK ${String(t.week).padStart(2,'0')}</span>
+            <div class="tb-ttl" style="margin-top:4px">${_esc(t.title)}</div>
+            ${meta.length ? `<div class="tbl-meta">${meta.join('  ·  ')}</div>` : ''}
+          </div>
+          <svg class="tbl-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+        <div class="tbl-panel">
+          <div class="tbl-fields">
+            <div><label>Date conducted</label><input type="date" value="${_esc(s.date||'')}" onchange="tbLogField('${pid}',${t.week},'date',this.value)"></div>
+            <div><label>Supervisor</label><input value="${_esc(s.supervisor||'')}" placeholder="Name" onchange="tbLogField('${pid}',${t.week},'supervisor',this.value)"></div>
+            <div><label>Attendees</label><input type="number" min="0" value="${_esc(s.attendees||'')}" placeholder="#" onchange="tbLogField('${pid}',${t.week},'attendees',this.value)"></div>
+            <div class="tbl-full"><label>Notes</label><textarea rows="2" placeholder="Optional" onchange="tbLogField('${pid}',${t.week},'notes',this.value)">${_esc(s.notes||'')}</textarea></div>
+          </div>
+          <a class="tbl-open" href="${_docHref(t.file)}" target="_blank" rel="noopener">Open talk + sign-in ↗</a>
+        </div>
+      </div>`;
+    }).join('');
+    el.innerHTML = `<div class="grid-wrap doc-wrap">
+      <div class="env-header-title">🦺 Toolbox Talk Log</div>
+      <div class="doc-sub">Log each weekly safety talk for <b>${_esc(proj ? proj.name : '')}</b>. Saved with this project and synced to the cloud.</div>
+      <div class="tbl-prog">
+        <div class="tbl-ring" style="--p:${pct}"><span>${pct}%</span></div>
+        <div><div style="font-weight:700;font-size:15px;color:var(--text)">${done} of ${talks.length} conducted</div>
+        <div style="font-size:12px;color:var(--text3)">Tap the box to mark done · tap a row to log details</div></div>
+      </div>
+      ${rows || emptyMsg('No toolbox talks found')}
+    </div>`;
+  });
+}
+function _tbLogProj(pid) {
+  const p = getProject(pid); if (!p) return null;
+  if (!p.toolboxTalks) p.toolboxTalks = {};
+  return p;
+}
+function tbLogToggleOpen(pid, wk) {
+  _tbLogOpen = (_tbLogOpen === wk ? null : wk);
+  buildTbLogView(pid);
+}
+function tbLogToggleDone(pid, wk) {
+  const p = _tbLogProj(pid); if (!p) return;
+  const cur = p.toolboxTalks[wk] || {};
+  cur.done = !cur.done;
+  if (cur.done && !cur.date) cur.date = new Date().toISOString().slice(0, 10);
+  p.toolboxTalks[wk] = cur;
+  markProjectDirty(pid); save();
+  buildTbLogView(pid);
+}
+function tbLogField(pid, wk, key, val) {
+  const p = _tbLogProj(pid); if (!p) return;
+  const cur = p.toolboxTalks[wk] || {};
+  cur[key] = val;
+  let reflow = false;
+  if (key === 'date' && val && !cur.done) { cur.done = true; reflow = true; }
+  p.toolboxTalks[wk] = cur;
+  markProjectDirty(pid); save();
+  if (reflow) buildTbLogView(pid);
 }
 
 // AWI STANDARDS VIEW
@@ -5105,6 +5370,11 @@ function buildProjectView(pid) {
       <div class="action-row" onclick="navToManpower('${pid}')">
         <div class="action-icon" style="background:rgba(34,197,94,0.1)">👷</div>
         <div class="action-body"><div class="action-title">Manpower Tracking</div><div class="action-desc">Daily labor log & budget burn-down per SI</div></div>
+        <div class="action-arrow">›</div>
+      </div>
+      <div class="action-row" onclick="navToTbLog('${pid}')">
+        <div class="action-icon" style="background:rgba(239,68,68,0.1)">🦺</div>
+        <div class="action-body"><div class="action-title">Toolbox Talk Log</div><div class="action-desc">Log weekly safety talks for this job</div></div>
         <div class="action-arrow">›</div>
       </div>
       <div class="action-row" onclick="navToActivity('${pid}')">
