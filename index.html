@@ -2131,6 +2131,229 @@ html.is-phone .nav-back-btn { min-width: 40px; min-height: 40px; }
 .share-preview-col { display:flex; flex-direction:column; gap:10px; }
 .tpl-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
 
+/* ════════════════════════════════════════════════════════════════
+   UI ENHANCEMENTS — visual polish layer
+   ════════════════════════════════════════════════════════════════ */
+/* Font rendering */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+/* Smooth theme switching */
+body, .nav-bar, .left-panel, .right-panel, .modal,
+.folder-card, .proj-card, .action-row, .stat-card,
+.si-row, .folder-row, .field-input, .search-box {
+  transition-property: background-color, border-color, color;
+  transition-duration: 0.2s;
+  transition-timing-function: ease;
+}
+/* Shadow variables */
+:root {
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-md:  0 4px 12px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06);
+  --shadow-lg:  0 8px 24px rgba(0,0,0,0.14), 0 3px 8px rgba(0,0,0,0.08);
+  --shadow-xl:  0 16px 40px rgba(0,0,0,0.20), 0 6px 16px rgba(0,0,0,0.10);
+  --radius-sm:  6px;
+  --radius-md:  10px;
+  --radius-lg:  14px;
+}
+body.theme-dark {
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.30), 0 1px 2px rgba(0,0,0,0.20);
+  --shadow-md:  0 4px 12px rgba(0,0,0,0.45), 0 2px 4px rgba(0,0,0,0.25);
+  --shadow-lg:  0 8px 24px rgba(0,0,0,0.55), 0 3px 8px rgba(0,0,0,0.30);
+  --shadow-xl:  0 16px 40px rgba(0,0,0,0.65), 0 6px 16px rgba(0,0,0,0.40);
+}
+/* ── Compact nav bar — recover vertical space ── */
+.nav-bar {
+  height: 64px !important;
+  padding: 0 14px !important;
+  box-shadow: var(--shadow-sm);
+  border-bottom-color: var(--border) !important;
+}
+.nav-logo {
+  height: 48px !important;
+}
+/* ── Better card hover elevations ── */
+.folder-card:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: var(--shadow-lg) !important;
+  border-color: var(--folder) !important;
+}
+.proj-card:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: var(--shadow-lg) !important;
+  border-color: var(--accent) !important;
+}
+.folder-card, .proj-card {
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease !important;
+}
+/* ── Stat cards — subtle elevation ── */
+.stat-card {
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.15s ease, background-color 0.2s ease !important;
+}
+.stat-card:hover {
+  box-shadow: var(--shadow-md);
+}
+/* ── Action rows — better hover ── */
+.action-row {
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease !important;
+}
+.action-row:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--accent) !important;
+}
+/* ── Button active press states ── */
+.btn-icon:active,
+.btn-nav:active,
+.btn-add:active,
+.btn-photo:active,
+.action-row:active {
+  transform: scale(0.97) !important;
+  opacity: 0.88;
+}
+/* ── Focus rings — accessible, on-brand ── */
+.field-input:focus-visible,
+.search-box:focus-within,
+.filter-input:focus-visible,
+.custom-tag-input-row input:focus-visible {
+  outline: none;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-dim) !important;
+}
+/* ── Enhanced search box focus ── */
+.search-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+/* ── Modal — richer shadow ── */
+.modal {
+  box-shadow: var(--shadow-xl);
+}
+.global-search-box {
+  box-shadow: var(--shadow-xl) !important;
+}
+.modal-overlay,
+.global-search-overlay {
+  backdrop-filter: blur(6px) !important;
+}
+/* ── Toast — polished ── */
+.toast {
+  box-shadow: var(--shadow-lg) !important;
+  border-radius: 10px !important;
+  font-size: 12px !important;
+  padding: 9px 16px !important;
+  letter-spacing: 0.1px;
+}
+.toast.show {
+  transform: translateX(-50%) translateY(0) !important;
+}
+/* ── Scrollbar — slightly more visible ── */
+::-webkit-scrollbar { width: 5px !important; height: 5px !important; }
+::-webkit-scrollbar-thumb { background: var(--border2) !important; border-radius: 4px !important; }
+::-webkit-scrollbar-thumb:hover { background: var(--text3) !important; }
+/* ── Status dots — slightly bigger, better glow radius ── */
+.si-status {
+  width: 8px !important;
+  height: 8px !important;
+}
+.si-status.completed     { box-shadow: 0 0 6px #22c55e !important; }
+.si-status.not-ready     { box-shadow: 0 0 6px var(--red) !important; }
+.si-status.in-progress   { box-shadow: 0 0 6px var(--yellow) !important; }
+.si-status.changed       { box-shadow: 0 0 6px #f97316 !important; }
+.si-status.punch-ongoing { box-shadow: 0 0 6px #a855f7 !important; }
+/* ── Status pills — cleaner active ring ── */
+.status-pill {
+  transition: all 0.15s ease !important;
+  border-radius: 20px !important;
+}
+.status-pill:hover {
+  transform: translateY(-1px);
+}
+.status-pill.active-status {
+  box-shadow: 0 0 0 2px currentColor, 0 2px 6px rgba(0,0,0,0.12) !important;
+}
+/* ── SI rows — smoother transition ── */
+.si-row, .folder-row {
+  transition: background-color 0.12s ease !important;
+}
+.si-row:hover {
+  background: var(--surface2) !important;
+}
+.si-row.active {
+  background: var(--accent-dim) !important;
+}
+.si-row.active::before {
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+}
+/* ── Folder rows ── */
+.folder-row:hover {
+  background: var(--surface2) !important;
+}
+/* ── Left panel header — subtle separator ── */
+.panel-header {
+  background: var(--surface);
+}
+/* ── Autosave indicator — cleaner ── */
+.autosave-indicator {
+  font-size: 10px !important;
+  letter-spacing: 0.2px;
+}
+.autosave-indicator.saved {
+  background: var(--green-dim) !important;
+}
+/* ── Report generator — fix hardcoded colors for dark mode ── */
+.rg-stat-card {
+  background: var(--surface2) !important;
+  border: 1px solid var(--border);
+  border-radius: 8px !important;
+}
+.rg-stat-num { color: var(--text) !important; }
+.rg-stat-label { color: var(--text3) !important; }
+.rg-toc-row { color: var(--text2) !important; border-bottom-color: var(--border) !important; }
+.rg-item-title { color: var(--text) !important; }
+.rg-item-note { color: var(--text2) !important; }
+.rg-items-pg { background: var(--surface) !important; }
+.rg-progress-bar { background: var(--surface3) !important; }
+/* ── Empty state — better presentation ── */
+.empty-state-icon {
+  opacity: 0.22 !important;
+  filter: grayscale(0.3);
+}
+/* ── Skeleton loaders — smoother pulse ── */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 0.45; }
+}
+/* ── Section group labels — tighten spacing ── */
+.section-group {
+  padding: 9px 13px 3px !important;
+}
+/* ── Proj card photo area — richer placeholder ── */
+.pc-photo {
+  background: linear-gradient(135deg, var(--surface3) 0%, var(--surface2) 100%) !important;
+}
+/* ── Schedule grid ── */
+.week-cell.editable:hover {
+  background: var(--accent-dim) !important;
+}
+/* ── Context menu / dropdowns ── */
+.ctx-menu {
+  box-shadow: var(--shadow-xl) !important;
+  border-radius: var(--radius-lg) !important;
+}
+/* ── Conditions tag hover ── */
+.cond-tag {
+  transition: all 0.12s ease !important;
+}
+.cond-tag:hover {
+  transform: translateY(-1px);
+}
 </style>
 
 </head>
