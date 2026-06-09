@@ -2134,6 +2134,7 @@ html.is-phone .nav-back-btn { min-width: 40px; min-height: 40px; }
 /* ════════════════════════════════════════════════════════════════
    MODERNISED UI v2 — full visual overhaul
    ════════════════════════════════════════════════════════════════ */
+
 /* ── Extended design tokens ──────────────────────────────────── */
 :root {
   --sh-xs:  0 1px 2px rgba(0,0,0,0.06);
@@ -2163,12 +2164,14 @@ body.theme-dark {
   --glass:        rgba(18,24,38,0.84);
   --glass-border: rgba(255,255,255,0.07);
 }
+
 /* ── Base rendering ──────────────────────────────────────────── */
 body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
+
 /* ── Smooth theme colour transitions ─────────────────────────── */
 body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
 .folder-card, .proj-card, .action-row, .stat-card, .si-row, .folder-row,
@@ -2178,6 +2181,7 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
   transition-duration: 0.20s;
   transition-timing-function: ease;
 }
+
 /* ── NAV BAR — frosted glass ─────────────────────────────────── */
 .nav-bar {
   height: 62px !important;
@@ -2192,6 +2196,7 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
   z-index: 100;
 }
 .nav-logo { height: 44px !important; width: auto !important; }
+
 .breadcrumb { gap: 4px !important; }
 .crumb {
   font-size: 13px !important;
@@ -2201,6 +2206,7 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
 }
 .crumb.active { font-weight: 600 !important; }
 .crumb-sep { font-size: 16px !important; opacity: 0.45; }
+
 .nav-back-btn {
   width: 34px !important; height: 34px !important;
   border-radius: var(--r-sm) !important;
@@ -2212,6 +2218,7 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
   background: var(--accent-dim) !important;
   transform: translateX(-1px);
 }
+
 /* Nav icon buttons */
 .btn-icon {
   width: 34px !important; height: 34px !important;
@@ -2227,6 +2234,7 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
   transform: translateY(-1px);
 }
 .btn-icon:active { transform: scale(0.91) !important; }
+
 /* ── BANNERS ─────────────────────────────────────────────────── */
 .update-banner {
   background: linear-gradient(90deg, #1e3a8a, #1d4ed8) !important;
@@ -2239,10 +2247,12 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
   border: 1px solid rgba(255,255,255,0.28) !important;
 }
 .update-banner-btn:hover { background: rgba(255,255,255,0.30) !important; }
+
 /* ── LEFT PANEL ──────────────────────────────────────────────── */
 .left-panel { background: var(--surface) !important; }
 .panel-header { padding: 12px 14px 10px !important; background: var(--surface) !important; }
 .panel-title { font-size: 9px !important; font-weight: 700 !important; letter-spacing: 1.5px !important; }
+
 .btn-add {
   border-radius: var(--r-pill) !important;
   padding: 5px 13px !important;
@@ -2253,6 +2263,7 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
 }
 .btn-add:hover { transform: translateY(-1px); box-shadow: var(--sh-sm) !important; }
 .btn-add:active { transform: scale(0.95) !important; }
+
 /* Search box — pill shape */
 .search-box {
   border-radius: var(--r-pill) !important;
@@ -2267,6 +2278,7 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
 }
 .search-box input { font-size: 13px !important; }
 .search-icon { opacity: 0.5; font-size: 14px !important; }
+
 /* ── FOLDER ROWS ─────────────────────────────────────────────── */
 .folder-row {
   padding: 8px 10px !important;
@@ -2276,7 +2288,9 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
   transition: background 0.13s ease !important;
 }
 .folder-row:hover { background: var(--surface2) !important; }
-.folder-row.active { background: var(--folder-dim) !important; }
+.folder-row.active {
+  background: var(--folder-dim) !important;
+}
 .folder-row.active::before {
   left: -6px !important; top: 50% !important;
   transform: translateY(-50%);
@@ -2290,6 +2304,7 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
 }
 .folder-name { font-size: 13px !important; font-weight: 500 !important; }
 .folder-meta { font-size: 10px !important; margin-top: 1px !important; }
+
 /* ── SI ROWS ─────────────────────────────────────────────────── */
 .section-group {
   padding: 10px 14px 3px !important;
@@ -2331,8 +2346,10 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
 .si-status.punch-ongoing { box-shadow: 0 0 7px #a855f7 !important; }
 .si-drag-handle { opacity: 0.3 !important; }
 .si-drag-handle:hover { opacity: 0.95 !important; }
+
 /* ── BULK ACTION BAR ─────────────────────────────────────────── */
 .bulk-btn { border-radius: var(--r-pill) !important; padding: 5px 11px !important; font-size: 9px !important; }
+
 /* ── RIGHT PANEL GRID WRAPPER ────────────────────────────────── */
 .grid-wrap { padding: 22px !important; }
 .section-divider {
@@ -2345,6 +2362,7 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
   background: var(--border); border-radius: var(--r-pill);
   opacity: 0.7;
 }
+
 /* ── FOLDER CARDS ────────────────────────────────────────────── */
 .folder-card {
   border-radius: var(--r-lg) !important;
@@ -2373,6 +2391,7 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
 .fc-icon { font-size: 30px !important; }
 .fc-name { font-size: 13px !important; font-weight: 600 !important; line-height: 1.3 !important; }
 .fc-count { font-size: 10px !important; opacity: 0.6; }
+
 /* ── PROJECT CARDS ───────────────────────────────────────────── */
 .proj-card {
   border-radius: var(--r-lg) !important;
@@ -2405,6 +2424,7 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
 .pc-meta { font-size: 10px !important; }
 .pc-stats { margin-top: 9px !important; gap: 5px !important; }
 .stat-pill { border-radius: var(--r-pill) !important; padding: 2px 8px !important; font-size: 9px !important; font-weight: 600 !important; }
+
 /* ── SKELETON LOADERS ────────────────────────────────────────── */
 @keyframes shimmer {
   0%   { background-position: 200% 0; }
@@ -2417,6 +2437,7 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
   background-size: 200% 100% !important;
   animation: shimmer 1.5s linear infinite !important;
 }
+
 /* ── ACTION ROWS (quick-access + summary) ────────────────────── */
 .action-row {
   border-radius: var(--r-md) !important;
@@ -2437,6 +2458,7 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
 .action-title { font-size: 13px !important; font-weight: 600 !important; }
 .action-desc { font-size: 11px !important; margin-top: 2px !important; }
 .action-arrow { font-size: 16px !important; opacity: 0.5; }
+
 /* ── PROJECT SUMMARY ─────────────────────────────────────────── */
 .summary-wrap { padding: 22px !important; }
 .proj-summary-card {
@@ -2452,6 +2474,7 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
 .proj-summary-photo { background: linear-gradient(145deg, var(--surface3), var(--surface2)) !important; }
 .meta-item .meta-label { font-size: 8px !important; letter-spacing: 1px !important; }
 .meta-item .meta-val { font-size: 12px !important; font-weight: 500 !important; }
+
 /* Stats row */
 .stats-row { gap: 10px !important; margin-bottom: 18px !important; }
 .stat-card {
@@ -2467,6 +2490,7 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
   letter-spacing: -0.6px !important; line-height: 1 !important; margin-bottom: 4px !important;
 }
 .stat-label { font-size: 10px !important; font-weight: 500 !important; }
+
 /* ── SI EDITOR HEADER ────────────────────────────────────────── */
 .edit-header {
   padding: 13px 18px !important;
@@ -2476,6 +2500,7 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
 }
 .edit-title { font-size: 15px !important; font-weight: 700 !important; letter-spacing: -0.1px !important; }
 .edit-subtitle { font-size: 11px !important; color: var(--text3) !important; margin-top: 3px !important; }
+
 .status-pills { gap: 6px !important; flex-wrap: wrap !important; }
 .status-pill {
   border-radius: var(--r-pill) !important;
@@ -2486,6 +2511,7 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
 .status-pill:hover { transform: translateY(-1px); }
 .status-pill:active { transform: scale(0.94) !important; }
 .status-pill.active-status { box-shadow: 0 0 0 2px currentColor, var(--sh-sm) !important; }
+
 /* ── EDITOR BODY / FIELDS ────────────────────────────────────── */
 .edit-body { padding: 18px !important; }
 .field-group { margin-bottom: 18px !important; }
@@ -2504,6 +2530,7 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
   box-shadow: 0 0 0 3px var(--accent-dim) !important;
 }
 textarea.field-input { min-height: 88px !important; line-height: 1.6 !important; }
+
 /* Condition tags */
 .cond-tag {
   border-radius: var(--r-pill) !important;
@@ -2517,15 +2544,16 @@ textarea.field-input { min-height: 88px !important; line-height: 1.6 !important;
 }
 .cond-tag:active { transform: scale(0.95) !important; }
 .cond-tag.selected { background: var(--accent-dim) !important; border-color: var(--accent) !important; color: var(--accent) !important; }
+
 /* Focus rings */
 .field-input:focus-visible,
-.search-box:focus-within,
 .filter-input:focus-visible,
 .custom-tag-input-row input:focus-visible {
   outline: none !important;
   border-color: var(--accent) !important;
   box-shadow: 0 0 0 3px var(--accent-dim) !important;
 }
+
 /* ── PHOTO SECTION ───────────────────────────────────────────── */
 .btn-photo {
   border-radius: var(--r-sm) !important;
@@ -2540,6 +2568,7 @@ textarea.field-input { min-height: 88px !important; line-height: 1.6 !important;
 .btn-photo.camera:hover { opacity: 0.92; transform: translateY(-1px) !important; }
 .btn-photo.import:hover { transform: translateY(-1px) !important; }
 .btn-photo:active { transform: scale(0.96) !important; }
+
 .photo-grid { gap: 8px !important; }
 .photo-card {
   border-radius: var(--r-sm) !important;
@@ -2548,6 +2577,7 @@ textarea.field-input { min-height: 88px !important; line-height: 1.6 !important;
 }
 .photo-card:hover { transform: scale(1.04) !important; box-shadow: var(--sh-md) !important; border-color: var(--accent) !important; }
 .photo-card:active { transform: scale(0.97) !important; }
+
 /* ── BOTTOM SAVE BAR ─────────────────────────────────────────── */
 .save-bar {
   background: var(--surface) !important;
@@ -2572,6 +2602,7 @@ textarea.field-input { min-height: 88px !important; line-height: 1.6 !important;
   border-color: rgba(34,197,94,0.32) !important;
   background: var(--green-dim) !important;
 }
+
 /* ── MODAL ───────────────────────────────────────────────────── */
 .modal-overlay {
   backdrop-filter: blur(10px) !important;
@@ -2590,6 +2621,7 @@ textarea.field-input { min-height: 88px !important; line-height: 1.6 !important;
 @media (max-width:640px) {
   .modal { border-radius: var(--r-xl) var(--r-xl) 0 0 !important; }
 }
+
 /* ── GLOBAL SEARCH ───────────────────────────────────────────── */
 .global-search-overlay {
   backdrop-filter: blur(14px) !important;
@@ -2609,6 +2641,7 @@ textarea.field-input { min-height: 88px !important; line-height: 1.6 !important;
 .gs-result-title { font-size: 13px !important; font-weight: 500 !important; }
 .gs-result-badge { border-radius: var(--r-pill) !important; padding: 2px 9px !important; font-size: 9px !important; }
 .gs-shortcut { border-radius: var(--r-xs) !important; padding: 3px 8px !important; }
+
 /* ── TOAST ───────────────────────────────────────────────────── */
 .toast {
   border-radius: var(--r-pill) !important;
@@ -2622,11 +2655,13 @@ textarea.field-input { min-height: 88px !important; line-height: 1.6 !important;
 }
 .toast.show { transform: translateX(-50%) translateY(0) !important; }
 .toast.green { border-color: var(--green) !important; color: var(--green) !important; background: var(--green-dim) !important; }
+
 /* ── SCROLLBARS ──────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 4px !important; height: 4px !important; }
 ::-webkit-scrollbar-track { background: transparent !important; }
 ::-webkit-scrollbar-thumb { background: var(--border2) !important; border-radius: var(--r-pill) !important; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text3) !important; }
+
 /* ── SORT / FILTER ───────────────────────────────────────────── */
 .sort-btn {
   border-radius: var(--r-pill) !important;
@@ -2637,10 +2672,12 @@ textarea.field-input { min-height: 88px !important; line-height: 1.6 !important;
   border-radius: var(--r-pill) !important; padding: 6px 13px !important;
 }
 .filter-input:focus { border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--accent-dim) !important; }
+
 /* ── EMPTY STATE ─────────────────────────────────────────────── */
 .empty-state { gap: 12px !important; }
 .empty-state-icon { font-size: 48px !important; opacity: 0.14 !important; filter: grayscale(0.3) !important; }
 .empty-state-text { font-size: 13px !important; line-height: 1.65 !important; }
+
 /* ── EMPTY PROJECT CTA ───────────────────────────────────────── */
 .empty-project-box { border-radius: var(--r-lg) !important; border: 1.5px dashed var(--border) !important; }
 .btn-project-cta {
@@ -2650,6 +2687,7 @@ textarea.field-input { min-height: 88px !important; line-height: 1.6 !important;
 }
 .btn-project-cta:hover { transform: translateY(-1px) !important; box-shadow: var(--sh-lg) !important; opacity: 0.92; }
 .btn-project-cta:active { transform: scale(0.97) !important; }
+
 /* ── CONTEXT MENU ────────────────────────────────────────────── */
 .ctx-menu {
   border-radius: var(--r-md) !important;
@@ -2660,6 +2698,7 @@ textarea.field-input { min-height: 88px !important; line-height: 1.6 !important;
   overflow: hidden !important;
 }
 .ctx-item { transition: background 0.1s ease !important; }
+
 /* ── REPORT GENERATOR — dark mode colour fixes ───────────────── */
 .rg-stat-card { background: var(--surface2) !important; border: 1px solid var(--border) !important; border-radius: var(--r-sm) !important; }
 .rg-stat-num { color: var(--text) !important; }
@@ -2678,17 +2717,20 @@ textarea.field-input { min-height: 88px !important; line-height: 1.6 !important;
 .rg-preview-wrap { padding: 24px !important; }
 .rg-page { border-radius: var(--r-sm) !important; }
 .rg-tab { font-size: 11px !important; font-weight: 600 !important; }
+
 /* ── ENV / SENSOR CARDS ──────────────────────────────────────── */
 .env-sensor-card { border-radius: var(--r-lg) !important; box-shadow: var(--sh-sm) !important; }
 .env-upload-btn { border-radius: var(--r-pill) !important; }
 .env-preset-btn { border-radius: var(--r-pill) !important; }
 .env-preset-btn.active { background: var(--accent-dim) !important; border-color: var(--accent) !important; color: var(--accent) !important; }
 .env-zone-btn { border-radius: var(--r-sm) !important; }
+
 /* ── SCHEDULE GRID ───────────────────────────────────────────── */
 .week-grid { border-radius: var(--r-md) !important; box-shadow: var(--sh-sm) !important; }
 .week-cell.editable:hover { background: var(--accent-dim) !important; }
 .schedule-export-btn { border-radius: var(--r-pill) !important; }
 .sched-nav-btn { border-radius: var(--r-sm) !important; }
+
 /* ── MOBILE BOTTOM NAV ───────────────────────────────────────── */
 .mobile-bottom-nav {
   background: var(--glass) !important;
@@ -2697,17 +2739,86 @@ textarea.field-input { min-height: 88px !important; line-height: 1.6 !important;
   border-top: 1px solid var(--glass-border) !important;
 }
 .mbn-label { font-size: 9px !important; letter-spacing: 0.3px !important; }
+
 /* ── SECTION MANAGER ─────────────────────────────────────────── */
 .section-mgr-item { border-radius: var(--r-sm) !important; }
 .section-mgr-move { border-radius: var(--r-xs) !important; }
+
 /* ── PROJ TYPE BADGE ─────────────────────────────────────────── */
 .proj-type-badge { border-radius: var(--r-pill) !important; }
+
 /* ── AUDITOR GROUP HEADER ────────────────────────────────────── */
 .auditor-group-header .agh-count { border-radius: var(--r-pill) !important; }
+
 /* ── TOWER / ROOM WIDGET ─────────────────────────────────────── */
 .tw-progress-bar, .tw-progress-fill { border-radius: var(--r-pill) !important; }
 .tw-badge { border-radius: var(--r-pill) !important; }
 .tw-room-row { border-radius: var(--r-sm) !important; }
+
+/* ── NAV OVERFLOW MENU (option A) ────────────────────────────── */
+.nav-actions { position: relative; }
+.nav-overflow-menu {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-xl);
+  min-width: 178px;
+  z-index: 500;
+  overflow: hidden;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.nav-overflow-menu.open { display: block; }
+.nav-overflow-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 15px;
+  font-size: 12px;
+  font-family: var(--sans);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.12s ease;
+  user-select: none;
+}
+.nav-overflow-item:hover { background: var(--surface2); }
+.nav-overflow-item:active { background: var(--surface3); }
+.nav-overflow-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 3px 0;
+}
+
+/* ── LEFT PANEL HIDDEN ON ROOT (option C) ────────────────────── */
+.left-panel.is-hidden { display: none !important; }
+
+/* ── QUICK ACCESS TOGGLE (option B) ─────────────────────────── */
+.qa-section-divider { cursor: pointer; user-select: none; }
+.qa-section-divider:hover { color: var(--accent) !important; }
+.qa-chevron {
+  font-size: 11px;
+  opacity: 0.55;
+  transition: transform 0.22s var(--ease-out);
+  display: inline-block;
+  margin-left: 4px;
+}
+.qa-chevron.open { transform: rotate(90deg); }
+.qa-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 24px;
+  overflow: hidden;
+  transition: max-height 0.28s var(--ease-out), opacity 0.22s ease;
+  max-height: 0;
+  opacity: 0;
+}
+.qa-grid.open { max-height: 400px; opacity: 1; }
+
 </style>
 
 </head>
@@ -2730,12 +2841,18 @@ textarea.field-input { min-height: 88px !important; line-height: 1.6 !important;
   </div>
   <div class="nav-actions">
     <div class="btn-icon" onclick="openGlobalSearch()" title="Global Search (⌘K)">⌕</div>
-    <div class="btn-icon" onclick="syncChanges()" title="Sync" id="sync-btn">🔄</div>
-    <div class="btn-icon" onclick="showThemeModal()" title="Themes">🎨</div>
-    <div class="btn-icon" onclick="showShareModal()" title="Share">📤</div>
     <div class="btn-icon" onclick="handleAdd()" title="Add">＋</div>
-    <div class="btn-icon" onclick="showLoginModal()" id="admin-lock-btn" title="Admin Login">🔓</div>
-    <div class="btn-icon" onclick="toggleNotifications()" id="notif-btn" title="Notifications" style="position:relative">🔔</div>
+    <!-- overflow toggle -->
+    <div class="btn-icon nav-overflow-btn" onclick="toggleNavOverflow(event)" title="More options" style="font-size:18px;letter-spacing:1px">⋯</div>
+    <!-- overflow dropdown -->
+    <div class="nav-overflow-menu" id="nav-overflow-menu">
+      <div class="nav-overflow-item" onclick="syncChanges();closeNavOverflow()" id="sync-btn" title="Sync">🔄 <span>Sync</span></div>
+      <div class="nav-overflow-item" onclick="showThemeModal();closeNavOverflow()">🎨 <span>Themes</span></div>
+      <div class="nav-overflow-item" onclick="showShareModal();closeNavOverflow()">📤 <span>Share</span></div>
+      <div class="nav-overflow-divider"></div>
+      <div class="nav-overflow-item" onclick="showLoginModal();closeNavOverflow()" title="Admin Login"><span id="admin-lock-btn">🔓</span> <span>Admin Login</span></div>
+      <div class="nav-overflow-item" onclick="toggleNotifications();closeNavOverflow()" id="notif-btn" style="position:relative">🔔 <span>Notifications</span></div>
+    </div>
     <div id="user-chip" onclick="showUserMenu()" title="Account"
       style="display:flex;align-items:center;gap:5px;padding:4px 9px;border-radius:8px;
       border:1px solid var(--border);background:var(--surface2);cursor:pointer;
@@ -4294,6 +4411,20 @@ function navToRoot() {
   stack = [];
   render();
 }
+
+// ── NAV OVERFLOW MENU (option A) ─────────
+function toggleNavOverflow(e) {
+  if (e) e.stopPropagation();
+  document.getElementById('nav-overflow-menu').classList.toggle('open');
+}
+function closeNavOverflow() {
+  document.getElementById('nav-overflow-menu')?.classList.remove('open');
+}
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.nav-overflow-btn') && !e.target.closest('#nav-overflow-menu')) {
+    closeNavOverflow();
+  }
+});
 function navToFolder(fid)         { stack=[{view:'folder',folderId:fid}]; render(); }
 function navToProject(pid,fid)    {
   // Keep folder in stack if provided
@@ -4462,7 +4593,13 @@ function updateMobileNav(r) {
 
 // ── LEFT PANEL ───────────────────────────
 function renderLeft(r) {
-  // NEW: Do not waste CPU building the left panel if it is hidden on mobile
+  // Hide left panel on root home screen (option C) — folders shown in main grid instead
+  const leftPanel = document.querySelector('.left-panel');
+  const isRootView = !r.folderId && !r.projectId &&
+    !['contacts','toolbox','awi','resources','tblog','env','schedule','manpower','activity','floorplan'].includes(r.view);
+  if (leftPanel) leftPanel.classList.toggle('is-hidden', isRootView);
+
+  // Do not waste CPU building the left panel if it is hidden on mobile
   if (document.documentElement.classList.contains('is-phone')) {
     return;
   }
@@ -4842,9 +4979,12 @@ function show(id) {
 // ROOT VIEW
 function buildRootView() {
   const el=document.getElementById('v-root');
+  const qaOpen = localStorage.getItem('qa-open') === 'true';
   el.innerHTML=`<div class="grid-wrap">
-    <div class="section-divider">Quick Access</div>
-    <div class="folder-grid" style="margin-bottom:24px">
+    <div class="section-divider qa-section-divider" onclick="toggleQA()">
+      Quick Access <span class="qa-chevron${qaOpen?' open':''}">▸</span>
+    </div>
+    <div class="qa-grid${qaOpen?' open':''}">
       <div class="folder-card" onclick="navToContacts()" style="border-color:var(--accent-dim)">
         <div class="fc-icon">📇</div>
         <div class="fc-name">Contact Book</div>
@@ -4853,7 +4993,7 @@ function buildRootView() {
       <div class="folder-card" onclick="navToToolbox()" style="border-color:rgba(239,68,68,0.25)">
         <div class="fc-icon">🦺</div>
         <div class="fc-name">Toolbox Talk</div>
-        <div class="fc-count">Browse & Print</div>
+        <div class="fc-count">Browse &amp; Print</div>
       </div>
       <div class="folder-card" onclick="navToAWI()" style="border-color:rgba(245,158,11,0.3)">
         <div class="fc-icon">📐</div>
@@ -4884,6 +5024,14 @@ function buildRootView() {
       </div>
     </div>
   </div>`;
+}
+function toggleQA() {
+  const grid = document.querySelector('.qa-grid');
+  const chev = document.querySelector('.qa-chevron');
+  if (!grid) return;
+  const nowOpen = grid.classList.toggle('open');
+  if (chev) chev.classList.toggle('open', nowOpen);
+  localStorage.setItem('qa-open', nowOpen ? 'true' : 'false');
 }
 
 function folderCardHTML(f) {
