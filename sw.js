@@ -1,6 +1,6 @@
 // ADH Field Audit Tool — Service Worker
 // Cache version — bump this string to force update
-const CACHE_VERSION = 'adh-audit-v8.07';
+const CACHE_VERSION = 'adh-audit-v8.10';
 
 // Resources to pre-cache on install
 const PRECACHE = [
