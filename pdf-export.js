@@ -65,23 +65,37 @@
     return (s || 'pending').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   }
 
-  // ── HTML LIVE PREVIEW ────────────────────────────────────────────────────────
-  // Returns a full HTML document string — load into an iframe via blob: URL.
+  // ── HTML LIVE PREVIEW (layout-accurate: mirrors the exported PDF) ────────────
+  // Renders both layout variants (Branded Grid / Clean Flow) combined with 5 color themes.
+  // Employs a pure CSS scale wrapper so 560px layouts responsively fit any Mobile or iPad screen.
   window.buildPDFPreviewHTML = function (proj, opts) {
     opts = opts || {};
-    const tplKey = THEME_ALIAS[opts.theme] || 'classic';
-    const T      = PDF_TEMPLATES[tplKey] || PDF_TEMPLATES.classic;
-    const primary       = opts.primary      || T.cAccent;
-    const inclCover     = opts.inclCover     !== false;
-    const inclPhotos    = opts.inclPhotos    !== false;
-    const inclNotes     = opts.inclNotes     !== false;
-    const inclTags      = opts.inclTags      !== false;
-    const inclCoverNotes= opts.coverNotes    !== false;
-    const reportTitle   = opts.reportTitle   || 'Site Conditions Report';
-    const whiteLabel    = opts.whiteLabel    || false;
-    const branding      = opts.branding      || {};
-    const company       = opts.company       || { name: 'Allegheny Millwork', abbr: 'AMI', color: '#8B1A1A' };
-    const filter        = opts.filter        || 'all';
+
+    const layoutKey = (opts.layout === 'flow') ? 'flow' : 'grid';
+    const themeKey  = opts.theme || 'classic';
+    const tpl       = resolveTemplate(themeKey);
+
+    // Map resolved template colors dynamically
+    const P = {
+      bg: tpl.bgPage, ink: tpl.cTitle, text: tpl.cText, sub: tpl.cSub,
+      rule: tpl.cAccent, accent: tpl.cAccent, red: '#c0392b', border: tpl.cBorder, row: tpl.bgRow
+    };
+
+    const FCB = { FC:{bg:'#dcfce7',fg:'#166534'}, UFC:{bg:'#fef3c7',fg:'#92400e'}, NFC:{bg:'#fee2e2',fg:'#991b1b'}, HT:{bg:'#dbeafe',fg:'#1e40af'} };
+    const siLbl = n => String(n||'').replace(/^SI\s+/i,'SI-');
+    const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const capOf = ph => (ph && (ph.caption||ph.note||ph.label||'')) || '';
+    const srcOf = ph => ph?.url || ph?._blobUrl || ph?.data || null;
+
+    const inclCover  = opts.inclCover  !== false;
+    const inclPhotos = opts.inclPhotos !== false;
+    const inclNotes  = opts.inclNotes  !== false;
+    const inclTags   = opts.inclTags   !== false;
+    const reportTitle= opts.reportTitle || 'Site Conditions Report';
+    const whiteLabel = opts.whiteLabel || false;
+    const branding   = opts.branding   || {};
+    const filter     = opts.filter     || 'all';
+    const today      = new Date().toLocaleDateString();
 
     const allItems = (proj.items || []).filter(i => !i._deleted);
     const items = allItems.filter(i => {
@@ -96,202 +110,259 @@
     const punch     = items.filter(i => i.status === 'punch-ongoing').length;
     const notReady  = items.filter(i => i.status === 'not-ready').length;
     const inProg    = items.filter(i => i.status === 'in-progress').length;
-    const pending   = total - completed - punch - notReady - inProg;
+    const pending   = items.filter(i => i.status === 'pending').length;
     const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
-    const logoHTML = (!whiteLabel && branding.logo)
-      ? `<img src="${branding.logo}" style="height:32px;max-width:150px;object-fit:contain;display:block">`
-      : (!whiteLabel
-          ? `<div style="font-size:12px;font-weight:900;color:${company.color||T.cHeader};letter-spacing:0.5px">${(company.name||'').split('(')[0].trim().toUpperCase()}</div>`
-          : '');
+    const logoImg = (h) => (!whiteLabel && branding.logo)
+      ? `<img src="${branding.logo}" style="height:${h}px;max-width:170px;object-fit:contain;display:block">`
+      : '';
 
-    // Cover header style by template
-    const coverHdrStyle = tplKey === 'minimal'
-      ? `background:${T.bgHeader};border-bottom:2.5px solid ${T.cAccent}`
-      : `background:linear-gradient(155deg,${T.coverGradient[0]},${T.coverGradient[1]})`;
-
-    const statRow = [
-      { label: 'Total',     val: total,     color: T.cSub   },
-      { label: 'Complete',  val: completed, color: '#22c55e' },
-      { label: 'Punch',     val: punch,     color: '#a855f7' },
-      { label: 'Not Ready', val: notReady,  color: '#ef4444' },
-      { label: 'In Prog',   val: inProg,    color: '#fbbf24' },
-      { label: 'Pending',   val: pending,   color: '#6b7280' },
-    ].map(s => `
-      <div style="text-align:center;padding:5px 2px;background:${T.bgRow};
-        border:1px solid ${T.cBorder};border-radius:4px;flex:1">
-        <div style="font-size:14px;font-weight:800;color:${s.color}">${s.val}</div>
-        <div style="font-size:7px;color:${T.cSub};margin-top:1px">${s.label}</div>
+    // ── Stats strip (shared) ──────────────────────────────────────────────────
+    const statCells = [
+      ['Total', total, P.sub], ['Completed', completed, '#16a34a'], ['Punch', punch, '#a855f7'],
+      ['Not Ready', notReady, '#dc2626'], ['In Prog', inProg, '#d97706'], ['Pending', pending, '#6b7280'],
+    ].map(([l,v,c]) => `
+      <div style="flex:1;text-align:left;padding:7px 8px;background:${P.row};border:1px solid ${P.border};border-radius:4px">
+        <div style="font-size:16px;font-weight:800;color:${c}">${v}</div>
+        <div style="font-size:7px;color:${P.sub};margin-top:1px">${l}</div>
       </div>`).join('');
-
-    const coverPage = !inclCover ? '' : `
-      <div class="page">
-        <div class="page-num">1</div>
-        <div style="${coverHdrStyle};padding:20px 22px 18px;position:relative;overflow:hidden;min-height:70px">
-          ${logoHTML}
-          <div style="font-size:9px;font-weight:700;color:${T.cHeader};opacity:0.8;
-            letter-spacing:2px;text-transform:uppercase;margin-top:${branding.logo?7:0}px">${reportTitle}</div>
-          ${tplKey==='modern'?`<div style="position:absolute;right:-15px;top:-15px;width:100px;height:100px;
-            border-radius:50%;background:rgba(56,189,248,0.07)"></div>`:''}
-          ${tplKey==='photographic'?`<div style="position:absolute;right:0;top:0;bottom:0;width:3px;
-            background:${T.cAccent}"></div>`:''}
-        </div>
-        <div style="padding:14px 22px 10px;background:${T.bgPage}">
-          <div style="font-size:17px;font-weight:800;color:${T.cTitle};line-height:1.25;margin-bottom:10px">
-            ${proj.name||'Unnamed Project'}
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px 16px;margin-bottom:12px">
-            ${[['Client',proj.client],['Company',proj.company],['Auditor',proj.auditor],['Date',proj.date]].map(([l,v])=>`
-              <div>
-                <div style="font-size:6.5px;font-weight:700;color:${T.cSub};text-transform:uppercase;letter-spacing:0.5px">${l}</div>
-                <div style="font-size:9px;color:${T.cText};font-weight:600">${v||'—'}</div>
-              </div>`).join('')}
-          </div>
-          <div style="height:4px;background:${T.cBorder};border-radius:2px;margin-bottom:4px">
-            <div style="height:4px;width:${pct}%;background:${primary};border-radius:2px"></div>
-          </div>
-          <div style="font-size:7.5px;color:${T.cSub};margin-bottom:12px">${pct}% Complete</div>
-          <div style="display:flex;gap:4px;margin-bottom:12px">${statRow}</div>
-          ${inclCoverNotes?`
-            <div style="font-size:8px;color:${T.cSub};padding:7px 10px;background:${T.bgAlt};
-              border-left:3px solid ${primary};border-radius:0 4px 4px 0;margin-bottom:6px">
-              ${total} site items · ${completed} completed · ${total-completed} remaining
-            </div>`:''}
-        </div>
-        <div class="pg-footer" style="background:${T.bgHeader}">
-          <span style="color:${T.cHeader}">${proj.name||''}</span>
-          <span style="color:${T.cHeader}">Report Date: ${new Date().toLocaleDateString()}</span>
-        </div>
+    const statsBlock = `
+      <div style="display:flex;gap:5px">${statCells}</div>
+      <div style="height:4px;background:${P.border};border-radius:2px;margin-top:8px">
+        <div style="height:4px;width:${pct}%;background:${P.accent};border-radius:2px"></div>
       </div>`;
 
-    let pgNum = inclCover ? 2 : 1;
+    const metaCols = [['Client',proj.client],['Company',proj.company],['Auditor',proj.auditor]]
+      .filter(([,v]) => v).map(([l,v]) => `
+        <div style="min-width:0">
+          <div style="font-size:7px;font-weight:700;color:${P.sub};text-transform:uppercase;letter-spacing:0.5px">${l}</div>
+          <div style="font-size:11px;color:${P.text};font-weight:600;margin-top:2px">${esc(v)}</div>
+        </div>`).join('');
 
-    const sectionPages = sections.map(sec => {
-      const secItems = items.filter(i => i.sectionId === sec.id);
-      if (!secItems.length) return '';
-
-      const itemsHTML = secItems.slice(0, 7).map(item => {
-        const sc  = statusColor(item.status);
-        const sl  = statusLabel(item.status);
-        const photoCount = (item.photos||[]).length;
-        const photosHTML = inclPhotos && photoCount > 0 ? `
-          <div style="display:flex;gap:3px;margin-top:5px;flex-wrap:wrap">
-            ${(item.photos||[]).slice(0,4).map(ph => {
-              const src = ph?.url || ph?._blobUrl || ph?.data || null;
-              return src
-                ? `<img src="${src}" style="width:40px;height:29px;object-fit:cover;
-                    border-radius:3px;border:1px solid ${T.cBorder}" onerror="this.style.display='none'">`
-                : `<div style="width:40px;height:29px;background:${T.cBorder};border-radius:3px;
-                    display:flex;align-items:center;justify-content:center;font-size:8px;color:${T.cSub}">📷</div>`;
-            }).join('')}
-            ${photoCount>4?`<div style="width:40px;height:29px;background:${T.cTag};border-radius:3px;
-              display:flex;align-items:center;justify-content:center;font-size:8px;color:${T.cTagText}">
-              +${photoCount-4}</div>`:''}
-          </div>` : '';
-
-        return `
-          <div style="position:relative;background:${T.bgRow};border:1px solid ${T.cBorder};
-            border-radius:4px;overflow:hidden;padding:7px 8px 7px 13px;margin-bottom:5px">
-            <div style="position:absolute;left:0;top:0;bottom:0;width:3px;background:${sc}"></div>
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
-              <span style="font-size:7px;font-weight:700;color:${T.cSub}">${item.num||''}</span>
-              <span style="font-size:6.5px;font-weight:700;color:${sc};padding:1px 5px;
-                background:${sc}20;border-radius:8px">● ${sl}</span>
+    // ── COVER ─────────────────────────────────────────────────────────────────
+    let coverPage = '';
+    if (inclCover && layoutKey === 'grid') {
+      const coverPhoto = proj.coverPhoto
+        ? `<div style="flex:0 0 165px"><img src="${proj.coverPhoto}" style="width:165px;height:218px;object-fit:cover;border:1px solid ${P.border};border-radius:3px;display:block"></div>` : '';
+      coverPage = `
+        <div class="page-container">
+        <div class="page-scaler" style="padding:34px 37px">
+          <div class="page-num">1</div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+            <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;color:${P.sub};text-transform:uppercase;margin-top:4px">${esc(reportTitle)}</div>
+            ${logoImg(38)}
+          </div>
+          <div style="display:flex;gap:20px;margin-top:18px">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:30px;font-weight:800;color:${P.ink};line-height:1.08">${esc(proj.name||'Untitled Project')}</div>
+              <div style="height:5px;background:${P.rule};margin:12px 0 14px"></div>
+              <div style="font-size:14px;font-weight:700;color:${P.text};margin-bottom:18px">${esc(proj.date||today)}</div>
+              <div style="display:flex;flex-direction:column;gap:13px">${metaCols}</div>
             </div>
-            <div style="font-size:9.5px;font-weight:700;color:${T.cTitle};line-height:1.3;margin-bottom:2px">
-              ${item.title||''}
+            ${coverPhoto}
+          </div>
+          <div style="margin-top:auto">${statsBlock}
+            <div style="font-size:8px;color:${P.sub};margin-top:10px">Generated ${today}</div>
+          </div>
+        </div></div>`;
+    } else if (inclCover && layoutKey === 'flow') {
+      const bg = proj.coverPhoto
+        ? `background-image:url('${proj.coverPhoto}');background-size:cover;background-position:center`
+        : `background:${P.ink}`;
+      coverPage = `
+        <div class="page-container">
+        <div class="page-scaler" style="padding:0">
+          <div class="page-num" style="color:#fff">1</div>
+          <div style="position:relative;height:470px;${bg}">
+            <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,12,24,0.62),rgba(8,12,24,0.28) 32%,rgba(8,12,24,0.58))"></div>
+            <div style="position:relative;padding:30px 37px">
+              <div style="font-size:30px;font-weight:800;color:#fff;line-height:1.08">${esc(proj.name||'Untitled Project')}</div>
+              <div style="font-size:9px;font-weight:600;letter-spacing:1.5px;color:#cbd5e1;text-transform:uppercase;margin-top:7px">${esc(reportTitle)}</div>
             </div>
-            ${item.statusCode?`<div style="font-size:8px;color:${T.cText};margin-bottom:2px">
-              Field Check: [${item.statusCode}] ${item.statusText||''}</div>`:''}
-            ${inclNotes&&item.notes?`<div style="font-size:7.5px;color:${T.cSub};line-height:1.4;
-              max-height:32px;overflow:hidden">${(item.notes||'').slice(0,140)}${item.notes.length>140?'…':''}</div>`:''}
-            ${inclTags&&item.tags?.length?`<div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:3px">
-              ${(item.tags||[]).slice(0,4).map(t=>`<span style="font-size:6px;padding:1px 5px;
-                background:${T.cTag};color:${T.cTagText};border-radius:4px">${t}</span>`).join('')}
-            </div>`:''}
-            ${photosHTML}
+            <div style="position:absolute;left:0;right:0;bottom:0;padding:22px 37px;display:flex;justify-content:space-between;align-items:flex-end;gap:12px">
+              <div>${logoImg(30)}</div>
+              <div style="color:#e2e8f0;font-weight:700;font-size:12px">${esc(proj.date||today)}</div>
+            </div>
+          </div>
+          <div style="padding:24px 37px">
+            <div style="display:flex;gap:24px">${metaCols}</div>
+            <div style="margin-top:20px">${statsBlock}</div>
+          </div>
+        </div></div>`;
+    }
+
+    // ── Item renderer (shared body) ───────────────────────────────────────────
+    function itemBlock(item) {
+      const isDone = item.status === 'completed';
+      const statusLine = isDone
+        ? `<span style="color:${P.red};font-weight:700;font-size:11px">Completed: Yes</span>`
+        : `<span style="color:${statusColor(item.status)};font-weight:700;font-size:11px">Status: ${statusLabel(item.status)}</span>`;
+
+      let fc = '';
+      if (item.statusCode) {
+        const b = FCB[item.statusCode] || { bg:'#f3f4f6', fg:'#374151' };
+        fc = `<span style="display:inline-block;background:${b.bg};color:${b.fg};font-weight:700;font-size:9px;padding:2px 7px;border-radius:4px;vertical-align:middle">${esc(item.statusCode)}</span>${item.statusText?`<span style="font-size:10px;color:${P.text};margin-left:6px">${esc(item.statusText)}</span>`:''}`;
+      } else if (item.statusText) {
+        fc = `<span style="font-size:10px;color:${P.text}">${esc(item.statusText)}</span>`;
+      }
+
+      const notes = (inclNotes && item.notes && item.notes.trim())
+        ? `<div style="font-size:10px;color:${P.text};line-height:1.5;margin-top:5px;white-space:pre-wrap">${esc(item.notes.trim())}</div>` : '';
+
+      const dparts = [];
+      if (item.deliveryDate)       dparts.push('Delivery: ' + esc(item.deliveryDate));
+      if (item.dueDate)            dparts.push('Install: ' + esc(item.dueDate));
+      if (item.projectedStartDate) dparts.push('Proj. Start: ' + esc(item.projectedStartDate));
+      if (item.punchDate)          dparts.push('Punch: ' + esc(item.punchDate));
+      const dates = dparts.length
+        ? `<div style="font-size:9px;font-weight:700;color:${P.sub};margin-top:6px">${dparts.join('&nbsp;&nbsp;&bull;&nbsp;&nbsp;')}</div>` : '';
+
+      const tags = (inclTags && item.tags && item.tags.length)
+        ? `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:6px">${item.tags.map(t=>`<span style="font-size:8px;padding:2px 6px;background:${P.row};border:1px solid ${P.border};color:${P.sub};border-radius:4px">${esc(t)}</span>`).join('')}</div>` : '';
+
+      const textBlock = `
+        <div style="font-size:15px;font-weight:800;color:${P.ink};letter-spacing:0.3px">${esc(siLbl(item.num))}</div>
+        <div style="font-size:13px;font-weight:700;color:${P.ink};line-height:1.25;margin-top:2px">${esc(item.title||'')}</div>
+        <div style="margin-top:5px">${statusLine}</div>
+        ${fc?`<div style="margin-top:5px">${fc}</div>`:''}
+        ${notes}${dates}${tags}`;
+
+      const photos = inclPhotos ? (item.photos || []) : [];
+      const cell = (ph, idx) => {
+        const src = srcOf(ph), cap = capOf(ph);
+        return `<div style="position:relative;width:100%;aspect-ratio:4/3;background:${P.row};border:1px solid ${P.border};border-radius:4px;overflow:hidden">
+            ${src?`<img src="${src}" loading="lazy" style="width:100%;height:100%;object-fit:cover" onerror="this.style.opacity=0">`:`<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:16px;color:${P.sub}">📷</div>`}
+            <div style="position:absolute;top:4px;right:4px;width:16px;height:16px;border-radius:50%;background:#1f2937;color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">${idx}</div>
+          </div>${cap?`<div style="font-size:8px;color:${P.sub};margin-top:2px;line-height:1.3">${esc(cap)}</div>`:''}`;
+      };
+
+      let body;
+      if (photos.length === 1) {
+        body = `<div style="display:flex;gap:12px;align-items:flex-start">
+            <div style="flex:0 0 150px">${cell(photos[0],1)}</div>
+            <div style="flex:1;min-width:0">${textBlock}</div>
           </div>`;
-      }).join('');
+      } else if (photos.length >= 2) {
+        const cols = (photos.length === 2 || photos.length === 4) ? 2 : 3;
+        const basis = cols === 2 ? 'calc(50% - 3px)' : 'calc(33.333% - 4px)';
+        const grid = `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+            ${photos.map((p,i)=>`<div style="flex:0 0 ${basis};max-width:${basis}">${cell(p,i+1)}</div>`).join('')}
+          </div>`;
+        body = `<div>${textBlock}${grid}</div>`;
+      } else {
+        body = `<div>${textBlock}</div>`;
+      }
 
+      const sep = layoutKey === 'grid'
+        ? `border-bottom:1px solid ${P.rule}`
+        : `border-bottom:1px solid ${P.border}`;
+      return `<div style="padding:11px 0;${sep}">${body}</div>`;
+    }
+
+    // ── SECTION PAGES ─────────────────────────────────────────────────────────
+    let pgNum = inclCover ? 2 : 1;
+    const sectionHeader = (name, count) => layoutKey === 'grid'
+      ? `<div style="padding:14px 18px 0">
+          <div style="height:3px;background:${P.rule}"></div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0">
+            <span style="font-size:11px;font-weight:800;color:${P.ink};letter-spacing:1px;text-transform:uppercase">${esc(name||'Section')}</span>
+            <span style="font-size:8px;color:${P.sub}">${count} item${count!==1?'s':''}</span>
+          </div>
+          <div style="height:3px;background:${P.rule}"></div>
+        </div>`
+      : `<div style="padding:16px 18px 0">
+          <div style="display:flex;justify-content:space-between;align-items:baseline">
+            <span style="font-size:17px;font-weight:800;color:${P.ink}">${esc(name||'Section')}</span>
+            <span style="font-size:8px;color:${P.sub}">${count} item${count!==1?'s':''}</span>
+          </div>
+          <div style="width:46px;height:3px;background:${P.accent};margin-top:5px"></div>
+        </div>`;
+
+    const renderSection = (name, secItems) => {
       const pg = pgNum++;
       return `
-        <div class="page">
+        <div class="page-container">
+        <div class="page-scaler">
           <div class="page-num">${pg}</div>
-          <div style="background:${T.bgHeader};padding:8px 14px;display:flex;
-            align-items:center;justify-content:space-between">
-            <span style="font-size:8.5px;font-weight:800;color:${T.cHeader};letter-spacing:1px;
-              text-transform:uppercase">${sec.name||'Section'}</span>
-            <span style="font-size:7.5px;color:${T.cHeader};opacity:0.75">
-              ${secItems.length} item${secItems.length!==1?'s':''}</span>
+          ${sectionHeader(name, secItems.length)}
+          <div style="padding:6px 18px 10px;flex:1">
+            ${secItems.map(it => itemBlock(it)).join('')}
           </div>
-          ${tplKey==='photographic'?`<div style="height:2px;background:${T.cAccent}"></div>`:''}
-          ${tplKey==='corporate'?`<div style="height:2px;background:#16a34a"></div>`:''}
-          <div style="padding:8px;background:${T.bgPage};flex:1">
-            ${itemsHTML}
-            ${secItems.length>7?`<div style="text-align:center;font-size:8px;color:${T.cSub};
-              padding:6px 0">…and ${secItems.length-7} more items on subsequent pages</div>`:''}
+          <div class="pg-footer">
+            <span>${esc(proj.name||'')}</span><span>Page ${pg}</span>
           </div>
-          <div class="pg-footer" style="background:${T.bgHeader}">
-            <span style="color:${T.cHeader}">${proj.name||''}</span>
-            <span style="color:${T.cHeader}">Page ${pg}</span>
-          </div>
-        </div>`;
-    }).join('');
+        </div></div>`;
+    };
 
+    const sectionIds = new Set(sections.map(s => s.id));
+    let sectionPages = sections.map(sec => {
+      const secItems = items.filter(i => i.sectionId === sec.id);
+      return secItems.length ? renderSection(sec.name, secItems) : '';
+    }).join('');
+    const orphans = items.filter(i => !sectionIds.has(i.sectionId));
+    if (orphans.length) sectionPages += renderSection('Other Items', orphans);
+
+    // ── SIGNATURE PAGE ────────────────────────────────────────────────────────
     const audSig = branding.auditorSig, cliSig = branding.clientSig;
-    const sigPage = (audSig||cliSig) ? `
-      <div class="page">
+    const sigPage = (audSig || cliSig) ? `
+      <div class="page-container">
+      <div class="page-scaler">
         <div class="page-num">${pgNum}</div>
-        <div style="background:${T.bgHeader};padding:8px 14px">
-          <span style="font-size:8.5px;font-weight:800;color:${T.cHeader};letter-spacing:1px;
-            text-transform:uppercase">Report Sign-Off</span>
-        </div>
-        <div style="padding:18px 22px;background:${T.bgPage};flex:1">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+        ${sectionHeader('Report Sign-Off', 0).replace(/<span style="font-size:8px[^>]*>[^<]*<\/span>/, '')}
+        <div style="padding:18px;flex:1">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:22px">
             <div>
-              <div style="font-size:7.5px;font-weight:700;color:${T.cSub};margin-bottom:8px;
-                text-transform:uppercase;letter-spacing:0.5px">Auditor / Inspector</div>
-              ${audSig?`<img src="${audSig}" style="height:42px;max-width:130px;object-fit:contain;display:block;margin-bottom:6px">`:
-                `<div style="height:42px;border-bottom:1px solid ${T.cBorder};margin-bottom:6px;width:130px"></div>`}
-              <div style="font-size:7px;color:${T.cSub}">Signature &nbsp;&nbsp; Date: ___________</div>
+              <div style="font-size:8px;font-weight:700;color:${P.sub};margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Auditor / Inspector</div>
+              ${audSig?`<img src="${audSig}" style="height:44px;max-width:140px;object-fit:contain;display:block;margin-bottom:6px">`:`<div style="height:44px;border-bottom:1px solid ${P.border};margin-bottom:6px;width:140px"></div>`}
+              <div style="font-size:8px;color:${P.sub}">Signature &nbsp;&nbsp; Date: ___________</div>
             </div>
             <div>
-              <div style="font-size:7.5px;font-weight:700;color:${T.cSub};margin-bottom:8px;
-                text-transform:uppercase;letter-spacing:0.5px">Client / GC</div>
-              ${cliSig?`<img src="${cliSig}" style="height:42px;max-width:130px;object-fit:contain;display:block;margin-bottom:6px">`:
-                `<div style="height:42px;border-bottom:1px solid ${T.cBorder};margin-bottom:6px;width:130px"></div>`}
-              <div style="font-size:7px;color:${T.cSub}">Signature &nbsp;&nbsp; Date: ___________</div>
+              <div style="font-size:8px;font-weight:700;color:${P.sub};margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Client / GC</div>
+              ${cliSig?`<img src="${cliSig}" style="height:44px;max-width:140px;object-fit:contain;display:block;margin-bottom:6px">`:`<div style="height:44px;border-bottom:1px solid ${P.border};margin-bottom:6px;width:140px"></div>`}
+              <div style="font-size:8px;color:${P.sub}">Signature &nbsp;&nbsp; Date: ___________</div>
             </div>
           </div>
         </div>
-        <div class="pg-footer" style="background:${T.bgHeader}">
-          <span style="color:${T.cHeader}">${proj.name||''}</span>
-          <span style="color:${T.cHeader}">Page ${pgNum}</span>
-        </div>
-      </div>` : '';
+        <div class="pg-footer"><span>${esc(proj.name||'')}</span><span>Page ${pgNum}</span></div>
+      </div></div>` : '';
 
     return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#18212f;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
-  padding:20px;display:flex;flex-direction:column;align-items:center;gap:14px;min-height:100vh}
-.page{width:560px;min-height:792px;background:${T.bgPage};
+  padding:20px;display:flex;flex-direction:column;align-items:center;gap:20px;min-height:100vh; overflow-x:hidden; width:100%;}
+.page-container{width:100%;max-width:560px;position:relative;}
+.page-scaler{width:560px;min-height:792px;background:${P.bg};
   box-shadow:0 6px 28px rgba(0,0,0,0.38);border-radius:2px;
-  display:flex;flex-direction:column;position:relative;overflow:hidden}
-.page-num{position:absolute;top:5px;right:9px;font-size:7.5px;font-weight:700;
-  color:${T.cHeader};opacity:0.45;z-index:10}
-.pg-footer{padding:4px 14px;display:flex;justify-content:space-between;
-  align-items:center;margin-top:auto;font-size:6.5px;font-weight:600}
-${tplKey==='minimal'?`.pg-footer{background:transparent!important;border-top:1px solid ${T.cBorder}}
-.pg-footer span{color:${T.cSub}!important}`:''}
-</style></head><body>
+  display:flex;flex-direction:column;position:relative;overflow:hidden;
+  transform-origin:top center;}
+.page-num{position:absolute;top:6px;right:10px;font-size:7.5px;font-weight:700;color:${P.sub};opacity:0.5;z-index:10}
+.pg-footer{padding:6px 18px;display:flex;justify-content:space-between;align-items:center;
+  margin-top:auto;font-size:7px;font-weight:600;color:${P.sub};border-top:1px solid ${P.border}}
+</style>
+<script>
+  function scalePages() {
+    const containers = document.querySelectorAll('.page-container');
+    containers.forEach(c => {
+      const scaler = c.querySelector('.page-scaler');
+      if(scaler) {
+        const scale = c.clientWidth / 560;
+        scaler.style.transform = 'scale(' + scale + ')';
+        c.style.height = (scaler.offsetHeight * scale) + 'px';
+      }
+    });
+  }
+  window.addEventListener('resize', scalePages);
+  window.addEventListener('DOMContentLoaded', scalePages);
+</script>
+</head><body>
 ${coverPage}
 ${sectionPages}
 ${sigPage}
-${total===0?`<div style="background:#fff;border-radius:8px;padding:40px 24px;text-align:center;
-  width:560px;box-shadow:0 4px 20px rgba(0,0,0,0.2)">
+${total===0?`<div class="page-container"><div class="page-scaler" style="align-items:center;justify-content:center;min-height:200px"><div style="background:${P.bg};border-radius:8px;padding:40px 24px;text-align:center;width:560px;box-shadow:0 4px 20px rgba(0,0,0,0.2)">
   <div style="font-size:28px;margin-bottom:12px;opacity:0.25">📄</div>
-  <div style="font-size:13px;color:#666">No items match the current filter</div></div>`:''}
+  <div style="font-size:13px;color:${P.sub}">No items match the current filter</div></div></div></div>`:''}
+<script>scalePages();</script>
 </body></html>`;
   };
 
@@ -325,19 +396,7 @@ ${total===0?`<div style="background:#fff;border-radius:8px;padding:40px 24px;tex
     document.getElementById('pdf-progress-overlay')?.remove();
   };
 
-  // ── EXPORT PDF — layout-aware ('grid' = Branded Grid, 'flow' = Clean Flow) ──
-  // Two real layouts (selected via _pdfExportSettings.layout). Shared item body
-  // with full notes, FC/UFC/NFC/HT badge, 1-up (photo-left/text-right) / 2-up /
-  // 3-up photo grids, and Delivery / Install / Proj. Start / Punch date row.
-
-  const PDF_LAYOUTS = {
-    grid: { bg:'#ffffff', ink:'#1e3a5f', text:'#1f2937', sub:'#6b7280',
-            rule:'#1e3a5f', accent:'#1e3a5f', red:'#c0392b', border:'#cfd8e3',
-            row:'#f6f8fb', font:'helvetica' },
-    flow: { bg:'#ffffff', ink:'#0f172a', text:'#334155', sub:'#8a98ab',
-            rule:'#2563eb', accent:'#2563eb', red:'#c0392b', border:'#e5e7eb',
-            row:'#f7f9fc', font:'helvetica' },
-  };
+  // ── EXPORT PDF — Theme-aware and Layout-aware engine  ───────────────────────
 
   // Field Check codes (FC / UFC / NFC / HT) → badge colours
   const FC_BADGE = {
@@ -378,7 +437,15 @@ ${total===0?`<div style="background:#fff;border-radius:8px;padding:40px 24px;tex
     const footerText = S.footerText  ?? '';
     const whiteLabel = S.whiteLabel  ?? false;
     const layoutKey  = (S.layout === 'flow') ? 'flow' : 'grid';
-    const P          = PDF_LAYOUTS[layoutKey];
+    const themeKey   = S.theme || 'classic';
+    const tpl        = resolveTemplate(themeKey);
+
+    // Dynamic Palette injected directly from Theme Engine
+    const P = {
+      bg: tpl.bgPage, ink: tpl.cTitle, text: tpl.cText, sub: tpl.cSub,
+      rule: tpl.cAccent, accent: tpl.cAccent, red: '#c0392b', border: tpl.cBorder,
+      row: tpl.bgRow, font: tpl.font || 'helvetica'
+    };
 
     document.getElementById('rg-overlay')?.remove();
     if (typeof closeModal === 'function') closeModal();
@@ -631,7 +698,8 @@ ${total===0?`<div style="background:#fff;border-radius:8px;padding:40px 24px;tex
 
     // ── Photo grid (2-up for exactly 2 photos, else 3-up) ─────────────────────
     async function drawPhotoGrid(photos, x, y, width, contName) {
-      const cols = photos.length === 2 ? 2 : 3;
+      // Intelligently handle exactly 4 photos using a 2x2 grid for symmetry
+      const cols = (photos.length === 2 || photos.length === 4) ? 2 : 3;
       const gap = 4;
       const cellW = (width - gap*(cols-1)) / cols;
       const cellH = Math.round(cellW * 0.72);
@@ -671,7 +739,7 @@ ${total===0?`<div style="background:#fff;border-radius:8px;padding:40px 24px;tex
       const th = itemTextBlock(item, MX, 0, CW, false);
       let ph = 0;
       if (inclPhotos && item.photos?.length) {
-        const cols = item.photos.length === 2 ? 2 : 3;
+        const cols = (item.photos.length === 2 || item.photos.length === 4) ? 2 : 3;
         const cellW = (CW - 4*(cols-1)) / cols, cellH = Math.round(cellW*0.72);
         const rows = Math.ceil(item.photos.length / cols);
         const hasCap = item.photos.some(p => photoCaption(p));
