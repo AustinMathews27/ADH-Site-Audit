@@ -6278,6 +6278,12 @@ function buildSIEditor(pid,sid) {
               <input class="field-input" id="si-punch-date" type="date" value="${item.punchDate||''}" onchange="scheduleAutoSave('${pid}','${sid}')" />
             </div>
           </div>
+          <div class="field-row">
+            <div class="field-group">
+              <div class="field-label">Projected Start Date</div>
+              <input class="field-input" id="si-projected-start" type="date" value="${item.projectedStartDate||''}" onchange="scheduleAutoSave('${pid}','${sid}')" />
+            </div>
+          </div>
       <div class="field-group">
   <div class="field-label">Field Check</div>
   <div style="display:flex; align-items:center; gap:10px; background:var(--surface2); padding:8px 12px; border-radius:8px; border:1px solid var(--border);">
@@ -8010,11 +8016,13 @@ function syncEditorToStore(pid, sid) {
   const d  = document.getElementById('due-input');
   const dd = document.getElementById('si-delivery-date');
   const pd = document.getElementById('si-punch-date');
+  const ps = document.getElementById('si-projected-start');
   if(n)  item.notes        = n.value;
   if(a)  item.assignedTo   = a.value;
   if(d)  item.dueDate      = d.value;
   if(dd) item.deliveryDate = dd.value;
   if(pd) item.punchDate    = pd.value;
+  if(ps) item.projectedStartDate = ps.value;
 }
 
 function _doSave(pid,sid,toast=true) {
@@ -8605,6 +8613,7 @@ function showShareModal() {
   // ── Report Generator State ─────────────────────────────────────────────────
   let _rgFilter     = 'all';
   let _rgTheme      = 'photographic';
+  let _rgLayout     = 'grid';
   let _rgPrimary    = '#1a73e8';
   let _rgImgSize    = 'regular';
   let _rgImgQual    = 'low';
@@ -8622,7 +8631,7 @@ function showShareModal() {
   let _rgWhiteLabel  = false;
 
   // Section collapse state
-  const _sec = { themes:true, cover:true, colours:false, images:false, include:false, branding:false };
+  const _sec = { layout:true, themes:true, cover:true, colours:false, images:false, include:false, branding:false };
   // Inject display name input at top of share modal
   requestAnimationFrame(()=>{
     const mo=document.querySelector('.modal');
@@ -8652,6 +8661,7 @@ function showShareModal() {
     get inclCover()    { return _rgInclCover; },
     get inclEnv()      { return _rgInclEnv; },
     get pdfTheme()     { return _themeToPDF[_rgTheme]   || 'classic'; },
+    get layout()       { return _rgLayout; },
     get reportTitle()  { return _rgReportTitle; },
     get footerText()   { return _rgFooterText; },
     get whiteLabel()   { return _rgWhiteLabel; },
@@ -8784,6 +8794,32 @@ function showShareModal() {
             onclick="window._rgSetFilter('${f}')">
             ${f.charAt(0).toUpperCase()+f.slice(1)}
           </div>`).join('')}
+      </div>
+
+      <!-- LAYOUT -->
+      <div class="rg-section">
+        <div class="rg-section-hdr" onclick="window._rgSecToggle('layout')">
+          <div class="rg-section-title">
+            <div class="rg-section-dot">
+              <svg viewBox="0 0 9 9" fill="#fff">
+                <rect x="1" y="1" width="3" height="7" rx="0.6" fill="none" stroke="#fff" stroke-width="1"/>
+                <rect x="5" y="1" width="3" height="3" rx="0.6" fill="none" stroke="#fff" stroke-width="1"/>
+                <rect x="5" y="5" width="3" height="3" rx="0.6" fill="none" stroke="#fff" stroke-width="1"/>
+              </svg>
+            </div>Layout
+          </div>${chevron('layout')}
+        </div>
+        <div class="rg-section-body ${_sec.layout?'':'collapsed'}">
+          <div class="rg-radio-group">
+            ${[['grid','Branded Grid — navy bars, photo grid'],
+               ['flow','Clean Flow — hero cover, continuous']].map(([v,l])=>`
+              <label class="rg-radio-row">
+                <input type="radio" name="rg-layout" value="${v}"
+                  ${_rgLayout===v?'checked':''}
+                  onchange="window._rgSetLayout('${v}')"> ${l}
+              </label>`).join('')}
+          </div>
+        </div>
       </div>
 
       <!-- THEMES -->
@@ -9070,6 +9106,7 @@ function showShareModal() {
   window._rgRebuildAll     = () => { _rebuildSidebar(); _rebuildPreview(); };
   window._rgSetFilter      = v  => { _rgFilter  = v; _rebuildSidebar(); _rebuildPreview(); };
   window._rgSetTheme       = v  => { _rgTheme   = v; _rebuildSidebar(); _rebuildPreview(); };
+  window._rgSetLayout      = v  => { _rgLayout  = v; _rebuildSidebar(); _rebuildPreview(); };
   window._rgSetImgSize     = v  => { _rgImgSize = v; _rebuildPreview(); };
   window._rgSetImgQual     = v  => { _rgImgQual = v; };
   window._rgSetPrimary     = v  => { _rgPrimary = v; _rebuildPreview(); };

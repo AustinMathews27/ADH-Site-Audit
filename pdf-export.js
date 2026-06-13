@@ -325,12 +325,36 @@ ${total===0?`<div style="background:#fff;border-radius:8px;padding:40px 24px;tex
     document.getElementById('pdf-progress-overlay')?.remove();
   };
 
-  // ── EXPORT PDF ────────────────────────────────────────────────────────────────
+  // ── EXPORT PDF — layout-aware ('grid' = Branded Grid, 'flow' = Clean Flow) ──
+  // Two real layouts (selected via _pdfExportSettings.layout). Shared item body
+  // with full notes, FC/UFC/NFC/HT badge, 1-up (photo-left/text-right) / 2-up /
+  // 3-up photo grids, and Delivery / Install / Proj. Start / Punch date row.
+
+  const PDF_LAYOUTS = {
+    grid: { bg:'#ffffff', ink:'#1e3a5f', text:'#1f2937', sub:'#6b7280',
+            rule:'#1e3a5f', accent:'#1e3a5f', red:'#c0392b', border:'#cfd8e3',
+            row:'#f6f8fb', font:'helvetica' },
+    flow: { bg:'#ffffff', ink:'#0f172a', text:'#334155', sub:'#8a98ab',
+            rule:'#2563eb', accent:'#2563eb', red:'#c0392b', border:'#e5e7eb',
+            row:'#f7f9fc', font:'helvetica' },
+  };
+
+  // Field Check codes (FC / UFC / NFC / HT) → badge colours
+  const FC_BADGE = {
+    FC:  { bg:'#dcfce7', fg:'#166534' },
+    UFC: { bg:'#fef3c7', fg:'#92400e' },
+    NFC: { bg:'#fee2e2', fg:'#991b1b' },
+    HT:  { bg:'#dbeafe', fg:'#1e40af' },
+  };
+
+  function siLabel(num){ return String(num || '').replace(/^SI\s+/i, 'SI-'); }
+  function photoCaption(ph){ return (ph && (ph.caption || ph.note || ph.label || '')) || ''; }
+
   window.exportPDF = async function (pid) {
     const proj = (typeof getProject === 'function' ? getProject : window.getProject)(pid);
     if (!proj) return;
 
-    // Mandatory field check
+    // Mandatory field check (incomplete items must have Field Check, Notes, Photos)
     const incomplete = (proj.items || []).filter(it => {
       if (it.status === 'completed' || it.status === 'punch-ongoing') return false;
       return !it.statusCode || !(it.notes && it.notes.trim()) || !(it.photos && it.photos.length > 0);
@@ -342,20 +366,19 @@ ${total===0?`<div style="background:#fff;border-radius:8px;padding:40px 24px;tex
       return;
     }
 
-    const _rgs        = window._pdfExportSettings || {};
-    const quality     = _rgs.quality     ?? 0.72;
-    const inclPhotos  = _rgs.inclPhotos  ?? true;
-    const inclTS      = _rgs.inclTS      ?? true;
-    const inclNotes   = _rgs.inclNotes   ?? true;
-    const inclTags    = _rgs.inclTags    ?? true;
-    const inclCover   = _rgs.inclCover   ?? true;
-    const inclEnv     = _rgs.inclEnv     ?? true;
-    const reportTitle = _rgs.reportTitle ?? 'Site Conditions Report';
-    const footerText  = _rgs.footerText  ?? '';
-    const whiteLabel  = _rgs.whiteLabel  ?? false;
-    const tplName     = _rgs.pdfTheme    ?? 'classic';
-    const T           = resolveTemplate(tplName);
-    const tplKey      = THEME_ALIAS[tplName] || 'classic';
+    const S          = window._pdfExportSettings || {};
+    const quality    = S.quality     ?? 0.72;
+    const inclPhotos = S.inclPhotos  ?? true;
+    const inclTS     = S.inclTS      ?? true;
+    const inclNotes  = S.inclNotes   ?? true;
+    const inclTags   = S.inclTags    ?? true;
+    const inclCover  = S.inclCover   ?? true;
+    const inclEnv    = S.inclEnv     ?? true;
+    const reportTitle= S.reportTitle ?? 'Site Conditions Report';
+    const footerText = S.footerText  ?? '';
+    const whiteLabel = S.whiteLabel  ?? false;
+    const layoutKey  = (S.layout === 'flow') ? 'flow' : 'grid';
+    const P          = PDF_LAYOUTS[layoutKey];
 
     document.getElementById('rg-overlay')?.remove();
     if (typeof closeModal === 'function') closeModal();
@@ -374,21 +397,15 @@ ${total===0?`<div style="background:#fff;border-radius:8px;padding:40px 24px;tex
     window.updatePDFProgress('Building PDF…', 5);
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const PW = 210, PH = 297;
+    const PW = 210, PH = 297, MX = 14, CW = PW - MX * 2, BOT = 14, PAGE_TOP = 20;
 
-    function hex2rgb(hex) {
-      return [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)];
-    }
-    function setFill(c)   { doc.setFillColor(...hex2rgb(c)); }
-    function setStroke(c) { doc.setDrawColor(...hex2rgb(c)); }
-    function setTextC(c)  { doc.setTextColor(...hex2rgb(c)); }
+    const hex2rgb = h => [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)];
+    const setFill   = c => doc.setFillColor(...hex2rgb(c));
+    const setStroke = c => doc.setDrawColor(...hex2rgb(c));
+    const setText   = c => doc.setTextColor(...hex2rgb(c));
 
     let pageNum = 0;
-    function addPage() {
-      if (pageNum > 0) doc.addPage();
-      pageNum++;
-      setFill(T.bgPage); doc.rect(0, 0, PW, PH, 'F');
-    }
+    function newPage() { if (pageNum > 0) doc.addPage(); pageNum++; setFill(P.bg); doc.rect(0,0,PW,PH,'F'); }
 
     async function compressImage(dataUrl, q, addTS) {
       return new Promise(res => {
@@ -421,324 +438,414 @@ ${total===0?`<div style="background:#fff;border-radius:8px;padding:40px 24px;tex
       });
     }
 
-    // ── COVER PAGE ─────────────────────────────────────────────────────────────
-    if (inclCover) {
-      addPage();
-
-      if (tplKey === 'minimal') {
-        setFill(T.bgHeader); doc.rect(0, 0, PW, 55, 'F');
-        setStroke(T.cAccent); doc.setLineWidth(2); doc.line(15, 54, 195, 54);
-      } else if (tplKey === 'photographic') {
-        setFill(T.bgHeader); doc.rect(0, 0, PW, 55, 'F');
-        setFill(T.cAccent); doc.rect(0, 51, PW, 4, 'F');
-      } else if (tplKey === 'corporate') {
-        setFill(T.bgHeader); doc.rect(0, 0, PW, 55, 'F');
-        setFill('#16a34a'); doc.rect(0, 47, PW, 8, 'F');
-      } else if (tplKey === 'modern') {
-        setFill(T.bgHeader); doc.rect(0, 0, PW, 55, 'F');
-        setFill(T.cAccent); doc.rect(0, 52, PW, 3, 'F');
-      } else {
-        // classic
-        setFill(T.bgHeader); doc.rect(0, 0, PW, 55, 'F');
-        setFill('#2563eb'); doc.rect(0, 47, PW, 8, 'F');
-      }
-
-      let textX = 15;
-      if (window._pdfBranding?.logo && !whiteLabel) {
-        try {
-          const props = doc.getImageProperties(window._pdfBranding.logo);
-          const lh = 18, lw = (props.width * lh) / props.height;
-          doc.addImage(window._pdfBranding.logo, 'PNG', 15, 7, lw, lh);
-          textX = 15 + lw + 6;
-        } catch (e) {}
-      }
-
-      doc.setFont(T.font, 'bold'); doc.setFontSize(22); setTextC(T.cHeader);
-      doc.text(reportTitle.toUpperCase(), textX, 20);
-      doc.setFontSize(9); doc.setFont(T.font, 'normal');
-      setTextC(tplKey === 'minimal' ? T.cSub : T.cHeader);
-      doc.text('FIELD AUDIT REPORT', textX, 29);
-
-      const hasCoverPhoto = !!proj.coverPhoto;
-      const textMaxW = hasCoverPhoto ? 108 : PW - 30;
-      doc.setFontSize(18); doc.setFont(T.font, 'bold'); setTextC(T.cTitle);
-      doc.text(proj.name || 'Unnamed Project', 15, 72, { maxWidth: textMaxW });
-
-      const meta = [['Client',proj.client],['Company',proj.company],['Auditor',proj.auditor],['Date',proj.date]];
-      let my = 88;
-      meta.forEach(([lbl,val]) => {
-        doc.setFontSize(7.5); doc.setFont(T.font,'bold'); setTextC(T.cSub); doc.text(lbl.toUpperCase(),15,my);
-        doc.setFontSize(10); doc.setFont(T.font,'normal'); setTextC(T.cText); doc.text(val||'—',15,my+6,{maxWidth:textMaxW});
-        my += 16;
-      });
-
-      if (hasCoverPhoto) {
-        try {
-          const ix=126, iy=63, iw=69, ih=100;
-          setFill(T.bgRow); setStroke(T.cBorder); doc.setLineWidth(0.3);
-          doc.roundedRect(ix,iy,iw,ih,3,3,'FD');
-          doc.addImage(proj.coverPhoto,'JPEG',ix,iy,iw,ih,'','FAST');
-        } catch (e) {}
-      }
-
-      const statY = 180;
-      const stats = [
-        {lbl:'Total Items',  val:proj.items.length,                                                  c:T.cSub},
-        {lbl:'Completed',    val:proj.items.filter(i=>i.status==='completed').length,                 c:'#22c55e'},
-        {lbl:'Punch',        val:proj.items.filter(i=>i.status==='punch-ongoing').length,             c:'#a855f7'},
-        {lbl:'Not Ready',    val:proj.items.filter(i=>i.status==='not-ready').length,                 c:'#ef4444'},
-        {lbl:'In Progress',  val:proj.items.filter(i=>i.status==='in-progress').length,               c:'#fbbf24'},
-        {lbl:'Pending',      val:proj.items.filter(i=>i.status==='pending').length,                   c:'#6b7280'},
+    // ── Shared stats strip (used on both covers) ──────────────────────────────
+    function drawStats(yTop) {
+      const items = proj.items || [];
+      const st = [
+        ['Total',      items.length,                                             P.sub],
+        ['Completed',  items.filter(i=>i.status==='completed').length,           '#16a34a'],
+        ['Punch',      items.filter(i=>i.status==='punch-ongoing').length,       '#a855f7'],
+        ['Not Ready',  items.filter(i=>i.status==='not-ready').length,           '#dc2626'],
+        ['In Prog',    items.filter(i=>i.status==='in-progress').length,         '#d97706'],
+        ['Pending',    items.filter(i=>i.status==='pending').length,             '#6b7280'],
       ];
-      const sw = (PW-30) / stats.length;
-      stats.forEach((s,i) => {
-        const x = 15 + i * sw;
-        setFill(T.bgRow); doc.roundedRect(x,statY,sw-4,22,3,3,'F');
-        doc.setFontSize(16); doc.setFont(T.font,'bold'); doc.setTextColor(...hex2rgb(s.c));
-        doc.text(String(s.val),x+4,statY+13);
-        doc.setFontSize(7); doc.setFont(T.font,'normal'); setTextC(T.cSub);
-        doc.text(s.lbl,x+4,statY+20);
+      const bw = CW / st.length;
+      st.forEach((s,i) => {
+        const x = MX + i*bw;
+        setFill(P.row); setStroke(P.border); doc.setLineWidth(0.3); doc.roundedRect(x,yTop,bw-3,20,2,2,'FD');
+        doc.setFont(P.font,'bold'); doc.setFontSize(15); doc.setTextColor(...hex2rgb(s[2])); doc.text(String(s[1]),x+3,yTop+11);
+        doc.setFont(P.font,'normal'); doc.setFontSize(6.5); setText(P.sub); doc.text(s[0],x+3,yTop+17);
       });
-
-      const pbY = statY + 28;
-      setFill(T.cBorder); doc.rect(15,pbY,PW-30,3,'F');
-      const progFrac = proj.items.length>0 ? proj.items.filter(i=>i.status==='completed').length/proj.items.length : 0;
-      doc.setFillColor(...hex2rgb(T.cAccent)); doc.rect(15,pbY,(PW-30)*progFrac,3,'F');
-
-      setTextC(T.cSub); doc.setFontSize(8);
-      doc.text('Report Date: '+new Date().toLocaleDateString(), 15, PH-14);
+      const py = yTop + 24, frac = items.length ? items.filter(i=>i.status==='completed').length/items.length : 0;
+      setFill(P.border); doc.rect(MX,py,CW,2.5,'F'); setFill(P.accent); doc.rect(MX,py,CW*frac,2.5,'F');
     }
 
-    // ── SECTION PAGES ───────────────────────────────────────────────────────────
-    const allItems = proj.items || [];
-    const totalItemCount = allItems.length;
-    let done = 0;
+    // ── COVER: Branded Grid ───────────────────────────────────────────────────
+    function coverGrid() {
+      newPage();
+      if (window._pdfBranding?.logo && !whiteLabel) {
+        try { const pr = doc.getImageProperties(window._pdfBranding.logo);
+          const lh = 16, lw = pr.width*lh/pr.height;
+          doc.addImage(window._pdfBranding.logo,'PNG',PW-MX-lw,12,lw,lh); } catch(e){}
+      }
+      doc.setFont(P.font,'bold'); doc.setFontSize(9); setText(P.sub);
+      doc.text((reportTitle||'').toUpperCase(), MX, 24, { charSpace: 0.6 });
+      doc.setFont(P.font,'bold'); doc.setFontSize(26); setText(P.ink);
+      const titleLines = doc.splitTextToSize(proj.name || 'Untitled Project', CW);
+      doc.text(titleLines, MX, 44);
+      let ty = 44 + titleLines.length*11;
+      setFill(P.rule); doc.rect(MX, ty, CW, 1.8, 'F'); ty += 11;
+      doc.setFont(P.font,'bold'); doc.setFontSize(12); setText(P.text);
+      doc.text(proj.date || new Date().toLocaleDateString(), MX, ty); ty += 15;
+      const meta = [['Client',proj.client],['Company',proj.company],['Auditor',proj.auditor]];
+      meta.forEach(([k,v]) => { if (!v) return;
+        doc.setFontSize(7.5); doc.setFont(P.font,'bold'); setText(P.sub); doc.text(k.toUpperCase(),MX,ty);
+        doc.setFontSize(11); doc.setFont(P.font,'normal'); setText(P.text); doc.text(String(v),MX,ty+6,{maxWidth:CW-78}); ty += 15;
+      });
+      if (proj.coverPhoto) { try {
+        const iw=70, ih=92, ix=PW-MX-iw, iy=72;
+        setStroke(P.border); doc.setLineWidth(0.3); doc.roundedRect(ix,iy,iw,ih,2,2,'D');
+        doc.addImage(proj.coverPhoto,'JPEG',ix,iy,iw,ih,'','FAST');
+      } catch(e){} }
+      drawStats(228);
+      setText(P.sub); doc.setFontSize(8); doc.text('Generated '+new Date().toLocaleDateString(), MX, PH-14);
+    }
 
-    for (const sec of (proj.sections || [])) {
+    // ── COVER: Clean Flow (hero) ──────────────────────────────────────────────
+    function coverFlow() {
+      newPage();
+      const heroH = 176;
+      let drew = false;
+      if (proj.coverPhoto) { try { doc.addImage(proj.coverPhoto,'JPEG',0,0,PW,heroH,'','FAST'); drew = true; } catch(e){} }
+      if (!drew) { setFill(P.ink); doc.rect(0,0,PW,heroH,'F'); }
+      try {
+        doc.setGState(new doc.GState({opacity:0.45})); setFill('#0b1220'); doc.rect(0,0,PW,heroH,'F');
+        doc.setGState(new doc.GState({opacity:0.35})); setFill('#000000'); doc.rect(0,0,PW,52,'F');
+        doc.setGState(new doc.GState({opacity:1}));
+      } catch(e) { setFill('#0b1220'); doc.rect(0,0,PW,52,'F'); doc.rect(0,heroH-30,PW,30,'F'); }
+      setText('#ffffff'); doc.setFont(P.font,'bold'); doc.setFontSize(23);
+      const tl = doc.splitTextToSize(proj.name || 'Untitled Project', CW);
+      doc.text(tl, MX, 24);
+      doc.setFont(P.font,'normal'); doc.setFontSize(9); setText('#cbd5e1');
+      doc.text((reportTitle||'').toUpperCase(), MX, 24 + tl.length*9, { charSpace: 0.6 });
+      // logo + date inside bottom of hero
+      let by = heroH - 16;
+      if (window._pdfBranding?.logo && !whiteLabel) {
+        try { const pr = doc.getImageProperties(window._pdfBranding.logo);
+          const lh = 12, lw = pr.width*lh/pr.height;
+          doc.addImage(window._pdfBranding.logo,'PNG',MX,heroH-lh-10,lw,lh); by = heroH-10; } catch(e){}
+      }
+      setText('#e2e8f0'); doc.setFont(P.font,'bold'); doc.setFontSize(10);
+      doc.text(proj.date || new Date().toLocaleDateString(), PW-MX, heroH-10, { align:'right' });
+      // white area: meta + stats
+      let my = heroH + 16;
+      const meta = [['Client',proj.client],['Company',proj.company],['Auditor',proj.auditor]];
+      const present = meta.filter(([,v])=>v);
+      const colW = present.length ? CW/present.length : CW;
+      present.forEach(([k,v],i) => {
+        const x = MX + i*colW;
+        doc.setFontSize(7.5); doc.setFont(P.font,'bold'); setText(P.sub); doc.text(k.toUpperCase(), x, my);
+        doc.setFontSize(10.5); doc.setFont(P.font,'normal'); setText(P.text); doc.text(String(v), x, my+6, {maxWidth:colW-4});
+      });
+      drawStats(heroH + 36);
+    }
+
+    // ── Section headers ───────────────────────────────────────────────────────
+    function sectionHeader(name, count, y) {
+      if (layoutKey === 'grid') {
+        setFill(P.rule); doc.rect(MX, y, CW, 0.7, 'F');
+        doc.setFont(P.font,'bold'); doc.setFontSize(11); setText(P.ink);
+        doc.text((name||'').toUpperCase(), MX, y+7);
+        doc.setFont(P.font,'normal'); doc.setFontSize(8); setText(P.sub);
+        doc.text(count+' item'+(count!==1?'s':''), PW-MX, y+7, {align:'right'});
+        setFill(P.rule); doc.rect(MX, y+10, CW, 0.7, 'F');
+        return y + 16;
+      } else {
+        doc.setFont(P.font,'bold'); doc.setFontSize(15); setText(P.ink);
+        doc.text(name||'', MX, y+6);
+        doc.setFont(P.font,'normal'); doc.setFontSize(8); setText(P.sub);
+        doc.text(count+' item'+(count!==1?'s':''), PW-MX, y+6, {align:'right'});
+        setFill(P.accent); doc.rect(MX, y+9, 28, 0.8, 'F');
+        return y + 15;
+      }
+    }
+    function contHeader(name) {
+      if (layoutKey === 'grid') {
+        setFill(P.rule); doc.rect(MX, 8, CW, 0.6, 'F');
+        doc.setFont(P.font,'bold'); doc.setFontSize(8); setText(P.ink);
+        doc.text((name+' (cont.)').toUpperCase(), MX, 7);
+      } else {
+        doc.setFont(P.font,'bold'); doc.setFontSize(9); setText(P.sub);
+        doc.text(name+' (continued)', MX, 9);
+      }
+      return 14;
+    }
+
+    // ── Item text block (measure when draw=false, render when draw=true) ───────
+    function itemTextBlock(item, x, y, width, draw) {
+      let cyy = y;
+      doc.setFont(P.font,'bold'); doc.setFontSize(13);
+      if (draw) { setText(P.ink); doc.text(siLabel(item.num), x, cyy+4); }
+      cyy += 6.6;
+
+      doc.setFont(P.font,'bold'); doc.setFontSize(11);
+      const titleLines = doc.splitTextToSize(item.title || '', width);
+      if (draw) { setText(P.ink); doc.text(titleLines, x, cyy+3.5); }
+      cyy += titleLines.length*5.2 + 1.5;
+
+      const isDone = item.status === 'completed';
+      const statusStr = isDone ? 'Completed: Yes' : ('Status: ' + statusLabel(item.status));
+      doc.setFont(P.font,'bold'); doc.setFontSize(9);
+      if (draw) { setText(isDone ? P.red : statusColor(item.status)); doc.text(statusStr, x, cyy+3); }
+      cyy += 5.6;
+
+      if (item.statusCode) {
+        const b = FC_BADGE[item.statusCode] || { bg:'#f3f4f6', fg:'#374151' };
+        doc.setFont(P.font,'bold'); doc.setFontSize(8);
+        const lw = doc.getTextWidth(item.statusCode) + 5, bh = 5;
+        if (draw) { setFill(b.bg); doc.roundedRect(x, cyy, lw, bh, 1.2, 1.2, 'F'); setText(b.fg); doc.text(item.statusCode, x+2.5, cyy+3.6); }
+        if (item.statusText) {
+          doc.setFont(P.font,'normal'); doc.setFontSize(8.5);
+          if (draw) { setText(P.text); doc.text(item.statusText, x+lw+3, cyy+3.6, {maxWidth: width-lw-3}); }
+        }
+        cyy += bh + 2.6;
+      } else if (item.statusText) {
+        doc.setFont(P.font,'normal'); doc.setFontSize(8.5);
+        const sl = doc.splitTextToSize(item.statusText, width);
+        if (draw) { setText(P.text); doc.text(sl, x, cyy+3); }
+        cyy += sl.length*4.4 + 1;
+      }
+
+      if (inclNotes && item.notes && item.notes.trim()) {
+        doc.setFont(P.font,'normal'); doc.setFontSize(9);
+        const nl = doc.splitTextToSize(item.notes.trim(), width);
+        if (draw) { setText(P.text); doc.text(nl, x, cyy+3.5); }
+        cyy += nl.length*4.6 + 1.5;
+      }
+
+      const parts = [];
+      if (item.deliveryDate)       parts.push('Delivery: ' + item.deliveryDate);
+      if (item.dueDate)            parts.push('Install: ' + item.dueDate);
+      if (item.projectedStartDate) parts.push('Proj. Start: ' + item.projectedStartDate);
+      if (item.punchDate)          parts.push('Punch: ' + item.punchDate);
+      if (parts.length) {
+        doc.setFont(P.font,'bold'); doc.setFontSize(7.5);
+        const dl = doc.splitTextToSize(parts.join('    \u2022    '), width);
+        if (draw) { setText(P.sub); doc.text(dl, x, cyy+3); }
+        cyy += dl.length*4 + 1.5;
+      }
+
+      if (inclTags && item.tags && item.tags.length) {
+        doc.setFont(P.font,'normal'); doc.setFontSize(6.5);
+        let tx = x, ty2 = cyy + 1;
+        item.tags.forEach(tag => {
+          const tw = doc.getTextWidth(tag) + 4;
+          if (tx + tw > x + width) { tx = x; ty2 += 6; }
+          if (draw) { setFill(P.row); setStroke(P.border); doc.setLineWidth(0.2); doc.roundedRect(tx, ty2-3, tw, 5, 1.2, 1.2, 'FD'); setText(P.sub); doc.text(tag, tx+2, ty2+0.6); }
+          tx += tw + 2;
+        });
+        cyy = ty2 + 5;
+      }
+      return cyy - y;
+    }
+
+    // ── Photo grid (2-up for exactly 2 photos, else 3-up) ─────────────────────
+    async function drawPhotoGrid(photos, x, y, width, contName) {
+      const cols = photos.length === 2 ? 2 : 3;
+      const gap = 4;
+      const cellW = (width - gap*(cols-1)) / cols;
+      const cellH = Math.round(cellW * 0.72);
+      const hasCap = photos.some(p => photoCaption(p));
+      const rowH = cellH + (hasCap ? 6 : 0) + 3;
+      let gy = y;
+      for (let i = 0; i < photos.length; i++) {
+        const col = i % cols;
+        if (col === 0 && i > 0) gy += rowH;
+        if (col === 0 && gy + cellH > PH - BOT) { newPage(); gy = contHeader(contName); }
+        const px = x + col*(cellW + gap);
+        const ph = photos[i];
+        try {
+          const ts = inclTS ? (ph.takenAt || null) : null;
+          const src = (typeof getPhotoSrcForDisplay === 'function') ? getPhotoSrcForDisplay(ph) : (ph?.url || ph?._blobUrl || ph?.data || null);
+          const comp = src ? await compressImage(src, quality, ts) : null;
+          if (comp) doc.addImage(comp, 'JPEG', px, gy, cellW, cellH, '', 'FAST');
+          else { setFill(P.row); setStroke(P.border); doc.setLineWidth(0.3); doc.roundedRect(px, gy, cellW, cellH, 1, 1, 'FD'); }
+        } catch(e) { setFill(P.row); doc.rect(px, gy, cellW, cellH, 'F'); }
+        const br = 3.2, bx = px + cellW - br - 1.6, byy = gy + br + 1.6;
+        setFill('#1f2937'); doc.circle(bx, byy, br, 'F');
+        doc.setFont(P.font,'bold'); doc.setFontSize(7); setText('#ffffff'); doc.text(String(i+1), bx, byy+2.3, {align:'center'});
+        const cap = photoCaption(ph);
+        if (cap) { doc.setFont(P.font,'normal'); doc.setFontSize(6.5); setText(P.sub); const cl = doc.splitTextToSize(cap, cellW).slice(0,2); doc.text(cl, px, gy+cellH+3); }
+      }
+      return gy + cellH + (hasCap ? 6 : 0) + 4;
+    }
+
+    // ── One SI item (keep-together; 1-up side-by-side; multi-up grid below) ────
+    let cy = PAGE_TOP;
+    function estimateItemHeight(item) {
+      const single = inclPhotos && (item.photos?.length === 1);
+      if (single) {
+        const photoW = 60, photoH = 45, tw = CW - photoW - 6;
+        return Math.max(photoH, itemTextBlock(item, MX+photoW+6, 0, tw, false)) + 6;
+      }
+      const th = itemTextBlock(item, MX, 0, CW, false);
+      let ph = 0;
+      if (inclPhotos && item.photos?.length) {
+        const cols = item.photos.length === 2 ? 2 : 3;
+        const cellW = (CW - 4*(cols-1)) / cols, cellH = Math.round(cellW*0.72);
+        const rows = Math.ceil(item.photos.length / cols);
+        const hasCap = item.photos.some(p => photoCaption(p));
+        ph = rows*(cellH + (hasCap?6:0) + 3) + 2;
+      }
+      return th + ph + 6;
+    }
+    async function drawItem(item, contName) {
+      const single = inclPhotos && (item.photos?.length === 1);
+      const estH = estimateItemHeight(item);
+      if (cy > PAGE_TOP && cy + Math.min(estH, PH - PAGE_TOP - BOT) > PH - BOT) { newPage(); cy = contHeader(contName); }
+
+      if (single) {
+        const photoW = 60, photoH = 45, tx = MX + photoW + 6, tw = CW - photoW - 6;
+        const ph = item.photos[0];
+        try {
+          const ts = inclTS ? (ph.takenAt || null) : null;
+          const src = (typeof getPhotoSrcForDisplay === 'function') ? getPhotoSrcForDisplay(ph) : (ph?.url || ph?._blobUrl || ph?.data || null);
+          const comp = src ? await compressImage(src, quality, ts) : null;
+          if (comp) doc.addImage(comp, 'JPEG', MX, cy, photoW, photoH, '', 'FAST');
+          else { setFill(P.row); setStroke(P.border); doc.setLineWidth(0.3); doc.roundedRect(MX, cy, photoW, photoH, 1, 1, 'FD'); }
+        } catch(e){}
+        const br = 3.2, bx = MX + photoW - br - 1.6, byy = cy + br + 1.6;
+        setFill('#1f2937'); doc.circle(bx, byy, br, 'F'); doc.setFont(P.font,'bold'); doc.setFontSize(7); setText('#ffffff'); doc.text('1', bx, byy+2.3, {align:'center'});
+        let belowPhoto = cy + photoH;
+        const cap = photoCaption(ph);
+        if (cap) { doc.setFont(P.font,'normal'); doc.setFontSize(6.5); setText(P.sub); const cl = doc.splitTextToSize(cap, photoW).slice(0,3); doc.text(cl, MX, belowPhoto+3); belowPhoto += 3 + cl.length*3; }
+        const th = itemTextBlock(item, tx, cy, tw, true);
+        cy = Math.max(belowPhoto, cy + th) + 6;
+      } else {
+        const th = itemTextBlock(item, MX, cy, CW, true);
+        cy += th + 2;
+        if (inclPhotos && item.photos?.length) cy = await drawPhotoGrid(item.photos, MX, cy, CW, contName);
+        cy += 4;
+      }
+
+      if (layoutKey === 'grid') { setFill(P.rule); doc.rect(MX, cy, CW, 0.4, 'F'); cy += 5; }
+      else { setStroke(P.border); doc.setLineWidth(0.3); doc.line(MX, cy, PW-MX, cy); cy += 5; }
+    }
+
+    // ── DISPATCH: cover ───────────────────────────────────────────────────────
+    if (inclCover) { layoutKey === 'flow' ? coverFlow() : coverGrid(); }
+
+    // ── SECTIONS + ITEMS ──────────────────────────────────────────────────────
+    const allItems = proj.items || [];
+    const totalCount = allItems.length || 1;
+    let done = 0;
+    const sections = proj.sections || [];
+    const sectionIds = new Set(sections.map(s => s.id));
+
+    for (const sec of sections) {
       const secItems = allItems.filter(i => i.sectionId === sec.id);
       if (!secItems.length) continue;
-      addPage();
-
-      if (tplKey === 'minimal') {
-        doc.setFontSize(11); doc.setFont(T.font,'bold'); setTextC(T.cTitle); doc.text(sec.name.toUpperCase(),15,13);
-        setStroke(T.cBorder); doc.setLineWidth(0.5); doc.line(15,16,PW-15,16);
-      } else {
-        setFill(T.bgHeader); doc.rect(0,0,PW,18,'F');
-        doc.setFontSize(10); doc.setFont(T.font,'bold'); setTextC(T.cHeader);
-        doc.text(sec.name.toUpperCase(),15,12);
-        doc.setFontSize(8); doc.setFont(T.font,'normal');
-        doc.text(secItems.length+' item'+(secItems.length!==1?'s':''),PW-15,12,{align:'right'});
-      }
-      if (tplKey==='photographic') { setFill(T.cAccent); doc.rect(0,16,PW,2,'F'); }
-      if (tplKey==='corporate')    { setFill('#16a34a'); doc.rect(0,16,PW,2,'F'); }
-
-      let cy = tplKey==='minimal' ? 22 : 24;
-
+      newPage();
+      cy = sectionHeader(sec.name, secItems.length, 12);
       for (const item of secItems) {
-        const hasPhotos = inclPhotos && item.photos.length > 0;
-        const estH = 14 + (inclNotes&&item.notes?14:0) + (!!(item.deliveryDate||item.punchDate)?6:0)
-                   + (inclTags&&item.tags?.length?8:0) + (hasPhotos?62:0) + 8;
-
-        if (cy + estH > PH - 14) {
-          addPage();
-          if (tplKey === 'minimal') {
-            doc.setFontSize(8); doc.setFont(T.font,'bold'); setTextC(T.cSub);
-            doc.text(sec.name+' (cont.)',15,9); setStroke(T.cBorder); doc.setLineWidth(0.5); doc.line(15,12,PW-15,12);
-          } else {
-            setFill(T.bgHeader); doc.rect(0,0,PW,12,'F');
-            doc.setFontSize(8); doc.setFont(T.font,'bold'); setTextC(T.cHeader);
-            doc.text(sec.name+' (continued)',15,8);
-          }
-          cy = tplKey==='minimal' ? 18 : 20;
-        }
-
-        const sc = statusColor(item.status);
-        if (tplKey==='minimal') {
-          setStroke(T.cBorder); doc.setLineWidth(0.3); doc.line(12,cy+estH-4,PW-12,cy+estH-4);
-          doc.setFillColor(...hex2rgb(sc)); doc.circle(17,cy+6,2.5,'F');
-        } else {
-          setFill(T.bgRow); setStroke(T.cBorder); doc.setLineWidth(0.3);
-          doc.roundedRect(12,cy,PW-24,estH,2,2,'FD');
-          doc.setFillColor(...hex2rgb(sc)); doc.rect(12,cy,4,estH,'F');
-        }
-
-        const siX = tplKey==='minimal' ? 24 : 22;
-        doc.setFontSize(7.5); doc.setFont(T.font,'bold'); setTextC(T.cSub); doc.text(item.num||'',siX,cy+5.5);
-        doc.setFontSize(10); doc.setFont(T.font,'bold'); setTextC(T.cTitle);
-        doc.text(item.title||'',siX,cy+12,{maxWidth:PW-50});
-        doc.setFontSize(7); doc.setFont(T.font,'bold'); doc.setTextColor(...hex2rgb(sc));
-        doc.text(statusLabel(item.status),PW-16,cy+6,{align:'right'});
-
-        let iy = cy + 16;
-        if (item.statusCode) {
-          doc.setFont(T.font,'bold'); doc.setFontSize(9); doc.setTextColor(40,40,40);
-          doc.text(`Field Check: [${item.statusCode}] ${item.statusText||''}`,siX,iy); iy+=6;
-        }
-        if (inclNotes && item.notes) {
-          doc.setFontSize(8.5); doc.setFont(T.font,'normal'); setTextC(T.cText);
-          doc.splitTextToSize(item.notes,PW-38).slice(0,3).forEach(l=>{doc.text(l,siX,iy);iy+=4.5;});
-          iy+=2;
-        }
-        if (item.deliveryDate || item.punchDate) {
-          doc.setFontSize(7.5); doc.setFont(T.font,'bold'); setTextC(T.cSub);
-          const parts=[]; if(item.deliveryDate) parts.push('Delivery: '+item.deliveryDate);
-          if(item.punchDate) parts.push('Punch: '+item.punchDate);
-          doc.text(parts.join('   |   '),siX,iy); iy+=6;
-        }
-        if (inclTags && item.tags?.length) {
-          let tx=siX;
-          item.tags.forEach(tag=>{
-            const tw=doc.getTextWidth(tag)+4;
-            setFill(T.cTag); setStroke(T.cBorder); doc.setLineWidth(0.2);
-            doc.roundedRect(tx,iy-3,tw,5,1.5,1.5,'FD');
-            doc.setFontSize(6); setTextC(T.cTagText); doc.text(tag,tx+2,iy+0.5);
-            tx+=tw+2; if(tx>PW-30){tx=siX;iy+=6;}
-          });
-          iy+=7;
-        }
-        if (hasPhotos) {
-          const COLS=3, GAP=4, photoW=(PW-28-GAP*(COLS-1))/COLS, photoH=Math.round(photoW*0.67);
-          for (let pi=0;pi<item.photos.length;pi++) {
-            const col=pi%COLS;
-            if (col===0&&pi>0) {
-              iy+=photoH+3;
-              if (iy+photoH>PH-14) {
-                addPage();
-                if (tplKey!=='minimal') {
-                  setFill(T.bgHeader); doc.rect(0,0,PW,12,'F');
-                  doc.setFontSize(8); doc.setFont(T.font,'bold'); setTextC(T.cHeader);
-                  doc.text(sec.name+' (cont.)',15,8);
-                }
-                iy=20;
-              }
-            }
-            const ph=item.photos[pi];
-            try {
-              const tsLbl=inclTS?(ph.takenAt||null):null;
-              const src=(typeof getPhotoSrcForDisplay==='function')?getPhotoSrcForDisplay(ph):(ph?.url||ph?._blobUrl||ph?.data||null);
-              const compressed=src?await compressImage(src,quality,tsLbl):null;
-              if (compressed) doc.addImage(compressed,'JPEG',14+col*(photoW+GAP),iy,photoW,photoH,'','FAST');
-            } catch(e){}
-          }
-          iy+=photoH+3;
-        }
-        cy=iy+6; done++;
-        window.updatePDFProgress('Rendering items…',Math.round((done/totalItemCount)*80)+10);
-        await new Promise(r=>requestAnimationFrame(r));
+        await drawItem(item, sec.name);
+        done++; window.updatePDFProgress('Rendering items…', Math.round((done/totalCount)*78) + 10);
+        await new Promise(r => requestAnimationFrame(r));
+      }
+    }
+    // Orphan items (no matching section) — don't silently drop them
+    const orphans = allItems.filter(i => !sectionIds.has(i.sectionId));
+    if (orphans.length) {
+      newPage();
+      cy = sectionHeader('Other Items', orphans.length, 12);
+      for (const item of orphans) {
+        await drawItem(item, 'Other Items');
+        done++; window.updatePDFProgress('Rendering items…', Math.round((done/totalCount)*78) + 10);
+        await new Promise(r => requestAnimationFrame(r));
       }
     }
 
-    // ── ENVIRONMENTAL CONDITIONS ────────────────────────────────────────────────
+    // ── ENVIRONMENTAL CONDITIONS (overall site — humidity / temperature) ──────
     if (inclEnv && proj.envData) {
-      const env=proj.envData, thr=env.thresholds||{maxTemp:80,maxHum:60};
-      if ((env.sensors?.length||0)+(env.screenshots?.length||0)>0) {
-        window.updatePDFProgress('Rendering environmental charts…',90);
-        addPage();
-        setFill(T.bgHeader); doc.rect(0,0,PW,18,'F');
-        doc.setFontSize(10); doc.setFont(T.font,'bold'); setTextC(T.cHeader);
-        doc.text('ENVIRONMENTAL CONDITIONS',15,12);
-        let ey=24;
-        const gef=(typeof window.getEnvFilter==='function')?window.getEnvFilter:()=>({startPct:0,endPct:100});
-        const fd=(typeof window.filterData==='function')?window.filterData:d=>d;
-        async function envChart(data,lc,maxT,minT,x,y,w,h){
-          if(!data.length)return;
-          const cv=document.createElement('canvas'),dp=2;
-          cv.width=w*dp*4;cv.height=h*dp*4;
-          const ctx=cv.getContext('2d');ctx.scale(dp*4,dp*4);
-          const CW=w,CH=h,pad={t:8,b:18,l:32,r:6},cw=CW-pad.l-pad.r,ch=CH-pad.t-pad.b;
-          ctx.fillStyle=tplKey==='modern'?'#1e293b':'#f8fafc';ctx.fillRect(0,0,CW,CH);
-          const vs=data.map(d=>d.v),mn=Math.min(...vs),mx=Math.max(...vs);
-          const dMin=Math.min(mn,(minT!==undefined?minT-2:mn),(maxT!==undefined?maxT-2:mn));
-          const dMax=Math.max(mx,(maxT!==undefined?maxT+2:mx),(minT!==undefined?minT+2:mx));
-          const rng=dMax-dMin||1;
-          ctx.strokeStyle='rgba(0,0,0,0.06)';ctx.lineWidth=0.5;
-          for(let g=0;g<=4;g++){const f=g/4,gy=pad.t+ch*(1-f);ctx.beginPath();ctx.moveTo(pad.l,gy);ctx.lineTo(pad.l+cw,gy);ctx.stroke();
-            ctx.fillStyle='rgba(0,0,0,0.4)';ctx.font='5px monospace';ctx.textAlign='right';ctx.fillText((dMin+rng*f).toFixed(1),pad.l-2,gy+2);}
+      const env = proj.envData, thr = env.thresholds || { maxTemp:80, maxHum:60 };
+      if ((env.sensors?.length || 0) + (env.screenshots?.length || 0) > 0) {
+        window.updatePDFProgress('Rendering environmental charts…', 90);
+        newPage();
+        setFill(P.ink); doc.rect(0,0,PW,18,'F');
+        doc.setFontSize(10); doc.setFont(P.font,'bold'); setText('#ffffff');
+        doc.text('ENVIRONMENTAL CONDITIONS — SITE',15,12);
+        let ey = 24;
+        const gef = (typeof window.getEnvFilter === 'function') ? window.getEnvFilter : () => ({startPct:0,endPct:100});
+        const fd  = (typeof window.filterData === 'function') ? window.filterData : d => d;
+        async function envChart(data, lc, maxT, minT, x, y, w, h) {
+          if (!data.length) return;
+          const cv = document.createElement('canvas'), dp = 2;
+          cv.width = w*dp*4; cv.height = h*dp*4;
+          const ctx = cv.getContext('2d'); ctx.scale(dp*4, dp*4);
+          const CWi = w, CHi = h, pad = {t:8,b:18,l:32,r:6}, cw = CWi-pad.l-pad.r, ch = CHi-pad.t-pad.b;
+          ctx.fillStyle = '#f8fafc'; ctx.fillRect(0,0,CWi,CHi);
+          const vs = data.map(d=>d.v), mn = Math.min(...vs), mx = Math.max(...vs);
+          const dMin = Math.min(mn,(minT!==undefined?minT-2:mn),(maxT!==undefined?maxT-2:mn));
+          const dMax = Math.max(mx,(maxT!==undefined?maxT+2:mx),(minT!==undefined?minT+2:mx));
+          const rng = dMax-dMin || 1;
+          ctx.strokeStyle='rgba(0,0,0,0.06)'; ctx.lineWidth=0.5;
+          for (let g=0; g<=4; g++){ const f=g/4, gy=pad.t+ch*(1-f); ctx.beginPath(); ctx.moveTo(pad.l,gy); ctx.lineTo(pad.l+cw,gy); ctx.stroke();
+            ctx.fillStyle='rgba(0,0,0,0.4)'; ctx.font='5px monospace'; ctx.textAlign='right'; ctx.fillText((dMin+rng*f).toFixed(1),pad.l-2,gy+2); }
           ctx.beginPath();
-          data.forEach((d,i)=>{const px2=pad.l+cw*(i/(data.length-1||1)),py2=pad.t+ch*(1-(d.v-dMin)/rng);
-            i===0?ctx.moveTo(px2,py2):ctx.lineTo(px2,py2);});
-          ctx.lineTo(pad.l+cw,pad.t+ch);ctx.lineTo(pad.l,pad.t+ch);ctx.closePath();ctx.fillStyle=lc+'33';ctx.fill();
-          for(let i=1;i<data.length;i++){
-            const x0=pad.l+cw*((i-1)/(data.length-1||1)),y0=pad.t+ch*(1-(data[i-1].v-dMin)/rng);
-            const x1=pad.l+cw*(i/(data.length-1||1)),y1=pad.t+ch*(1-(data[i].v-dMin)/rng);
-            const abv=maxT!==undefined&&(data[i-1].v>maxT||data[i].v>maxT);
-            ctx.beginPath();ctx.strokeStyle=abv?'#ef4444':lc;ctx.lineWidth=abv?1.2:0.9;
-            ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.stroke();}
+          data.forEach((d,i)=>{ const px2=pad.l+cw*(i/(data.length-1||1)), py2=pad.t+ch*(1-(d.v-dMin)/rng); i===0?ctx.moveTo(px2,py2):ctx.lineTo(px2,py2); });
+          ctx.lineTo(pad.l+cw,pad.t+ch); ctx.lineTo(pad.l,pad.t+ch); ctx.closePath(); ctx.fillStyle=lc+'33'; ctx.fill();
+          for (let i=1; i<data.length; i++){
+            const x0=pad.l+cw*((i-1)/(data.length-1||1)), y0=pad.t+ch*(1-(data[i-1].v-dMin)/rng);
+            const x1=pad.l+cw*(i/(data.length-1||1)), y1=pad.t+ch*(1-(data[i].v-dMin)/rng);
+            const abv = maxT!==undefined && (data[i-1].v>maxT || data[i].v>maxT);
+            ctx.beginPath(); ctx.strokeStyle=abv?'#ef4444':lc; ctx.lineWidth=abv?1.2:0.9; ctx.moveTo(x0,y0); ctx.lineTo(x1,y1); ctx.stroke(); }
           doc.addImage(cv.toDataURL('image/jpeg',0.92),'JPEG',x,y,w,h,'','FAST');
         }
-        for(const [si,s] of (env.sensors||[]).entries()){
-          const flt=gef(proj.id,si),td=fd(s.temperature||[],flt.startPct,flt.endPct),hd=fd(s.humidity||[],flt.startPct,flt.endPct);
-          if(ey+80>PH-20){addPage();ey=16;}
-          setFill(T.bgRow);doc.roundedRect(12,ey,PW-24,8,1,1,'F');
-          doc.setFontSize(8);doc.setFont(T.font,'bold');setTextC(T.cTitle);doc.text('📡 '+(s.name||'Sensor '+(si+1)),15,ey+5.5);ey+=11;
-          if(td.length){if(ey+44>PH-20){addPage();ey=16;}doc.setFontSize(7);doc.setFont(T.font,'bold');doc.setTextColor(249,115,22);
-            doc.text('TEMPERATURE (°F)',15,ey+4);ey+=7;await envChart(td,'#f97316',thr.maxTemp,thr.minTemp,12,ey,PW-24,38);ey+=41;}
-          if(hd.length){if(ey+44>PH-20){addPage();ey=16;}doc.setFontSize(7);doc.setFont(T.font,'bold');doc.setTextColor(248,113,113);
-            doc.text('RELATIVE HUMIDITY (%)',15,ey+4);ey+=7;await envChart(hd,'#f87171',thr.maxHum,thr.minHum,12,ey,PW-24,38);ey+=41;}
-          ey+=6;await new Promise(r=>requestAnimationFrame(r));
+        for (const [si,s] of (env.sensors||[]).entries()) {
+          const flt = gef(proj.id,si), td = fd(s.temperature||[],flt.startPct,flt.endPct), hd = fd(s.humidity||[],flt.startPct,flt.endPct);
+          if (ey+80 > PH-20) { newPage(); ey=16; }
+          setFill(P.row); doc.roundedRect(12,ey,PW-24,8,1,1,'F');
+          doc.setFontSize(8); doc.setFont(P.font,'bold'); setText(P.ink); doc.text((s.name||'Sensor '+(si+1)),15,ey+5.5); ey+=11;
+          if (td.length) { if (ey+44>PH-20){newPage();ey=16;} doc.setFontSize(7); doc.setFont(P.font,'bold'); doc.setTextColor(249,115,22);
+            doc.text('TEMPERATURE (\u00b0F)',15,ey+4); ey+=7; await envChart(td,'#f97316',thr.maxTemp,thr.minTemp,12,ey,PW-24,38); ey+=41; }
+          if (hd.length) { if (ey+44>PH-20){newPage();ey=16;} doc.setFontSize(7); doc.setFont(P.font,'bold'); doc.setTextColor(248,113,113);
+            doc.text('RELATIVE HUMIDITY (%)',15,ey+4); ey+=7; await envChart(hd,'#f87171',thr.maxHum,thr.minHum,12,ey,PW-24,38); ey+=41; }
+          ey += 6; await new Promise(r=>requestAnimationFrame(r));
         }
-        for(const [si,s] of (env.screenshots||[]).entries()){
-          if(ey+70>PH-20){addPage();ey=16;}
-          doc.setFontSize(8);doc.setFont(T.font,'bold');setTextC(T.cTitle);doc.text('📷 '+(s.label||'Screenshot '+(si+1)),15,ey+5);ey+=9;
-          try{doc.addImage(s.data,'PNG',12,ey,PW-24,65,'','FAST');ey+=68;}catch(e){}
+        for (const [si,s] of (env.screenshots||[]).entries()) {
+          if (ey+70 > PH-20) { newPage(); ey=16; }
+          doc.setFontSize(8); doc.setFont(P.font,'bold'); setText(P.ink); doc.text((s.label||'Screenshot '+(si+1)),15,ey+5); ey+=9;
+          try { doc.addImage(s.data,'PNG',12,ey,PW-24,65,'','FAST'); ey+=68; } catch(e){}
         }
       }
     }
 
-    // ── SIGNATURE PAGE ──────────────────────────────────────────────────────────
+    // ── SIGNATURE PAGE ────────────────────────────────────────────────────────
     if (window._pdfBranding?.auditorSig || window._pdfBranding?.clientSig) {
-      addPage();
-      setFill(T.bgHeader); doc.rect(0,0,PW,18,'F');
-      doc.setFontSize(10); doc.setFont(T.font,'bold'); setTextC(T.cHeader);
-      doc.text('REPORT SIGN-OFF',15,12);
-      let sy=38;
-      doc.setFontSize(11);doc.setFont(T.font,'bold');setTextC(T.cTitle);doc.text('Auditor / Inspector',15,sy);
-      if(window._pdfBranding.auditorSig) doc.addImage(window._pdfBranding.auditorSig,'PNG',15,sy+5,60,20);
-      doc.setFontSize(9);doc.setFont(T.font,'normal');setTextC(T.cSub);
-      doc.line(15,sy+26,85,sy+26);doc.text('Signature',15,sy+30);doc.text('Date: '+new Date().toLocaleDateString(),60,sy+30);
-      sy=98;
-      doc.setFontSize(11);doc.setFont(T.font,'bold');setTextC(T.cTitle);doc.text('Client / General Contractor',15,sy);
-      if(window._pdfBranding.clientSig) doc.addImage(window._pdfBranding.clientSig,'PNG',15,sy+5,60,20);
-      doc.setFontSize(9);doc.setFont(T.font,'normal');setTextC(T.cSub);
-      doc.line(15,sy+26,85,sy+26);doc.text('Signature',15,sy+30);doc.text('Date: ________________',60,sy+30);
+      newPage();
+      setFill(P.ink); doc.rect(0,0,PW,18,'F');
+      doc.setFontSize(10); doc.setFont(P.font,'bold'); setText('#ffffff'); doc.text('REPORT SIGN-OFF',15,12);
+      let sy = 38;
+      doc.setFontSize(11); doc.setFont(P.font,'bold'); setText(P.ink); doc.text('Auditor / Inspector',15,sy);
+      if (window._pdfBranding.auditorSig) doc.addImage(window._pdfBranding.auditorSig,'PNG',15,sy+5,60,20);
+      doc.setFontSize(9); doc.setFont(P.font,'normal'); setText(P.sub);
+      doc.line(15,sy+26,85,sy+26); doc.text('Signature',15,sy+30); doc.text('Date: '+new Date().toLocaleDateString(),60,sy+30);
+      sy = 98;
+      doc.setFontSize(11); doc.setFont(P.font,'bold'); setText(P.ink); doc.text('Client / General Contractor',15,sy);
+      if (window._pdfBranding.clientSig) doc.addImage(window._pdfBranding.clientSig,'PNG',15,sy+5,60,20);
+      doc.setFontSize(9); doc.setFont(P.font,'normal'); setText(P.sub);
+      doc.line(15,sy+26,85,sy+26); doc.text('Signature',15,sy+30); doc.text('Date: ________________',60,sy+30);
     }
 
-    // ── FOOTERS ─────────────────────────────────────────────────────────────────
+    // ── FOOTERS ───────────────────────────────────────────────────────────────
     const pageCount = doc.getNumberOfPages();
-    for (let p=1;p<=pageCount;p++) {
+    for (let p=1; p<=pageCount; p++) {
       doc.setPage(p);
-      if (tplKey==='minimal') {
-        setStroke(T.cBorder); doc.setLineWidth(0.5); doc.line(15,PH-10,PW-15,PH-10);
-        doc.setFontSize(7);setTextC(T.cSub);doc.setFont(T.font,'normal');
-        doc.text(proj.name,15,PH-5);
-        if(footerText) doc.text(footerText,PW/2,PH-5,{align:'center'});
-        doc.text('Page '+p+' of '+pageCount,PW-15,PH-5,{align:'right'});
-      } else {
-        setFill(T.bgHeader); doc.rect(0,PH-8,PW,8,'F');
-        doc.setFontSize(7);setTextC(T.cHeader);doc.setFont(T.font,'normal');
-        doc.text(proj.name,15,PH-3);
-        if(footerText) doc.text(footerText,PW/2,PH-3,{align:'center'});
-        doc.text('Page '+p+' of '+pageCount,PW-15,PH-3,{align:'right'});
-      }
+      setStroke(P.border); doc.setLineWidth(0.4); doc.line(MX, PH-10, PW-MX, PH-10);
+      doc.setFontSize(7); setText(P.sub); doc.setFont(P.font,'normal');
+      doc.text(proj.name || '', MX, PH-5.5);
+      if (footerText) doc.text(footerText, PW/2, PH-5.5, {align:'center'});
+      doc.text('Page '+p+' of '+pageCount, PW-MX, PH-5.5, {align:'right'});
     }
 
-    window.updatePDFProgress('Saving PDF…',97);
-    await new Promise(r=>setTimeout(r,100));
+    window.updatePDFProgress('Saving PDF…', 97);
+    await new Promise(r => setTimeout(r, 100));
 
-    const filename = (proj.name||'report').replace(/[^a-z0-9]/gi,'_')+'_'+tplKey+'_report.pdf';
+    const layoutName = layoutKey === 'flow' ? 'Clean Flow' : 'Branded Grid';
+    const filename = (proj.name || 'report').replace(/[^a-z0-9]/gi,'_') + '_' + layoutKey + '_report.pdf';
     const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
     if (isIOS) {
       const blobURL = URL.createObjectURL(doc.output('blob'));
       window.hidePDFProgress();
-      const ov=document.createElement('div');
-      ov.style.cssText='position:fixed;inset:0;z-index:700;background:rgba(0,0,0,0.8);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px;';
-      ov.innerHTML=`<div style="background:var(--surface,#1e293b);border:1px solid var(--border,#334155);border-radius:16px;padding:24px;max-width:340px;text-align:center;">
-        <div style="font-size:36px;margin-bottom:12px">📄</div>
-        <div style="font-size:15px;font-weight:600;margin-bottom:8px">PDF Ready — ${PDF_TEMPLATES[tplKey]?.name||tplKey}</div>
-        <div style="font-size:12px;color:var(--text2,#94a3b8);margin-bottom:20px;line-height:1.6">Tap <strong>Share ⬆</strong> → <strong>Save to Files</strong></div>
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;z-index:700;background:rgba(0,0,0,0.8);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px;';
+      ov.innerHTML = `<div style="background:var(--surface,#1e293b);border:1px solid var(--border,#334155);border-radius:16px;padding:24px;max-width:340px;text-align:center;">
+        <div style="font-size:36px;margin-bottom:12px">\u{1F4C4}</div>
+        <div style="font-size:15px;font-weight:600;margin-bottom:8px">PDF Ready — ${layoutName}</div>
+        <div style="font-size:12px;color:var(--text2,#94a3b8);margin-bottom:20px;line-height:1.6">Tap <strong>Share \u2B06</strong> → <strong>Save to Files</strong></div>
         <div style="display:flex;flex-direction:column;gap:10px;">
           <button onclick="window.open('${blobURL}','_blank');this.closest('div[style]').remove();"
-            style="background:var(--accent,#3db8f5);color:#000;border:none;border-radius:10px;padding:12px;font-family:monospace;font-size:13px;font-weight:700;cursor:pointer;">Open PDF ↗</button>
+            style="background:var(--accent,#3db8f5);color:#000;border:none;border-radius:10px;padding:12px;font-family:monospace;font-size:13px;font-weight:700;cursor:pointer;">Open PDF \u2197</button>
           <button onclick="this.closest('div[style]').remove();"
             style="background:var(--surface2,#1e293b);color:var(--text2,#94a3b8);border:1px solid var(--border,#334155);border-radius:10px;padding:10px;font-family:monospace;font-size:12px;cursor:pointer;">Cancel</button>
         </div></div>`;
@@ -746,7 +853,7 @@ ${total===0?`<div style="background:#fff;border-radius:8px;padding:40px 24px;tex
     } else {
       doc.save(filename);
       window.hidePDFProgress();
-      if (typeof showToast==='function') showToast('✓ PDF Downloaded — '+tplKey+' template','green');
+      if (typeof showToast === 'function') showToast('\u2713 PDF Downloaded — ' + layoutName, 'green');
     }
   };
 
