@@ -2820,6 +2820,55 @@ textarea.field-input { min-height: 88px !important; line-height: 1.6 !important;
 }
 .qa-grid.open { max-height: 400px; opacity: 1; }
 
+/* ── Required-field highlighting (pre-export validation) ─────────────── */
+.field-group.req-missing{
+  border:1.5px solid var(--red,#dc2626) !important;
+  border-radius:10px;
+  background:rgba(220,38,38,0.05);
+  padding:8px 10px;
+  box-shadow:0 0 0 3px rgba(220,38,38,0.08);
+  position:relative;
+}
+.req-flag{
+  display:inline-flex; align-items:center; gap:4px;
+  font-family:var(--mono,monospace); font-size:10px; font-weight:700;
+  color:#fff; background:var(--red,#dc2626);
+  padding:2px 8px; border-radius:999px; margin-left:8px;
+  vertical-align:middle; letter-spacing:0.3px;
+}
+.req-flag::before{ content:"●"; font-size:8px; }
+
+/* ── Export-validation modal ────────────────────────────────────────── */
+.exv-intro{ font-size:13px; color:var(--text2,#94a3b8); margin-bottom:14px; line-height:1.5; }
+.exv-item{
+  background:var(--surface2,#1e293b); border:1px solid var(--border,#334155);
+  border-left:3px solid var(--red,#dc2626);
+  border-radius:10px; padding:12px 14px; margin-bottom:10px;
+}
+.exv-item-head{ display:flex; align-items:center; gap:9px; margin-bottom:9px; }
+.exv-num{
+  font-family:var(--mono,monospace); font-size:11px; font-weight:700;
+  color:var(--accent,#3b82f6); background:var(--surface3,#0f172a);
+  padding:3px 9px; border-radius:6px; flex-shrink:0;
+}
+.exv-title{ font-size:13px; font-weight:600; color:var(--text,#e2e8f0); flex:1; min-width:0;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.exv-miss{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.exv-chip{
+  display:inline-flex; align-items:center; gap:5px;
+  font-size:11px; font-weight:600; color:#fff;
+  background:var(--red,#dc2626); padding:4px 10px; border-radius:999px;
+}
+.exv-chip::before{ content:"✕"; font-size:9px; opacity:0.85; }
+.exv-jump{
+  margin-left:auto; flex-shrink:0;
+  font-size:12px; font-weight:600; color:var(--accent,#3b82f6);
+  background:transparent; border:1px solid var(--accent,#3b82f6);
+  padding:4px 12px; border-radius:7px; cursor:pointer;
+  transition:background 0.15s,color 0.15s;
+}
+.exv-jump:hover{ background:var(--accent,#3b82f6); color:#fff; }
+
 </style>
 
 </head>
@@ -12175,6 +12224,105 @@ setTimeout(()=>{
   if(_notifEnabled && Notification.permission!=='granted'){ _notifEnabled=false; localStorage.setItem('adh_notif','0'); }
   _updateNotifUI();
 },1000);
+
+// ══════════════════════════════════════════════════════════════════
+// FEATURE: Pre-export required-field validation + red highlighting
+// ══════════════════════════════════════════════════════════════════
+// An item is "incomplete" unless its status is in EXPORT_EXEMPT_STATUSES.
+// Every incomplete item must have a Field Check (statusCode), Field Notes,
+// and at least one Field Photo before the project PDF can be exported.
+// Missing fields are surfaced in a blocking modal (red chips) and
+// highlighted in red inside the SI editor so the superintendent can fix them.
+
+// Tunable: add 'out-of-scope' or 'not-ready' here to exempt those too.
+window.EXPORT_EXEMPT_STATUSES = ['completed','punch-ongoing'];
+window._exportExemptStatus = it => window.EXPORT_EXEMPT_STATUSES.includes(it && it.status);
+
+window.REQUIRED_EXPORT_FIELDS = [
+  { key:'statusCode', label:'Field Check', test: it => !!it.statusCode },
+  { key:'notes',      label:'Field Notes', test: it => !!(it.notes && String(it.notes).trim()) },
+  { key:'photos',     label:'Field Photo', test: it => Array.isArray(it.photos) && it.photos.length > 0 },
+];
+
+// Returns array of missing field labels for one item (empty if complete/exempt).
+window._siMissingRequired = function(it){
+  if (!it || it._deleted) return [];
+  if (window._exportExemptStatus(it)) return [];
+  return window.REQUIRED_EXPORT_FIELDS.filter(f => !f.test(it)).map(f => f.label);
+};
+
+// Scans a project; returns [{id,num,title,missing:[labels]}] for incomplete items.
+window.checkRequiredBeforeExport = function(proj){
+  if (!proj || !Array.isArray(proj.items)) return [];
+  const out = [];
+  for (const it of proj.items){
+    const missing = window._siMissingRequired(it);
+    if (missing.length) out.push({ id: it.id, num: it.num, title: it.title || '', missing });
+  }
+  return out;
+};
+
+// Renders the blocking modal listing every incomplete item + its missing fields.
+window.showExportValidationModal = function(pid, missing){
+  const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const proj = (typeof getProject==='function') ? getProject(pid) : null;
+  missing = missing || window.checkRequiredBeforeExport(proj);
+  const n = missing.length;
+  const rows = missing.map(m => `
+    <div class="exv-item">
+      <div class="exv-item-head">
+        <span class="exv-num">${esc(m.num||'SI')}</span>
+        <span class="exv-title">${esc(m.title||'(untitled)')}</span>
+        <button class="exv-jump" onclick="closeModal(); navToSI('${pid}','${m.id}')">Open ›</button>
+      </div>
+      <div class="exv-miss">
+        ${m.missing.map(lbl=>`<span class="exv-chip">${esc(lbl)}</span>`).join('')}
+      </div>
+    </div>`).join('');
+  const body = `
+    <div class="exv-intro">
+      <strong>${n} item${n>1?'s':''}</strong> ${n>1?'are':'is'} missing required field${n>1?'s':''} and must be completed before this report can be exported.
+      Each incomplete item needs a <strong>Field Check</strong>, <strong>Field Notes</strong>, and at least one <strong>Photo</strong>.
+      Tap <strong>Open ›</strong> to jump to an item — the missing fields are outlined in red.
+    </div>
+    ${rows}`;
+  makeModal('⚠ Cannot Export — Required Fields Missing', body, null, true);
+};
+
+// ── Highlight missing required fields inside the SI editor ───────────
+window._flagRequiredFields = function(pid, sid){
+  const proj = (typeof getProject==='function') ? getProject(pid) : null; if (!proj) return;
+  const it = (typeof getSI==='function') ? getSI(pid,sid) : (proj.items||[]).find(i=>i.id===sid);
+  const root = document.getElementById('v-si'); if (!root) return;
+  // Clear any prior flags first (render-time refresh)
+  root.querySelectorAll('.field-group.req-missing').forEach(el => el.classList.remove('req-missing'));
+  root.querySelectorAll('.req-flag').forEach(el => el.remove());
+  if (!it) return;
+  const missing = window._siMissingRequired(it);
+  if (!missing.length) return;
+  const flag = (groupEl) => {
+    if (!groupEl || groupEl.classList.contains('req-missing')) return;
+    groupEl.classList.add('req-missing');
+    const lbl = groupEl.querySelector('.field-label');
+    if (lbl && !lbl.querySelector('.req-flag')){
+      const pill = document.createElement('span');
+      pill.className = 'req-flag'; pill.textContent = 'Required';
+      lbl.appendChild(pill);
+    }
+  };
+  if (missing.includes('Field Photo')){ const g = root.querySelector('.photo-grid'); if (g) flag(g.closest('.field-group')); }
+  if (missing.includes('Field Notes')){ const t = root.querySelector('#notes-input'); if (t) flag(t.closest('.field-group')); }
+  if (missing.includes('Field Check')){ const r = root.querySelector('input[name="si-status-code"]'); if (r) flag(r.closest('.field-group')); }
+};
+
+// Wrap the latest buildSIEditor so flags are (re)applied after each render.
+(function(){
+  const _prevBuildSI = buildSIEditor;
+  buildSIEditor = function(pid, sid){
+    _prevBuildSI(pid, sid);
+    requestAnimationFrame(()=>{ try { window._flagRequiredFields(pid, sid); } catch(e){} });
+  };
+})();
 </script>
 </body>
 </html>

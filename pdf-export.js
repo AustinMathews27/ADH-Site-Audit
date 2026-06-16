@@ -302,6 +302,66 @@
     const orphans = items.filter(i => !sectionIds.has(i.sectionId));
     if (orphans.length) sectionPages += renderSection('Other Items', orphans);
 
+    // ── ENVIRONMENTAL CONDITIONS PAGE ─────────────────────────────────────────
+    const inclEnv = opts.inclEnv !== false;
+    let envPage = '';
+    if (inclEnv && proj.envData) {
+      const env = proj.envData;
+      const thr = Object.assign({ minTemp:50, maxTemp:80, minHum:20, maxHum:60 }, env.thresholds || {});
+      const sensors = env.sensors || [], shots = env.screenshots || [];
+      if (sensors.length + shots.length > 0) {
+        const _gef = (typeof window.getEnvFilter === 'function') ? window.getEnvFilter : () => ({startPct:0,endPct:100});
+        const _fd  = (typeof window.filterData === 'function') ? window.filterData : d => d;
+        const stat = arr => { if(!arr.length) return null; const vs=arr.map(d=>d.v); return { min:Math.min(...vs), max:Math.max(...vs), avg:vs.reduce((a,b)=>a+b,0)/vs.length }; };
+        const viol = [];
+        const sensorRows = sensors.map((s,si)=>{
+          const flt = _gef(proj.id,si);
+          const ts = stat(_fd(s.temperature||[],flt.startPct,flt.endPct));
+          const hs = stat(_fd(s.humidity||[],flt.startPct,flt.endPct));
+          const nm = esc(s.name||('Sensor '+(si+1)));
+          const tBad = ts && (ts.max>thr.maxTemp || ts.min<thr.minTemp);
+          const hBad = hs && (hs.max>thr.maxHum || hs.min<thr.minHum);
+          if (tBad) viol.push(1); if (hBad) viol.push(1);
+          const cell = (label,st,unit,bad) => st ? `
+            <div style="flex:1;padding:7px 9px;background:${P.row};border:1px solid ${bad?'#dc2626':P.border};border-radius:4px">
+              <div style="font-size:7px;font-weight:700;color:${bad?'#dc2626':P.sub};text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px">${label}${bad?' \u26a0':''}</div>
+              <div style="font-size:7.5px;color:${P.text};line-height:1.5"><span style="font-weight:700;color:${P.ink}">${st.avg.toFixed(1)}${unit}</span> avg &nbsp;·&nbsp; ${st.min.toFixed(1)}\u2013${st.max.toFixed(1)}${unit}</div>
+            </div>` : `<div style="flex:1;padding:7px 9px;background:${P.row};border:1px solid ${P.border};border-radius:4px;opacity:0.5"><div style="font-size:7px;color:${P.sub}">${label}: no data</div></div>`;
+          return `
+            <div style="margin-bottom:9px">
+              <div style="font-size:9px;font-weight:700;color:${P.ink};margin-bottom:4px">${nm}</div>
+              <div style="display:flex;gap:6px">${cell('Temperature',ts,'\u00b0F',tBad)}${cell('Humidity',hs,'%',hBad)}</div>
+            </div>`;
+        }).join('');
+        const shotThumbs = shots.length ? `
+          <div style="margin-top:10px">
+            <div style="font-size:8px;font-weight:700;color:${P.sub};text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Screenshots (${shots.length})</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              ${shots.map((s,i)=>s&&s.data?`<div style="border:1px solid ${P.border};border-radius:4px;overflow:hidden;background:${P.row}"><img src="${s.data}" style="width:100%;display:block;max-height:120px;object-fit:cover"><div style="font-size:7px;color:${P.sub};padding:3px 5px">${esc(s.label||('Screenshot '+(i+1)))}</div></div>`:'').join('')}
+            </div>
+          </div>` : '';
+        const banner = viol.length ? `
+          <div style="margin:0 0 10px;padding:8px 11px;background:#fef2f2;border:1px solid #fecaca;border-radius:5px"><span style="font-size:8.5px;font-weight:700;color:#dc2626">\u26a0 ${viol.length} sensor reading${viol.length>1?'s':''} outside acceptable range</span></div>` : `
+          <div style="margin:0 0 10px;padding:8px 11px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:5px"><span style="font-size:8.5px;font-weight:700;color:#16a34a">\u2713 All readings within acceptable range</span></div>`;
+        envPage = `
+          <div class="page-container">
+          <div class="page-scaler">
+            <div class="page-num">${pgNum}</div>
+            ${sectionHeader('Environmental Conditions', sensors.length)}
+            <div style="padding:10px 18px 10px;flex:1">
+              <div style="display:flex;gap:8px;margin-bottom:10px">
+                <div style="flex:1;padding:8px 10px;background:${P.row};border:1px solid ${P.border};border-radius:4px"><div style="font-size:7px;font-weight:700;color:${P.sub};text-transform:uppercase;letter-spacing:0.4px">Acceptable Temp</div><div style="font-size:10px;font-weight:800;color:${P.ink};margin-top:2px">${thr.minTemp}\u2013${thr.maxTemp} \u00b0F</div></div>
+                <div style="flex:1;padding:8px 10px;background:${P.row};border:1px solid ${P.border};border-radius:4px"><div style="font-size:7px;font-weight:700;color:${P.sub};text-transform:uppercase;letter-spacing:0.4px">Acceptable Humidity</div><div style="font-size:10px;font-weight:800;color:${P.ink};margin-top:2px">${thr.minHum}\u2013${thr.maxHum} %</div></div>
+              </div>
+              ${banner}${sensorRows}${shotThumbs}
+              <div style="margin-top:10px;font-size:7px;color:${P.sub};font-style:italic">Full time-series charts are rendered in the exported PDF.</div>
+            </div>
+            <div class="pg-footer"><span>${esc(proj.name||'')}</span><span>Page ${pgNum}</span></div>
+          </div></div>`;
+        pgNum++;
+      }
+    }
+
     // ── SIGNATURE PAGE ────────────────────────────────────────────────────────
     const audSig = branding.auditorSig, cliSig = branding.clientSig;
     const sigPage = (audSig || cliSig) ? `
@@ -358,6 +418,7 @@ body{background:#18212f;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
 </head><body>
 ${coverPage}
 ${sectionPages}
+${envPage}
 ${sigPage}
 ${total===0?`<div class="page-container"><div class="page-scaler" style="align-items:center;justify-content:center;min-height:200px"><div style="background:${P.bg};border-radius:8px;padding:40px 24px;text-align:center;width:560px;box-shadow:0 4px 20px rgba(0,0,0,0.2)">
   <div style="font-size:28px;margin-bottom:12px;opacity:0.25">📄</div>
@@ -413,15 +474,28 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
     const proj = (typeof getProject === 'function' ? getProject : window.getProject)(pid);
     if (!proj) return;
 
-    // Mandatory field check (incomplete items must have Field Check, Notes, Photos)
-    const incomplete = (proj.items || []).filter(it => {
-      if (it.status === 'completed' || it.status === 'punch-ongoing') return false;
-      return !it.statusCode || !(it.notes && it.notes.trim()) || !(it.photos && it.photos.length > 0);
-    });
-    if (incomplete.length > 0) {
-      const list = incomplete.map(it => it.num).join(', ');
-      if (typeof showToast === 'function')
+    // Mandatory field check — incomplete items (not Completed / not Punch Ongoing)
+    // must have Field Check, Field Notes, and at least one Photo. Instead of a terse
+    // toast, surface EXACTLY what's missing per item (highlighted in red) so the
+    // superintendent can fix it before exporting.
+    let _missingReq = [];
+    if (typeof window.checkRequiredBeforeExport === 'function') {
+      _missingReq = window.checkRequiredBeforeExport(proj);
+    } else {
+      // Fallback (older index.html without the validator) — terse list.
+      _missingReq = (proj.items || []).filter(it => {
+        if (it._deleted) return false;
+        if (it.status === 'completed' || it.status === 'punch-ongoing') return false;
+        return !it.statusCode || !(it.notes && it.notes.trim()) || !(it.photos && it.photos.length > 0);
+      }).map(it => ({ id: it.id, num: it.num, title: it.title || '', missing: ['required fields'] }));
+    }
+    if (_missingReq.length > 0) {
+      if (typeof window.showExportValidationModal === 'function') {
+        window.showExportValidationModal(proj.id, _missingReq);
+      } else if (typeof showToast === 'function') {
+        const list = _missingReq.map(m => m.num).join(', ');
         showToast(`Cannot export: Items [${list}] are missing Field Check, Notes, or Photos.`, 'red');
+      }
       return;
     }
 
@@ -815,7 +889,8 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
 
     // ── ENVIRONMENTAL CONDITIONS (overall site — humidity / temperature) ──────
     if (inclEnv && proj.envData) {
-      const env = proj.envData, thr = env.thresholds || { maxTemp:80, maxHum:60 };
+      const env = proj.envData;
+      const thr = Object.assign({ minTemp:50, maxTemp:80, minHum:20, maxHum:60 }, env.thresholds || {});
       if ((env.sensors?.length || 0) + (env.screenshots?.length || 0) > 0) {
         window.updatePDFProgress('Rendering environmental charts…', 90);
         newPage();
@@ -825,6 +900,44 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
         let ey = 24;
         const gef = (typeof window.getEnvFilter === 'function') ? window.getEnvFilter : () => ({startPct:0,endPct:100});
         const fd  = (typeof window.filterData === 'function') ? window.filterData : d => d;
+
+        // Acceptable-range reference band ----------------------------------------
+        doc.setFillColor(241,245,249); doc.roundedRect(12,ey,PW-24,16,1.5,1.5,'F');
+        doc.setFontSize(7.5); doc.setFont(P.font,'bold'); doc.setTextColor(51,65,85);
+        doc.text('ACCEPTABLE RANGES',15,ey+5.5);
+        doc.setFont(P.font,'normal'); doc.setTextColor(71,85,105);
+        doc.text(`Temperature:  ${thr.minTemp}\u2013${thr.maxTemp} \u00b0F`,15,ey+11.5);
+        doc.text(`Relative Humidity:  ${thr.minHum}\u2013${thr.maxHum} %`,PW/2,ey+11.5);
+        ey += 22;
+
+        // Threshold-exceedance summary -------------------------------------------
+        const _violations = [];
+        for (const [si,s] of (env.sensors||[]).entries()){
+          const flt = gef(proj.id,si);
+          const td  = fd(s.temperature||[],flt.startPct,flt.endPct);
+          const hd  = fd(s.humidity||[],flt.startPct,flt.endPct);
+          const nm  = s.name || ('Sensor '+(si+1));
+          const tHi = td.filter(d=>d.v>thr.maxTemp).length, tLo = td.filter(d=>d.v<thr.minTemp).length;
+          const hHi = hd.filter(d=>d.v>thr.maxHum).length,  hLo = hd.filter(d=>d.v<thr.minHum).length;
+          if (tHi) _violations.push(`${nm}: temp above ${thr.maxTemp}\u00b0F (${tHi} reading${tHi>1?'s':''}, peak ${Math.max(...td.map(d=>d.v)).toFixed(1)}\u00b0F)`);
+          if (tLo) _violations.push(`${nm}: temp below ${thr.minTemp}\u00b0F (${tLo} reading${tLo>1?'s':''}, low ${Math.min(...td.map(d=>d.v)).toFixed(1)}\u00b0F)`);
+          if (hHi) _violations.push(`${nm}: humidity above ${thr.maxHum}% (${hHi} reading${hHi>1?'s':''}, peak ${Math.max(...hd.map(d=>d.v)).toFixed(1)}%)`);
+          if (hLo) _violations.push(`${nm}: humidity below ${thr.minHum}% (${hLo} reading${hLo>1?'s':''}, low ${Math.min(...hd.map(d=>d.v)).toFixed(1)}%)`);
+        }
+        if (_violations.length){
+          doc.setFontSize(8); doc.setFont(P.font,'bold'); doc.setTextColor(220,38,38);
+          doc.text(`\u26a0  ${_violations.length} threshold exceedance${_violations.length>1?'s':''} detected`,15,ey+4); ey+=7;
+          doc.setFontSize(7); doc.setFont(P.font,'normal'); doc.setTextColor(153,27,27);
+          for (const v of _violations){
+            if (ey+6>PH-20){ newPage(); ey=16; }
+            const _ls = doc.splitTextToSize('\u2022 '+v, PW-30);
+            doc.text(_ls,17,ey+3.5); ey += 4.5*_ls.length + 1;
+          }
+          ey += 4;
+        } else {
+          doc.setFontSize(8); doc.setFont(P.font,'bold'); doc.setTextColor(22,163,74);
+          doc.text('\u2713  All readings within acceptable range',15,ey+4); ey+=10;
+        }
         async function envChart(data, lc, maxT, minT, x, y, w, h) {
           if (!data.length) return;
           const cv = document.createElement('canvas'), dp = 2;
@@ -861,9 +974,20 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
           ey += 6; await new Promise(r=>requestAnimationFrame(r));
         }
         for (const [si,s] of (env.screenshots||[]).entries()) {
-          if (ey+70 > PH-20) { newPage(); ey=16; }
+          if (!s || !s.data) continue;
+          let _fmt = 'JPEG';
+          if (/^data:image\/png/i.test(s.data)) _fmt = 'PNG';
+          else if (/^data:image\/jpe?g/i.test(s.data)) _fmt = 'JPEG';
+          else if (/^data:image\/webp/i.test(s.data)) _fmt = 'WEBP';
+          let _w = PW-24, _h = 65;
+          try {
+            const ip = doc.getImageProperties(s.data);
+            if (ip && ip.width && ip.height) { _h = Math.min(150, _w * ip.height / ip.width); }
+          } catch(e){}
+          if (ey + _h + 12 > PH-20) { newPage(); ey=16; }
           doc.setFontSize(8); doc.setFont(P.font,'bold'); setText(P.ink); doc.text((s.label||'Screenshot '+(si+1)),15,ey+5); ey+=9;
-          try { doc.addImage(s.data,'PNG',12,ey,PW-24,65,'','FAST'); ey+=68; } catch(e){}
+          try { doc.addImage(s.data,_fmt,12,ey,_w,_h,'','FAST'); ey += _h + 4; }
+          catch(e){ try { doc.addImage(s.data,'JPEG',12,ey,_w,65,'','FAST'); ey += 68; } catch(e2){} }
         }
       }
     }
