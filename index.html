@@ -3331,65 +3331,24 @@ let _currentUser = null; // { userId, userDetails, userRoles }
  * - localhost (dev)         → returns a dev identity, no redirect
  */
 async function _getAuthUser() {
-  // Dev/local bypass — no auth server running locally
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    const devUser = { userId: 'dev-local', userDetails: 'dev@local.test', userRoles: ['authenticated'] };
-    await _idbSet('adh_user', devUser);
-    localStorage.setItem('adh_auth_token', 'valid_user_session');
-    localStorage.setItem('adh_user_id', devUser.userId);
-    return devUser;
-  }
-
+  // ── AUTH DEACTIVATED ──────────────────────────────────────────────
+  // No /.auth/me request and no Entra redirect, so startup is instant.
+  // Reuse a previously-cached identity when present (keeps existing
+  // per-user data + project ownership intact); otherwise use one shared id.
   try {
-    const res = await fetch('/.auth/me', { cache: 'no-store' });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.clientPrincipal) {
-        // Authenticated — cache and return
-        await _idbSet('adh_user', data.clientPrincipal);
-        localStorage.setItem('adh_auth_token', 'valid_user_session');
-        localStorage.setItem('adh_user_id', data.clientPrincipal.userId);
-        return data.clientPrincipal;
-      }
-      // Response OK but no principal = not logged in → redirect
-      localStorage.removeItem('adh_auth_token');
-      localStorage.removeItem('adh_user_id');
-      window.location.href = '/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(window.location.pathname);
-      return null;
+    const cached = await _idbGet('adh_user');
+    if (cached && cached.userId) {
+      localStorage.setItem('adh_auth_token', 'valid_user_session');
+      localStorage.setItem('adh_user_id', cached.userId);
+      return cached;
     }
-  } catch(e) {
-    // Network error — fall through to offline cache
-    console.warn('[Auth] /.auth/me unreachable, trying IDB cache');
-  }
+  } catch (e) { /* fall through */ }
 
-  // Offline fallback — use last-known user
-  const cached = await _idbGet('adh_user');
-  if (cached) {
-    console.log('[Auth] Offline — using cached user:', cached.userDetails);
-    localStorage.setItem('adh_auth_token', 'valid_user_session');
-    localStorage.setItem('adh_user_id', cached.userId);
-    return cached;
-  }
-
-  // No cache and can't reach auth — show a friendly wall
-  localStorage.removeItem('adh_auth_token');
-  localStorage.removeItem('adh_user_id');
-  document.body.innerHTML = `
-    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
-      height:100vh;gap:16px;font-family:sans-serif;color:#475569;background:#f1f5f9">
-      <div style="font-size:48px">🔒</div>
-      <div style="font-size:18px;font-weight:600;color:#0f172a">Sign in required</div>
-      <div style="font-size:13px;max-width:320px;text-align:center;line-height:1.6">
-        You need to be online to sign in for the first time.<br>
-        Once signed in, the app works offline.
-      </div>
-      <button onclick="window.location.href='/.auth/login/aad'"
-        style="background:#2563eb;color:#fff;border:none;border-radius:10px;
-        padding:12px 28px;font-size:14px;font-weight:600;cursor:pointer">
-        Sign in with Microsoft
-      </button>
-    </div>`;
-  return null;
+  const shared = { userId: 'adh-shared', userDetails: 'field@adh.local', userRoles: ['authenticated'] };
+  try { await _idbSet('adh_user', shared); } catch (e) {}
+  localStorage.setItem('adh_auth_token', 'valid_user_session');
+  localStorage.setItem('adh_user_id', shared.userId);
+  return shared;
 }
 
 // When the app starts up (even in airplane mode):
