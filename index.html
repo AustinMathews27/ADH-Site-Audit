@@ -8325,6 +8325,406 @@ async function preparePhotoForUpload(dbPhotoData) {
   throw new Error("Invalid photo data format");
 }
 
+// ══════════════════════════════════════════════════════════════════
+// PHOTO ANNOTATION ENGINE
+// Draw on field photos: pen / arrow / box / text, pick colours, undo,
+// clear, then save back to the photo (local + Azure re-upload).
+// Works with touch (iPad/Android) and mouse (desktop).
+//
+// Entry point referenced by the photo card button:
+//   onclick="event.stopPropagation();openAnnotation(pid,sid,idx)"
+// ══════════════════════════════════════════════════════════════════
+let _ann = null; // active annotation session
+
+async function openAnnotation(pid, sid, idx) {
+  const item = getSI(pid, sid);
+  if (!item || !item.photos || !item.photos[idx]) { showToast('Photo not found', 'red'); return; }
+  const photo = item.photos[idx];
+
+  showToast('Opening editor…');
+
+  // Resolve a non-tainting image source. Remote (Azure) URLs are fetched to a
+  // Blob first so the canvas stays exportable (avoids CORS canvas tainting).
+  let src;
+  try {
+    src = await _annResolveSrc(photo);
+  } catch (e) {
+    console.warn('[Annotation] source load failed:', e && e.message);
+    showToast('Could not load photo for editing', 'red');
+    return;
+  }
+
+  const img = new Image();
+  img.onload  = () => _annBuildUI(pid, sid, idx, img, src);
+  img.onerror = () => showToast('Could not load photo for editing', 'red');
+  img.src = src;
+}
+
+async function _annResolveSrc(photo) {
+  // 1. Local Blob (freshly captured) → object URL
+  if (photo.data instanceof Blob) return URL.createObjectURL(photo.data);
+  // 2. Base64 data URL → use directly
+  if (typeof photo.data === 'string' && photo.data.startsWith('data:')) return photo.data;
+  // 3. Remote URL (Azure Blob) → fetch to Blob so the canvas isn't tainted
+  const url = photo.url || photo.data;
+  if (typeof url === 'string' && /^https?:/i.test(url)) {
+    const res = await fetch(url, { mode: 'cors' });
+    if (!res.ok) throw new Error('fetch ' + res.status);
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  }
+  if (typeof url === 'string' && url) return url;
+  throw new Error('no usable source');
+}
+
+function _annBuildUI(pid, sid, idx, img, srcObjectUrl) {
+  // Cap internal canvas resolution for performance on big phone photos
+  const MAX = 1600;
+  let cw = img.naturalWidth || img.width;
+  let ch = img.naturalHeight || img.height;
+  if (Math.max(cw, ch) > MAX) {
+    const s = MAX / Math.max(cw, ch);
+    cw = Math.round(cw * s);
+    ch = Math.round(ch * s);
+  }
+
+  const colors = ['#ff3b30', '#ffcc00', '#34c759', '#0a84ff', '#ffffff', '#000000'];
+
+  _ann = {
+    pid, sid, idx, img, srcObjectUrl,
+    cw, ch,
+    tool: 'pen',
+    color: '#ff3b30',
+    actions: [],
+    drawing: false,
+    cur: null,
+    penWidth: Math.max(3, Math.round(cw / 300)),
+    textSize: Math.max(20, Math.round(cw / 36)),
+    canvas: null, ctx: null, _handlers: null,
+  };
+
+  const ov = document.createElement('div');
+  ov.className = 'annotation-overlay';
+  ov.id = 'annotation-overlay';
+  ov.innerHTML = `
+    <div class="annotation-toolbar">
+      <button class="ann-tool-btn active" data-tool="pen"   onclick="_annSetTool('pen',this)">✏️ Pen</button>
+      <button class="ann-tool-btn"        data-tool="arrow" onclick="_annSetTool('arrow',this)">↗ Arrow</button>
+      <button class="ann-tool-btn"        data-tool="rect"  onclick="_annSetTool('rect',this)">▭ Box</button>
+      <button class="ann-tool-btn"        data-tool="text"  onclick="_annSetTool('text',this)">T Text</button>
+      <div style="width:1px;height:24px;background:#444;margin:0 4px"></div>
+      ${colors.map((c, i) => `<button class="ann-color-btn ${i === 0 ? 'active' : ''}" style="background:${c};${c === '#ffffff' ? 'border-color:#888' : ''}" onclick="_annSetColor('${c}',this)"></button>`).join('')}
+      <div style="width:1px;height:24px;background:#444;margin:0 4px"></div>
+      <button class="ann-tool-btn" onclick="_annUndo()">↶ Undo</button>
+      <button class="ann-tool-btn" onclick="_annClear()">🗑 Clear</button>
+      <div style="flex:1"></div>
+      <button class="ann-tool-btn" onclick="_annClose()">✕ Cancel</button>
+      <button class="ann-tool-btn" style="background:#0a84ff;border-color:#0a84ff;color:#fff" onclick="_annSave()">✓ Save</button>
+    </div>
+    <div class="ann-canvas-wrap" id="ann-canvas-wrap">
+      <canvas id="ann-canvas" width="${cw}" height="${ch}"></canvas>
+    </div>`;
+  document.body.appendChild(ov);
+
+  const canvas = document.getElementById('ann-canvas');
+  _ann.canvas = canvas;
+  _ann.ctx = canvas.getContext('2d');
+  _annRedraw();
+  _annBindEvents();
+}
+
+// ── Drawing ─────────────────────────────────────────────────────────
+function _annRedraw() {
+  const a = _ann; if (!a || !a.ctx) return;
+  const { ctx, img, cw, ch } = a;
+  ctx.clearRect(0, 0, cw, ch);
+  ctx.drawImage(img, 0, 0, cw, ch);
+  const all = (a.drawing && a.cur) ? a.actions.concat([a.cur]) : a.actions;
+  all.forEach(act => _annDrawAction(ctx, act));
+}
+
+function _annDrawAction(ctx, a) {
+  ctx.save();
+  ctx.strokeStyle = a.color;
+  ctx.fillStyle = a.color;
+  ctx.lineWidth = a.width || _ann.penWidth;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  if (a.type === 'pen') {
+    if (a.points.length < 2) {
+      ctx.beginPath();
+      ctx.arc(a.points[0].x, a.points[0].y, (a.width || _ann.penWidth) / 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(a.points[0].x, a.points[0].y);
+      for (let i = 1; i < a.points.length; i++) ctx.lineTo(a.points[i].x, a.points[i].y);
+      ctx.stroke();
+    }
+  } else if (a.type === 'rect') {
+    ctx.strokeRect(a.x, a.y, a.w, a.h);
+  } else if (a.type === 'arrow') {
+    _annDrawArrow(ctx, a.x1, a.y1, a.x2, a.y2, a.width || _ann.penWidth);
+  } else if (a.type === 'text') {
+    const size = a.size || _ann.textSize;
+    ctx.font = `bold ${size}px -apple-system, system-ui, sans-serif`;
+    ctx.textBaseline = 'top';
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+    ctx.lineWidth = Math.max(2, size / 8);
+    const outline = (a.color === '#ffffff') ? '#000000' : '#ffffff';
+    String(a.text).split('\n').forEach((ln, li) => {
+      const yy = a.y + li * size * 1.2;
+      ctx.strokeStyle = outline;
+      ctx.strokeText(ln, a.x, yy);
+      ctx.fillStyle = a.color;
+      ctx.fillText(ln, a.x, yy);
+    });
+  }
+  ctx.restore();
+}
+
+function _annDrawArrow(ctx, x1, y1, x2, y2, w) {
+  const headLen = Math.max(14, w * 4);
+  const ang = Math.atan2(y2 - y1, x2 - x1);
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - headLen * Math.cos(ang - Math.PI / 6), y2 - headLen * Math.sin(ang - Math.PI / 6));
+  ctx.lineTo(x2 - headLen * Math.cos(ang + Math.PI / 6), y2 - headLen * Math.sin(ang + Math.PI / 6));
+  ctx.closePath();
+  ctx.fill();
+}
+
+// ── Pointer mapping (handles CSS-scaled canvas + high-DPI) ──────────
+function _annPos(e) {
+  const c = _ann.canvas;
+  const r = c.getBoundingClientRect();
+  const t = (e.touches && e.touches[0]) ? e.touches[0] : e;
+  return {
+    x: (t.clientX - r.left) / r.width * c.width,
+    y: (t.clientY - r.top) / r.height * c.height,
+  };
+}
+
+function _annBindEvents() {
+  const c = _ann.canvas;
+
+  function down(e) {
+    if (_ann.tool === 'text') { _annStartText(e); return; }
+    e.preventDefault();
+    _ann.drawing = true;
+    const p = _annPos(e);
+    if (_ann.tool === 'pen') {
+      _ann.cur = { type: 'pen', color: _ann.color, width: _ann.penWidth, points: [p] };
+    } else if (_ann.tool === 'rect') {
+      _ann.cur = { type: 'rect', color: _ann.color, width: _ann.penWidth, x: p.x, y: p.y, w: 0, h: 0, _ox: p.x, _oy: p.y };
+    } else if (_ann.tool === 'arrow') {
+      _ann.cur = { type: 'arrow', color: _ann.color, width: _ann.penWidth, x1: p.x, y1: p.y, x2: p.x, y2: p.y };
+    }
+  }
+  function move(e) {
+    if (!_ann || !_ann.drawing || !_ann.cur) return;
+    e.preventDefault();
+    const p = _annPos(e);
+    const a = _ann.cur;
+    if (a.type === 'pen') {
+      a.points.push(p);
+    } else if (a.type === 'rect') {
+      a.x = Math.min(a._ox, p.x); a.y = Math.min(a._oy, p.y);
+      a.w = Math.abs(p.x - a._ox); a.h = Math.abs(p.y - a._oy);
+    } else if (a.type === 'arrow') {
+      a.x2 = p.x; a.y2 = p.y;
+    }
+    _annRedraw();
+  }
+  function up(e) {
+    if (!_ann || !_ann.drawing) return;
+    if (e) e.preventDefault();
+    _ann.drawing = false;
+    const a = _ann.cur; _ann.cur = null;
+    if (a) {
+      const trivial =
+        (a.type === 'rect' && a.w < 3 && a.h < 3) ||
+        (a.type === 'arrow' && Math.hypot(a.x2 - a.x1, a.y2 - a.y1) < 5);
+      if (!trivial) { delete a._ox; delete a._oy; _ann.actions.push(a); }
+    }
+    _annRedraw();
+  }
+
+  c.addEventListener('mousedown', down);
+  window.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', up);
+  c.addEventListener('touchstart', down, { passive: false });
+  c.addEventListener('touchmove', move, { passive: false });
+  c.addEventListener('touchend', up);
+  _ann._handlers = { move, up };
+}
+
+// ── Text tool ───────────────────────────────────────────────────────
+function _annStartText(e) {
+  document.getElementById('ann-text-input')?.remove();
+  const wrap = document.getElementById('ann-canvas-wrap');
+  const c = _ann.canvas;
+  const r = c.getBoundingClientRect();
+  const wrapR = wrap.getBoundingClientRect();
+  const t = (e.touches && e.touches[0]) ? e.touches[0] : e;
+
+  // canvas-space coords (where the text gets baked into the image)
+  const cx = (t.clientX - r.left) / r.width * c.width;
+  const cy = (t.clientY - r.top) / r.height * c.height;
+  // screen position of the floating input within the wrap
+  const left = t.clientX - wrapR.left;
+  const top = t.clientY - wrapR.top;
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'ann-text-input';
+  input.id = 'ann-text-input';
+  input.style.left = left + 'px';
+  input.style.top = top + 'px';
+  input.style.color = _ann.color;
+  input.placeholder = 'Type, then Enter';
+  wrap.appendChild(input);
+  setTimeout(() => input.focus(), 30);
+
+  let done = false;
+  function commit() {
+    if (done) return; done = true;
+    const val = input.value.trim();
+    if (val) {
+      _ann.actions.push({ type: 'text', color: _ann.color, x: cx, y: cy, text: val, size: _ann.textSize });
+      _annRedraw();
+    }
+    input.remove();
+  }
+  input.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
+    else if (ev.key === 'Escape') { done = true; input.remove(); }
+  });
+  input.addEventListener('blur', commit);
+}
+
+// ── Toolbar handlers ────────────────────────────────────────────────
+function _annSetTool(tool, btn) {
+  if (!_ann) return;
+  _ann.tool = tool;
+  document.querySelectorAll('.ann-tool-btn[data-tool]').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  if (_ann.canvas) _ann.canvas.style.cursor = (tool === 'text') ? 'text' : 'crosshair';
+}
+
+function _annSetColor(color, btn) {
+  if (!_ann) return;
+  _ann.color = color;
+  document.querySelectorAll('.ann-color-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  const inp = document.getElementById('ann-text-input');
+  if (inp) inp.style.color = color;
+}
+
+function _annUndo() {
+  if (!_ann || !_ann.actions.length) return;
+  _ann.actions.pop();
+  _annRedraw();
+}
+
+function _annClear() {
+  if (!_ann || !_ann.actions.length) return;
+  if (!confirm('Clear all annotations on this photo?')) return;
+  _ann.actions = [];
+  _annRedraw();
+}
+
+function _annClose() {
+  document.getElementById('ann-text-input')?.remove();
+  if (_ann && _ann._handlers) {
+    window.removeEventListener('mousemove', _ann._handlers.move);
+    window.removeEventListener('mouseup', _ann._handlers.up);
+  }
+  if (_ann && typeof _ann.srcObjectUrl === 'string' && _ann.srcObjectUrl.startsWith('blob:')) {
+    try { URL.revokeObjectURL(_ann.srcObjectUrl); } catch (e) {}
+  }
+  document.getElementById('annotation-overlay')?.remove();
+  _ann = null;
+}
+
+// ── Save ────────────────────────────────────────────────────────────
+async function _annSave() {
+  if (!_ann) return;
+
+  // Commit any open text box before flattening
+  const openInput = document.getElementById('ann-text-input');
+  if (openInput) { openInput.blur(); await new Promise(r => setTimeout(r, 40)); }
+
+  if (!_ann.actions.length) { showToast('No annotations added'); _annClose(); return; }
+
+  const { pid, sid, idx, canvas } = _ann;
+  const item = getSI(pid, sid);
+  if (!item || !item.photos || !item.photos[idx]) { _annClose(); return; }
+  const photo = item.photos[idx];
+
+  showToast('Saving…');
+
+  const finish = (blob) => {
+    if (!blob) { showToast('Save failed', 'red'); return; }
+
+    // Free previous local object URL so it re-derives from the new Blob
+    if (photo._blobUrl) { try { URL.revokeObjectURL(photo._blobUrl); } catch (e) {} delete photo._blobUrl; }
+
+    const oldUrl = photo.url || null;
+    // Replace with the annotated Blob; clear remote URL so the new version
+    // both displays immediately and gets re-uploaded by the sync engine.
+    photo.data = blob;
+    photo.url = null;
+    photo.annotated = true;
+
+    markAsDirty(sid);
+    save();
+    _annClose();
+    buildSIEditor(pid, sid);
+    renderLeft(route());
+    showToast('✓ Annotation saved', 'green');
+
+    // Re-upload the annotated version to Azure Blob (background), then bin the old one
+    (async () => {
+      try {
+        const newUrl = await _uploadPhotoToAzureBlob(blob, pid, sid);
+        if (newUrl) {
+          photo.url = newUrl;
+          markAsDirty(sid);
+          save();
+          if (oldUrl) {
+            fetch('/api/deleteBlob', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ blobUrl: oldUrl }),
+            }).catch(() => {});
+          }
+        }
+      } catch (e) {
+        console.warn('[Annotation] Azure re-upload failed, kept locally:', e && e.message);
+      }
+    })();
+  };
+
+  if (canvas.toBlob) {
+    canvas.toBlob(b => finish(b), 'image/jpeg', 0.85);
+  } else {
+    try {
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      const b = await (await fetch(dataUrl)).blob();
+      finish(b);
+    } catch (e) {
+      showToast('Save failed', 'red');
+    }
+  }
+}
+
 async function _uploadPhotoToAzureBlob(dbPhotoData, projectId, siId) {
   const blobToUpload = await preparePhotoForUpload(dbPhotoData);
   const sasContainerUrl = await _getBlobSasUrl();
