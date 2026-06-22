@@ -3331,24 +3331,26 @@ let _currentUser = null; // { userId, userDetails, userRoles }
  * - localhost (dev)         → returns a dev identity, no redirect
  */
 async function _getAuthUser() {
-  // ── AUTH DEACTIVATED ──────────────────────────────────────────────
-  // No /.auth/me request and no Entra redirect, so startup is instant.
-  // Reuse a previously-cached identity when present (keeps existing
-  // per-user data + project ownership intact); otherwise use one shared id.
+  // ── AUTH DEACTIVATED · SHARED WORKSPACE ──────────────────
+  // No /.auth/me request, no Entra redirect — startup is instant.
+  // Every device resolves to ONE canonical identity so all clients
+  // read/write the same Cosmos index (adh-index-{ADH_USER_ID}) and
+  // stamp the same ownedBy. ADH_USER_ID is the OID the existing data
+  // already lives under, so no migration is needed. To repoint the
+  // entire workspace, change this single value.
+  const ADH_USER_ID = '25a348bbf3bb4e9087aefec8b88424b6';
+
+  let userDetails = 'field@adh.local';
   try {
     const cached = await _idbGet('adh_user');
-    if (cached && cached.userId) {
-      localStorage.setItem('adh_auth_token', 'valid_user_session');
-      localStorage.setItem('adh_user_id', cached.userId);
-      return cached;
-    }
-  } catch (e) { /* fall through */ }
+    if (cached && cached.userDetails) userDetails = cached.userDetails;
+  } catch (e) { /* no cache yet */ }
 
-  const shared = { userId: 'adh-shared', userDetails: 'field@adh.local', userRoles: ['authenticated'] };
-  try { await _idbSet('adh_user', shared); } catch (e) {}
+  const user = { userId: ADH_USER_ID, userDetails, userRoles: ['authenticated'] };
+  try { await _idbSet('adh_user', user); } catch (e) {}
   localStorage.setItem('adh_auth_token', 'valid_user_session');
-  localStorage.setItem('adh_user_id', shared.userId);
-  return shared;
+  localStorage.setItem('adh_user_id', ADH_USER_ID);
+  return user;
 }
 
 // When the app starts up (even in airplane mode):
