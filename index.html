@@ -6087,16 +6087,7 @@ function buildProjectView(pid) {
       <div class="stat-card"><div class="stat-num" style="color:#f97316">${changed}</div><div class="stat-label">On Hold</div></div>
     </div>
     <div class="action-list">
-      ${hasSIs ? `
-        <div class="action-row" onclick="openFirstSI('${pid}')">
-          <div class="action-icon" style="background:var(--accent-dim)">📝</div>
-          <div class="action-body">
-            <div class="action-title">Edit Site Items</div>
-            <div class="action-desc">Manage, edit, or check current project items</div>
-          </div>
-          <div class="action-arrow">›</div>
-        </div>
-      ` : `
+      ${!hasSIs ? `
         <div class="empty-project-box">
           <div class="empty-project-icon">📋</div>
           <h4>No items yet</h4>
@@ -6105,15 +6096,10 @@ function buildProjectView(pid) {
             ＋ Add First Site Item (SI)
           </button>
         </div>
-      `}
+      ` : ''}
       <div class="action-row" onclick="showImportLog(getProject('${pid}'))">
         <div class="action-icon" style="background:var(--surface2)">🧾</div>
         <div class="action-body"><div class="action-title">View Import History</div><div class="action-desc">Review previous spreadsheet synchronization logs</div></div>
-        <div class="action-arrow">›</div>
-      </div>
-      <div class="action-row" onclick="triggerReimportXLS('${pid}')">
-        <div class="action-icon" style="background:rgba(245,158,11,0.1)">🔄</div>
-        <div class="action-body"><div class="action-title">Sync Spreadsheet</div><div class="action-desc">Update SI items and delivery logistics from Excel</div></div>
         <div class="action-arrow">›</div>
       </div>
       <div class="action-row" onclick="triggerWorkOrdersImport('', '${pid}')">
@@ -6135,11 +6121,6 @@ function buildProjectView(pid) {
         <div class="action-icon" style="background:rgba(239,68,68,0.1)">🦺</div>
         <div class="action-body"><div class="action-title">Toolbox Talk Log</div><div class="action-desc">Log weekly safety talks for this job</div></div>
         <div class="action-arrow">›</div>
-      </div>
-      <div class="action-row" onclick="navToActivity('${pid}')">
-        <span class="action-icon">📋</span>
-        <div class="action-text"><div class="action-title">Activity Feed</div><div class="action-sub">Status changes, notes, photos</div></div>
-        <span class="action-arrow">›</span>
       </div>
       <div class="action-row" onclick="navToFloorPlan('${pid}')">
         <span class="action-icon">🗺️</span>
