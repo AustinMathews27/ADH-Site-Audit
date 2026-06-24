@@ -346,7 +346,8 @@ body.is-offline .offline-banner { display: block; }
 .logo-dark { display:none !important; }
 html.dark .logo-light { display:none !important; }
 html.dark .logo-dark { display:block !important; }
-html.dark .folder-logo-img:not(.logo-dark) { background:rgba(255,255,255,0.93); border-radius:6px; padding:5px; }
+.folder-logo-img.logo-dark-bg { background:#1c1c1e !important; border-radius:8px !important; padding:7px !important; }
+html.dark .folder-logo-img:not(.logo-dark):not(.logo-dark-bg) { background:rgba(255,255,255,0.93); border-radius:6px; padding:5px; }
 .proj-grid {
   display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:12px;
 }
@@ -3117,10 +3118,10 @@ const SEED = {
   folders:[
     {id:'fld_ast',name:'A.S.S.T',icon:`<img src='logos/asst.png' alt='A.S.S.T' class='folder-logo-img'>`, projects:[], parentId:null},
     {id:'fld_ami',name:'AMI',icon:`<img src='logos/ami.png' alt='AMI' class='folder-logo-img'>`, projects:[], parentId:null},
-    {id:'fld_acd',name:'ACD',icon:`<img src='logos/acd-light.png' alt='ACD' class='folder-logo-img logo-light'><img src='logos/acd-dark.png' alt='ACD' class='folder-logo-img logo-dark'>`, projects:[], parentId:null},
+    {id:'fld_acd',name:'ACD',icon:`<img src='logos/acd-light.png' alt='ACD' class='folder-logo-img logo-light logo-dark-bg'><img src='logos/acd-dark.png' alt='ACD' class='folder-logo-img logo-dark logo-dark-bg'>`, projects:[], parentId:null},
     {id:'fld_acs',name:'ACS',icon:`<img src='logos/acs.png' alt='ACS' class='folder-logo-img'>`, projects:[], parentId:null},
-    {id:'fld_adh',name:'ADH',icon:`<img src='logos/adh.png' alt='ADH' class='folder-logo-img'>`, projects:[], parentId:null},
-    {id:'fld_acm',name:'ACM',icon:`<img src='logos/acm-light.png' alt='ACM' class='folder-logo-img logo-light'><img src='logos/acm-dark.png' alt='ACM' class='folder-logo-img logo-dark'>`, projects:[], parentId:null},
+    {id:'fld_adh',name:'ADH',icon:`<img src='logos/adh.png' alt='ADH' class='folder-logo-img logo-dark-bg'>`, projects:[], parentId:null},
+    {id:'fld_acm',name:'ACM',icon:`<img src='logos/acm-light.png' alt='ACM' class='folder-logo-img logo-light logo-dark-bg'><img src='logos/acm-dark.png' alt='ACM' class='folder-logo-img logo-dark logo-dark-bg'>`, projects:[], parentId:null},
 
   ],
   contacts: [],
