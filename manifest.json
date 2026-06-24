@@ -2,12 +2,17 @@
   "name": "ADH Field Audit Tool",
   "short_name": "ADH Audit",
   "description": "Field conditions audit tool for construction and installation teams",
+  "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "orientation": "any",
+  "dir": "ltr",
   "background_color": "#16181d",
   "theme_color": "#16181d",
+  "prefer_related_applications": false,
+  "related_applications": [],
   "icons": [
     {
       "src": "icon-192.png",
@@ -32,6 +37,31 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "screenshots/pwa-wide.jpg",
+      "sizes": "1280x720",
+      "type": "image/jpeg",
+      "form_factor": "wide",
+      "label": "ADH Field Audit Tool — Folder Dashboard"
+    },
+    {
+      "src": "screenshots/pwa-narrow.jpg",
+      "sizes": "1280x720",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "ADH Field Audit Tool — Mobile View"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Home",
+      "short_name": "Home",
+      "description": "Go to the folder dashboard",
+      "url": "/",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
     }
   ],
   "categories": ["business", "productivity", "utilities"],
