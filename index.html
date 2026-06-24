@@ -343,7 +343,10 @@ body.is-offline .offline-banner { display: block; }
 .fc-count { font-size:10px; color:var(--text3); font-family:var(--mono); }
 .folder-logo-img { width:100%; height:100%; object-fit:contain; display:block; }
 .fc-icon .folder-logo-img { width:auto; height:72px; max-width:100%; object-fit:contain; display:block; margin:0 auto; }
-html.dark .folder-logo-img { background:rgba(255,255,255,0.93); border-radius:6px; padding:5px; }
+.logo-dark { display:none !important; }
+html.dark .logo-light { display:none !important; }
+html.dark .logo-dark { display:block !important; }
+html.dark .folder-logo-img:not(.logo-dark) { background:rgba(255,255,255,0.93); border-radius:6px; padding:5px; }
 .proj-grid {
   display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:12px;
 }
@@ -3114,10 +3117,10 @@ const SEED = {
   folders:[
     {id:'fld_ast',name:'A.S.S.T',icon:`<img src='logos/asst.png' alt='A.S.S.T' class='folder-logo-img'>`, projects:[], parentId:null},
     {id:'fld_ami',name:'AMI',icon:`<img src='logos/ami.png' alt='AMI' class='folder-logo-img'>`, projects:[], parentId:null},
-    {id:'fld_acd',name:'ACD',icon:`<img src='logos/acd.png' alt='ACD' class='folder-logo-img'>`, projects:[], parentId:null},
+    {id:'fld_acd',name:'ACD',icon:`<img src='logos/acd-light.png' alt='ACD' class='folder-logo-img logo-light'><img src='logos/acd-dark.png' alt='ACD' class='folder-logo-img logo-dark'>`, projects:[], parentId:null},
     {id:'fld_acs',name:'ACS',icon:`<img src='logos/acs.png' alt='ACS' class='folder-logo-img'>`, projects:[], parentId:null},
     {id:'fld_adh',name:'ADH',icon:`<img src='logos/adh.png' alt='ADH' class='folder-logo-img'>`, projects:[], parentId:null},
-    {id:'fld_acm',name:'ACM',icon:`<img src='logos/acm.png' alt='ACM' class='folder-logo-img'>`, projects:[], parentId:null},
+    {id:'fld_acm',name:'ACM',icon:`<img src='logos/acm-light.png' alt='ACM' class='folder-logo-img logo-light'><img src='logos/acm-dark.png' alt='ACM' class='folder-logo-img logo-dark'>`, projects:[], parentId:null},
 
   ],
   contacts: [],
@@ -5056,7 +5059,9 @@ function toggleQA() {
 function _folderIconHTML(icon, px) {
   if (!icon) return '';
   if (icon.includes('<img')) {
-    return `<span style="display:inline-flex;align-items:center;justify-content:center;width:${px}px;height:${px}px;flex-shrink:0;overflow:hidden">${icon.replace("class='folder-logo-img'", `style='width:${px}px;height:${px}px;object-fit:contain;display:block;'`)}</span>`;
+    const sized = icon.replace(/(<img[^>]*)(class='folder-logo-img[^']*')/g,
+      `$1$2 style='width:${px}px;height:${px}px;object-fit:contain;display:block;'`);
+    return `<span style="display:inline-flex;align-items:center;justify-content:center;width:${px}px;height:${px}px;flex-shrink:0;overflow:hidden">${sized}</span>`;
   }
   return `<span style="font-size:${px}px;line-height:1">${icon}</span>`;
 }
