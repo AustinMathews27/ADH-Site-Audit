@@ -4550,7 +4550,7 @@ function renderNavBar(r) {
     }
     path.forEach((f, idx) => {
       crumbs.push(`<span class="crumb-sep">›</span>`);
-      crumbs.push(`<span class="crumb ${r.view==='folder' && idx === path.length-1 ? 'active':''}" onclick="navToFolder('${f.id}')" title="${f.name}">${f.icon} ${f.name}</span>`);
+      crumbs.push(`<span class="crumb ${r.view==='folder' && idx === path.length-1 ? 'active':''}" onclick="navToFolder('${f.id}')" title="${f.name}">${f.icon && !f.icon.includes('<img') ? f.icon + ' ' : ''}${f.name}</span>`);
     });
   }
   if (r.projectId) {
@@ -5050,6 +5050,14 @@ function toggleQA() {
   const nowOpen = grid.classList.toggle('open');
   if (chev) chev.classList.toggle('open', nowOpen);
   localStorage.setItem('qa-open', nowOpen ? 'true' : 'false');
+}
+
+function _folderIconHTML(icon, px) {
+  if (!icon) return '';
+  if (icon.includes('<img')) {
+    return `<span style="display:inline-flex;align-items:center;justify-content:center;width:${px}px;height:${px}px;flex-shrink:0;overflow:hidden">${icon.replace("class='folder-logo-img'", `style='width:${px}px;height:${px}px;object-fit:contain;display:block;'`)}</span>`;
+  }
+  return `<span style="font-size:${px}px;line-height:1">${icon}</span>`;
 }
 
 function folderCardHTML(f) {
@@ -5974,7 +5982,7 @@ function buildFolderView(fid) {
 
   el.innerHTML=`<div class="grid-wrap">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
-      <span style="font-size:24px">${folder.icon}</span>
+      ${_folderIconHTML(folder.icon, 44)}
       <div style="flex:1;min-width:0">
         <div style="font-size:16px;font-weight:600">${folder.name}</div>
         <div style="font-size:10px;color:var(--text2);font-family:var(--mono)">${folder.projects.length} project${folder.projects.length!==1?'s':''}</div>
@@ -9915,7 +9923,7 @@ window.confirmDeleteFolder = function(fid) {
   makeModal('Delete Folder', `
     <div style="text-align:center;padding:8px 0 16px">
       <div style="font-size:32px;margin-bottom:10px">🗑</div>
-      <div style="font-size:14px;font-weight:600;margin-bottom:6px">${folder.icon} ${folder.name}</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:6px;display:flex;align-items:center;justify-content:center;gap:8px">${_folderIconHTML(folder.icon, 28)} ${folder.name}</div>
       <div style="font-size:12px;color:var(--text2)">Delete this folder and all subfolders? Projects inside will NOT be deleted; they will still be available in "All Projects".</div>
     </div>`, () => {
     const toDelete = [fid];
@@ -9938,7 +9946,7 @@ window.showMoveProjectModal = function(pid, currentFid) {
   const proj = getProject(pid); if(!proj) return;
   const options = store.folders.map(f => `
     <div class="action-row" onclick="moveProject('${pid}', '${currentFid}', '${f.id}')">
-      <div class="action-icon" style="background:var(--folder-dim)">${f.icon}</div>
+      <div class="action-icon" style="background:var(--folder-dim);display:flex;align-items:center;justify-content:center">${_folderIconHTML(f.icon, 28)}</div>
       <div class="action-body">
         <div class="action-title">${f.name}</div>
         <div class="action-desc">${f.projects.length} projects</div>
