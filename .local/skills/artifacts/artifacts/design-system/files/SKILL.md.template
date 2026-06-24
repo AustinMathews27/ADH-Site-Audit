@@ -1,0 +1,37 @@
+---
+name: __REPLIT_ARTIFACT_SLUG__
+description: "Design system for __REPLIT_ARTIFACT_TITLE__. Apply this when building any UI in this project so colors, typography, spacing, and components stay consistent."
+---
+
+# __REPLIT_ARTIFACT_TITLE__ design system
+
+This package defines the visual language for the project. Use it whenever you
+build or restyle UI so every surface looks like the same product.
+
+## What's here
+
+- `tokens.json` — the single source of truth (DTCG format): colors (full light
+  and dark sets), typography, spacing, and radius.
+- `scripts/build-tokens.mjs` — generates the outputs below from `tokens.json`.
+- `src/index.css` — GENERATED shadcn theme (web). Consuming web apps import this.
+- `src/generated/tokens.ts` — GENERATED hex token object. Mobile (Expo) and
+  other platforms import this so the whole product shares one source.
+- `public/favicon.svg` — GENERATED app icon: the primary color with the design
+  system's initial, regenerated from `tokens.json` + the title.
+- `src/components/ui/` — the shadcn component library, themed by the tokens.
+- `src/App.tsx` — a living style guide that previews the tokens and components.
+
+## How to apply it
+
+- **Web app**: use this package's generated `src/index.css` as the theme (it
+  matches the standard project template, so it's a drop-in) and reuse the
+  components in `src/components/ui/`.
+- **Mobile (Expo) app**: import `src/generated/tokens.ts` (hex, light + dark)
+  into the app's theme (e.g. `constants/colors.ts`).
+- Match the exact token values — do not invent new colors or fonts.
+
+## Editing the design system
+
+Edit `tokens.json` ONLY, then run `pnpm tokens` (the dev server also
+regenerates on change). `src/index.css` and `src/generated/tokens.ts` are
+generated — never hand-edit them.
