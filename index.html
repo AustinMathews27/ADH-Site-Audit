@@ -341,6 +341,13 @@ body.is-offline .offline-banner { display: block; }
 .fc-icon { font-size:28px; }
 .fc-name { font-size:13px; font-weight:600; }
 .fc-count { font-size:10px; color:var(--text3); font-family:var(--mono); }
+.folder-logo-img { width:100%; height:100%; object-fit:contain; display:block; }
+.fc-icon .folder-logo-img { width:auto; height:72px; max-width:100%; object-fit:contain; display:block; margin:0 auto; }
+.logo-dark { display:none !important; }
+html.dark .logo-light { display:none !important; }
+html.dark .logo-dark { display:block !important; }
+.folder-logo-img.logo-dark-bg { background:#1c1c1e !important; border-radius:8px !important; padding:7px !important; }
+html.dark .folder-logo-img:not(.logo-dark):not(.logo-dark-bg) { background:rgba(255,255,255,0.93); border-radius:6px; padding:5px; }
 .proj-grid {
   display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:12px;
 }
@@ -2390,6 +2397,8 @@ body, .nav-bar, .left-panel, .right-panel, .modal, .panel-header,
   transform: translateY(-2px) !important;
 }
 .fc-icon { font-size: 30px !important; }
+.folder-card--logo .fc-icon { height: 80px !important; display: flex !important; align-items: center !important; justify-content: center !important; padding: 4px 0 !important; }
+.folder-card--logo .fc-icon .folder-logo-img { height: 72px !important; width: auto !important; max-width: 100% !important; object-fit: contain !important; }
 .fc-name { font-size: 13px !important; font-weight: 600 !important; line-height: 1.3 !important; }
 .fc-count { font-size: 10px !important; opacity: 0.6; }
 
@@ -3107,71 +3116,12 @@ window.reorderSI = function(pid, sectionId, siId, dir) {
 const SEED = {
   settings: { isAdmin: false, theme: 'light' },
   folders:[
-    // A.S.S.T (Allegheny Solid Surfaces Technologies) - Symbol: Countertop slab cross-section
-    {id:'fld_ast',name:'A.S.S.T',icon:`
-      <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
-        <path d='M85,50 L50,85 L15,50 L50,15 Z' fill='var(--text3)' stroke='var(--accent)' stroke-width='3'/>
-        <rect x='24' y='43' width='52' height='13' rx='3' fill='var(--text)'/>
-        <line x1='28' y1='48' x2='72' y2='48' stroke='var(--accent)' stroke-width='2'/>
-        <line x1='33' y1='56' x2='33' y2='66' stroke='var(--text)' stroke-width='3'/>
-        <line x1='50' y1='56' x2='50' y2='66' stroke='var(--text)' stroke-width='3'/>
-        <line x1='67' y1='56' x2='67' y2='66' stroke='var(--text)' stroke-width='3'/>
-      </svg>`, projects:[], parentId:null},
-
-    // AMI (Allegheny Millwork) - Symbol: Stacked wood planks with grain joints
-    {id:'fld_ami',name:'AMI',icon:`
-      <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
-        <path d='M85,50 L50,85 L15,50 L50,15 Z' fill='var(--text3)' stroke='var(--accent)' stroke-width='3'/>
-        <rect x='27' y='33' width='46' height='9' rx='1.5' fill='var(--text)'/>
-        <rect x='27' y='44' width='46' height='9' rx='1.5' fill='var(--text)'/>
-        <rect x='27' y='55' width='46' height='9' rx='1.5' fill='var(--text)'/>
-        <line x1='44' y1='33' x2='44' y2='42' stroke='var(--accent)' stroke-width='1.5'/>
-        <line x1='59' y1='44' x2='59' y2='53' stroke='var(--accent)' stroke-width='1.5'/>
-        <line x1='40' y1='55' x2='40' y2='64' stroke='var(--accent)' stroke-width='1.5'/>
-      </svg>`, projects:[], parentId:null},
-
-    // ACD (Allegheny Commercial Doors) - Symbol: Door with frame and handle
-    {id:'fld_acd',name:'ACD',icon:`
-      <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
-        <path d='M85,50 L50,85 L15,50 L50,15 Z' fill='var(--text3)' stroke='var(--accent)' stroke-width='3'/>
-        <rect x='33' y='25' width='34' height='50' rx='2' fill='none' stroke='var(--text)' stroke-width='3.5'/>
-        <rect x='35' y='29' width='4' height='3' rx='1' fill='var(--accent)'/>
-        <rect x='35' y='65' width='4' height='3' rx='1' fill='var(--accent)'/>
-        <circle cx='58' cy='51' r='3.5' fill='var(--accent)'/>
-        <line x1='55' y1='51' x2='51' y2='51' stroke='var(--accent)' stroke-width='2' stroke-linecap='round'/>
-      </svg>`, projects:[], parentId:null},
-
-    // ACS (Allegheny Construction Specialties Div 10) - Symbol: Shield with checkmark
-    {id:'fld_acs',name:'ACS',icon:`
-      <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
-        <path d='M85,50 L50,85 L15,50 L50,15 Z' fill='var(--text3)' stroke='var(--accent)' stroke-width='3'/>
-        <path d='M50,26 L67,35 V53 Q67,66 50,74 Q33,66 33,53 V35 Z' fill='none' stroke='var(--text)' stroke-width='3'/>
-        <path d='M40,51 L47,58 L62,43' stroke='var(--accent)' stroke-width='4.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/>
-      </svg>`, projects:[], parentId:null},
-
-    // ADH (Allegheny Diversified Holdings) - Symbol: Corporate tower with windows
-    {id:'fld_adh',name:'ADH',icon:`
-      <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
-        <path d='M85,50 L50,85 L15,50 L50,15 Z' fill='var(--text3)' stroke='var(--accent)' stroke-width='3'/>
-        <rect x='36' y='32' width='28' height='40' rx='2' fill='var(--text)'/>
-        <rect x='44' y='24' width='12' height='9' rx='1' fill='var(--accent)'/>
-        <rect x='40' y='38' width='7' height='6' rx='1' fill='var(--accent)' opacity='0.85'/>
-        <rect x='53' y='38' width='7' height='6' rx='1' fill='var(--accent)' opacity='0.85'/>
-        <rect x='40' y='48' width='7' height='6' rx='1' fill='var(--accent)' opacity='0.85'/>
-        <rect x='53' y='48' width='7' height='6' rx='1' fill='var(--accent)' opacity='0.85'/>
-        <rect x='40' y='58' width='7' height='6' rx='1' fill='var(--accent)' opacity='0.85'/>
-        <rect x='53' y='58' width='7' height='6' rx='1' fill='var(--accent)' opacity='0.85'/>
-      </svg>`, projects:[], parentId:null},
-
-    // ACM (Ascent Custom Millwork) - Symbol: Rising arch with decorative molding lines
-    {id:'fld_acm',name:'ACM',icon:`
-      <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
-        <path d='M85,50 L50,85 L15,50 L50,15 Z' fill='var(--text3)' stroke='var(--accent)' stroke-width='3'/>
-        <path d='M27,67 Q27,34 50,27 Q73,34 73,67' stroke='var(--text)' stroke-width='3.5' fill='none' stroke-linecap='round'/>
-        <line x1='37' y1='57' x2='63' y2='57' stroke='var(--accent)' stroke-width='2.5' stroke-linecap='round'/>
-        <line x1='34' y1='63' x2='66' y2='63' stroke='var(--accent)' stroke-width='2.5' stroke-linecap='round'/>
-        <circle cx='50' cy='27' r='4' fill='var(--accent)'/>
-      </svg>`, projects:[], parentId:null},
+    {id:'fld_ast',name:'A.S.S.T',icon:`<img src='logos/asst.png' alt='A.S.S.T' class='folder-logo-img'>`, projects:[], parentId:null},
+    {id:'fld_ami',name:'AMI',icon:`<img src='logos/ami.png' alt='AMI' class='folder-logo-img'>`, projects:[], parentId:null},
+    {id:'fld_acd',name:'ACD',icon:`<img src='logos/acd-light.png' alt='ACD' class='folder-logo-img logo-light logo-dark-bg'><img src='logos/acd-dark.png' alt='ACD' class='folder-logo-img logo-dark logo-dark-bg'>`, projects:[], parentId:null},
+    {id:'fld_acs',name:'ACS',icon:`<img src='logos/acs.png' alt='ACS' class='folder-logo-img'>`, projects:[], parentId:null},
+    {id:'fld_adh',name:'ADH',icon:`<img src='logos/adh.png' alt='ADH' class='folder-logo-img logo-dark-bg'>`, projects:[], parentId:null},
+    {id:'fld_acm',name:'ACM',icon:`<img src='logos/acm-light.png' alt='ACM' class='folder-logo-img logo-light logo-dark-bg'><img src='logos/acm-dark.png' alt='ACM' class='folder-logo-img logo-dark logo-dark-bg'>`, projects:[], parentId:null},
 
   ],
   contacts: [],
@@ -4605,7 +4555,7 @@ function renderNavBar(r) {
     }
     path.forEach((f, idx) => {
       crumbs.push(`<span class="crumb-sep">›</span>`);
-      crumbs.push(`<span class="crumb ${r.view==='folder' && idx === path.length-1 ? 'active':''}" onclick="navToFolder('${f.id}')" title="${f.name}">${f.icon} ${f.name}</span>`);
+      crumbs.push(`<span class="crumb ${r.view==='folder' && idx === path.length-1 ? 'active':''}" onclick="navToFolder('${f.id}')" title="${f.name}">${f.icon && !f.icon.includes('<img') ? f.icon + ' ' : ''}${f.name}</span>`);
     });
   }
   if (r.projectId) {
@@ -5096,14 +5046,6 @@ function buildRootView() {
         <div style="font-size:12px">New Folder</div>
       </div>` : ''}
     </div>
-    <div class="section-divider" style="margin-top:4px">All Projects</div>
-    <div class="proj-grid">
-      ${store.projects.filter(p=>!p._deleted).map(p=>projCardHTML(p,'')).join('')}
-      <div class="proj-card new-card" onclick="showNewProjectModal('')">
-        <div style="font-size:22px;opacity:0.4">＋</div>
-        <div style="font-size:12px">New Project</div>
-      </div>
-    </div>
   </div>`;
 }
 function toggleQA() {
@@ -5115,8 +5057,19 @@ function toggleQA() {
   localStorage.setItem('qa-open', nowOpen ? 'true' : 'false');
 }
 
+function _folderIconHTML(icon, px) {
+  if (!icon) return '';
+  if (icon.includes('<img')) {
+    const sized = icon.replace(/(<img[^>]*)(class='folder-logo-img[^']*')/g,
+      `$1$2 style='width:${px}px;height:${px}px;object-fit:contain;display:block;'`);
+    return `<span style="display:inline-flex;align-items:center;justify-content:center;width:${px}px;height:${px}px;flex-shrink:0;overflow:hidden">${sized}</span>`;
+  }
+  return `<span style="font-size:${px}px;line-height:1">${icon}</span>`;
+}
+
 function folderCardHTML(f) {
-  return `<div class="folder-card" onclick="navToFolder('${f.id}')">
+  const hasLogo = f.icon && f.icon.includes('<img');
+  return `<div class="folder-card${hasLogo ? ' folder-card--logo' : ''}" onclick="navToFolder('${f.id}')">
     <div class="fc-icon">${f.icon}</div>
     <div class="fc-name">${f.name}</div>
     <div class="fc-count">${f.projects.length} projects · ${store.folders.filter(s => s.parentId === f.id).length} sub</div>
@@ -6036,7 +5989,7 @@ function buildFolderView(fid) {
 
   el.innerHTML=`<div class="grid-wrap">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
-      <span style="font-size:24px">${folder.icon}</span>
+      ${_folderIconHTML(folder.icon, 44)}
       <div style="flex:1;min-width:0">
         <div style="font-size:16px;font-weight:600">${folder.name}</div>
         <div style="font-size:10px;color:var(--text2);font-family:var(--mono)">${folder.projects.length} project${folder.projects.length!==1?'s':''}</div>
@@ -9977,7 +9930,7 @@ window.confirmDeleteFolder = function(fid) {
   makeModal('Delete Folder', `
     <div style="text-align:center;padding:8px 0 16px">
       <div style="font-size:32px;margin-bottom:10px">🗑</div>
-      <div style="font-size:14px;font-weight:600;margin-bottom:6px">${folder.icon} ${folder.name}</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:6px;display:flex;align-items:center;justify-content:center;gap:8px">${_folderIconHTML(folder.icon, 28)} ${folder.name}</div>
       <div style="font-size:12px;color:var(--text2)">Delete this folder and all subfolders? Projects inside will NOT be deleted; they will still be available in "All Projects".</div>
     </div>`, () => {
     const toDelete = [fid];
@@ -10000,7 +9953,7 @@ window.showMoveProjectModal = function(pid, currentFid) {
   const proj = getProject(pid); if(!proj) return;
   const options = store.folders.map(f => `
     <div class="action-row" onclick="moveProject('${pid}', '${currentFid}', '${f.id}')">
-      <div class="action-icon" style="background:var(--folder-dim)">${f.icon}</div>
+      <div class="action-icon" style="background:var(--folder-dim);display:flex;align-items:center;justify-content:center">${_folderIconHTML(f.icon, 28)}</div>
       <div class="action-body">
         <div class="action-title">${f.name}</div>
         <div class="action-desc">${f.projects.length} projects</div>
