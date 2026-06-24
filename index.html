@@ -3868,7 +3868,7 @@ async function _syncSingleProject(pid) {
         _cloudTs.projects[pid] = remoteTs;
         await _idbSet('fap_v3', store);
         await _saveCloudTs();
-        render();
+        _renderFromSync();
       }
     }
   } catch(err) {
@@ -3940,6 +3940,76 @@ async function _pullAll() {
 
 // ── Poll for remote changes ───────────────────────────────────────────────────
 
+// ── Sync-driven render guard ──────────────────────────────────────
+// Background sync (poll / single-project pull) must NEVER rip the live SI editor
+// out from under the user. Rebuilding #v-si via innerHTML destroys #edit-body,
+// which resets scrollTop to 0 (scroll-jump bug) and — if the 800ms autosave
+// debounce has not fired yet — rebuilds the textarea from the stale store,
+// dropping in-flight keystrokes. These helpers gate that rebuild.
+
+function _isEditingSI() {
+  // True when the user is actively interacting with the open SI editor.
+  const editor = document.getElementById('v-si');
+  const ae = document.activeElement;
+  const focusedInEditor = !!(editor && ae && editor.contains(ae) &&
+    /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName || ''));
+  // _autoSaveTimer is non-null only while a debounced save is pending
+  // (it is nulled the moment the timer fires — see scheduleAutoSave).
+  const savePending = _autoSaveTimer != null;
+  return focusedInEditor || savePending;
+}
+
+function _rebuildSIEditorPreservingScroll() {
+  // Refresh the SI editor in place while keeping scroll position + focus.
+  const r = route();
+  if (r.view !== 'si' || !r.projectId || !r.siId) { render(); return; }
+
+  const body       = document.getElementById('edit-body');
+  const prevScroll = body ? body.scrollTop : 0;
+
+  const ae     = document.activeElement;
+  const editor = document.getElementById('v-si');
+  const aeId   = (editor && ae && editor.contains(ae) && ae.id) ? ae.id : null;
+  const selS   = (ae && 'selectionStart' in ae) ? ae.selectionStart : null;
+  const selE   = (ae && 'selectionEnd'   in ae) ? ae.selectionEnd   : null;
+
+  renderNavBar(r);
+  renderLeft(r);
+  buildSIEditor(r.projectId, r.siId);   // synchronous innerHTML rebuild of #v-si
+  show('v-si');
+
+  const newBody = document.getElementById('edit-body');
+  if (newBody) newBody.scrollTop = prevScroll;   // ← kills the scroll-jump
+
+  if (aeId) {
+    const el = document.getElementById(aeId);
+    if (el) {
+      try {
+        el.focus();
+        if (selS != null && typeof el.setSelectionRange === 'function') {
+          el.setSelectionRange(selS, selE);
+        }
+      } catch (_) {}
+    }
+  }
+}
+
+function _renderFromSync() {
+  // Render entry point for background sync. Protects the active SI editor.
+  const r = route();
+  if (r.view === 'si') {
+    if (_isEditingSI()) {
+      // Mid-edit: store is already merged; refresh only the left panel.
+      // The form refreshes on the next idle poll (preserving scroll).
+      renderLeft(r);
+      return;
+    }
+    _rebuildSIEditorPreservingScroll();
+    return;
+  }
+  render();
+}
+
 let _pollIntervalId  = null;
 const POLL_MS        = 15000;
 
@@ -3970,7 +4040,7 @@ async function _pollForRemoteChanges() {
 
       if (newIds.length > 0) {
         await _idbSet('fap_v3', store);
-        render();
+        _renderFromSync();
         showToast('🔄 New project available', 'green');
       }
     }
@@ -3985,7 +4055,7 @@ async function _pollForRemoteChanges() {
           _mergeProjectIntoLocal(cp);
           _cloudTs.projects[r.projectId] = cp._ts;
           await _idbSet('fap_v3', store);
-          render();
+          _renderFromSync();
           showToast('🔄 Updated from cloud', 'green');
           console.log(`[Poll] Project ${r.projectId} updated from cloud`);
         }
@@ -8057,6 +8127,7 @@ function scheduleAutoSave(pid, sid) {
   const ind = document.getElementById('autosave-ind');
   if(ind) { ind.textContent = '… saving'; ind.className = 'autosave-indicator'; }
   _autoSaveTimer = setTimeout(() => {
+    _autoSaveTimer = null;
     _doSave(pid, sid, false);
     const ind2 = document.getElementById('autosave-ind');
     if(ind2) {
