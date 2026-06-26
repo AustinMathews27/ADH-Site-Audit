@@ -4266,12 +4266,18 @@ async function patchAuditToDatabase(patch) {
 
 
 function resetToSeed() {
-  if(confirm('Are you sure? This will delete all your audit data and reset to the default template.')) {
+  makeModal('Reset All Data', `
+    <p style="color:var(--text2);font-size:13px;line-height:1.6">
+      This will <strong style="color:var(--red)">permanently delete all audit data</strong> and reset to the default template.<br><br>
+      This action cannot be undone.
+    </p>
+  `, () => {
     store = JSON.parse(JSON.stringify(SEED));
     save();
+    closeModal();
     navToRoot();
     showToast('Data Reset Successful');
-  }
+  });
 }
 
 const getFolder  = id => store.folders.find(f=>f.id===id);
@@ -4729,22 +4735,25 @@ function renderLeft(r) {
         </div>`;
       });
     });
-    scroll.innerHTML = html || emptyMsg('No items');
+    scroll.innerHTML = html || (q ? emptySearch(q) : emptyMsg('No items'));
     return;
   }
 
   if (!r.folderId) {
     title.textContent='FOLDERS';
     const list = store.folders.filter(f => f.parentId === null && (!q || f.name.toLowerCase().includes(q)));
-    scroll.innerHTML = list.map(f=>`
-      <div class="folder-row ${r.folderId===f.id?'active':''}" onclick="navToFolder('${f.id}')">
+    scroll.innerHTML = list.map(f=>{
+      const pc=f.projects.length, sc=store.folders.filter(sub=>sub.parentId===f.id).length;
+      const parts=[]; if(pc>0) parts.push(`${pc} project${pc!==1?'s':''}`); if(sc>0) parts.push(`${sc} sub`);
+      return `<div class="folder-row ${r.folderId===f.id?'active':''}" onclick="navToFolder('${f.id}')">
         <div class="folder-icon-wrap">${f.icon}</div>
         <div class="folder-info">
           <div class="folder-name">${f.name}</div>
-          <div class="folder-meta">${f.projects.length} project${f.projects.length!==1?'s':''} · ${store.folders.filter(sub => sub.parentId === f.id).length} subfolders</div>
+          ${parts.length?`<div class="folder-meta">${parts.join(' · ')}</div>`:''}
         </div>
         <div class="folder-arrow">›</div>
-      </div>`).join('') || emptyMsg('No folders');
+      </div>`;
+    }).join('') || (q ? emptySearch(q) : emptyMsg('No folders'));
     return;
   }
   if (r.folderId && !r.projectId) {
@@ -4754,15 +4763,18 @@ function renderLeft(r) {
     if (isMain) {
       title.textContent = 'SUBFOLDERS';
       const subs = store.folders.filter(f => f.parentId === r.folderId && (!q || f.name.toLowerCase().includes(q)));
-      scroll.innerHTML = subs.map(f => `
-        <div class="folder-row" onclick="navToFolder('${f.id}')">
+      scroll.innerHTML = subs.map(f => {
+        const pc=f.projects.length, sc=store.folders.filter(sub=>sub.parentId===f.id).length;
+        const parts=[]; if(pc>0) parts.push(`${pc} proj`); if(sc>0) parts.push(`${sc} sub`);
+        return `<div class="folder-row" onclick="navToFolder('${f.id}')">
           <div class="folder-icon-wrap">${f.icon}</div>
           <div class="folder-info">
             <div class="folder-name">${f.name}</div>
-            <div class="folder-meta">${f.projects.length} proj · ${store.folders.filter(sub => sub.parentId === f.id).length} sub</div>
+            ${parts.length?`<div class="folder-meta">${parts.join(' · ')}</div>`:''}
           </div>
           <div class="folder-arrow">›</div>
-        </div>`).join('') || emptyMsg('No subfolders');
+        </div>`;
+      }).join('') || (q ? emptySearch(q) : emptyMsg('No subfolders'));
     } else {
       title.textContent = 'PROJECTS';
       const projs = (folder.projects || []).map(id => getProject(id)).filter(p => p && !p._deleted && (!q || p.name.toLowerCase().includes(q)));
@@ -4776,13 +4788,19 @@ function renderLeft(r) {
           </div>
           <div style="font-family:var(--mono);font-size:9px;color:var(--text3);text-align:right;flex-shrink:0">${ready}/${p.items.length}<br>ready</div>
         </div>`;
-      }).join('') || emptyMsg('No projects');
+      }).join('') || (q ? emptySearch(q) : emptyMsg('No projects'));
     }
     return;
   }
 }
 
 function emptyMsg(t) { return `<div style="padding:20px;text-align:center;color:var(--text3);font-size:12px">${t}</div>`; }
+function emptySearch(q) {
+  return `<div class="empty-state" style="padding:28px 16px;text-align:center">
+    <div class="empty-state-icon" style="font-size:26px;margin-bottom:10px;opacity:0.5">🔍</div>
+    <div class="empty-state-text" style="font-size:13px;color:var(--text3)">No results for <strong style="color:var(--text2)">"${q}"</strong></div>
+  </div>`;
+}
 
 // ══════════════════════════════════════════
 // SI DRAG-TO-REORDER ENGINE
@@ -5067,10 +5085,18 @@ function _folderIconHTML(icon, px) {
 
 function folderCardHTML(f) {
   const hasLogo = f.icon && f.icon.includes('<img');
+  const projCount = f.projects.length;
+  const subCount = store.folders.filter(s => s.parentId === f.id).length;
+  const parts = [];
+  if (projCount > 0) parts.push(`${projCount} project${projCount !== 1 ? 's' : ''}`);
+  if (subCount > 0) parts.push(`${subCount} sub`);
+  const countHTML = parts.length
+    ? `<div class="fc-count">${parts.join(' · ')}</div>`
+    : '';
   return `<div class="folder-card${hasLogo ? ' folder-card--logo' : ''}" onclick="navToFolder('${f.id}')">
     <div class="fc-icon">${f.icon}</div>
     <div class="fc-name">${f.name}</div>
-    <div class="fc-count">${f.projects.length} projects · ${store.folders.filter(s => s.parentId === f.id).length} sub</div>
+    ${countHTML}
   </div>`;
 }
 
@@ -6249,6 +6275,7 @@ function buildSIEditor(pid,sid) {
       <div class="status-pills">
         ${statusOpts.map(s=>`
           <div class="status-pill ${s.key} ${item.status===s.key?'active-status':'inactive'}"
+            title="${s.label.replace(/^.\s/,'')}"
             onclick="setStatus('${pid}','${sid}','${s.key}')">${s.label}</div>`).join('')}
       </div>
       <div style="margin-top:14px">
@@ -9813,6 +9840,9 @@ function makeModal(title,bodyHTML,onConfirm,noFooter=false) {
     </div>`;
   document.body.appendChild(ov);
   window._modalConfirm = onConfirm;
+  const escHandler = e => { if (e.key === 'Escape') closeModal(); };
+  document.addEventListener('keydown', escHandler);
+  ov._escHandler = escHandler;
   // iOS: delay focus to avoid keyboard interfering with layout
   setTimeout(()=>{
     const inp=ov.querySelector('input[type="text"]');
@@ -10765,7 +10795,11 @@ function applyReimportDiff(project, appliedDiffs, allDiffs) {
   save();
 }
 
-function closeModal() { document.getElementById('modal-overlay')?.remove(); }
+function closeModal() {
+  const ov = document.getElementById('modal-overlay');
+  if (ov?._escHandler) document.removeEventListener('keydown', ov._escHandler);
+  ov?.remove();
+}
 
 // ══════════════════════════════════════════
 // UTILS
