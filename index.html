@@ -6385,8 +6385,20 @@ function buildSIEditor(pid,sid) {
       </div>
       <div class="field-row">
         <div class="field-group">
-            <div class="field-label">Assigned To</div>
-            <input class="field-input" id="assigned-input" type="text" placeholder="Name or trade" value="${item.assignedTo}" oninput="scheduleAutoSave('${pid}','${sid}')" />
+          <div class="field-label" style="display:flex;align-items:center;justify-content:space-between">
+            Assigned To
+            <button id="trade-toggle-${sid}" onclick="toggleTradeField('${pid}','${sid}')"
+              style="font-size:9px;font-family:var(--mono);font-weight:600;padding:2px 8px;border-radius:5px;
+                border:1px solid ${item.trade?'var(--accent)':'var(--border)'};
+                background:${item.trade?'var(--accent-dim)':'var(--surface2)'};
+                color:${item.trade?'var(--accent)':'var(--text3)'};cursor:pointer;white-space:nowrap">
+              ${item.trade ? '🔧 Trade ✓' : '＋ Trade'}
+            </button>
+          </div>
+          <input class="field-input" id="assigned-input" type="text" placeholder="Name or crew" value="${item.assignedTo||''}" oninput="scheduleAutoSave('${pid}','${sid}')" />
+          <div id="trade-field-${sid}" style="${item.trade?'':'display:none'};margin-top:5px">
+            <input class="field-input" id="trade-input" type="text" placeholder="Trade / Subcontractor" value="${item.trade||''}" oninput="scheduleAutoSave('${pid}','${sid}')" />
+          </div>
         </div>
         <div class="field-group">
             <div class="field-label">Due Date</div>
@@ -8046,6 +8058,29 @@ function toggleTag(pid,sid,tag) {
   save(); buildSIEditor(pid,sid);
 }
 
+function toggleTradeField(pid, sid) {
+  const item = getSI(pid, sid); if (!item) return;
+  syncEditorToStore(pid, sid);
+  const tradeDiv = document.getElementById(`trade-field-${sid}`);
+  const btn      = document.getElementById(`trade-toggle-${sid}`);
+  if (!tradeDiv) return;
+  const opening = tradeDiv.style.display === 'none';
+  tradeDiv.style.display = opening ? 'block' : 'none';
+  if (!opening) {
+    item.trade = '';
+    const ti = document.getElementById('trade-input');
+    if (ti) ti.value = '';
+    save();
+  }
+  if (btn) {
+    btn.textContent = opening ? '🔧 Trade ✓' : '＋ Trade';
+    btn.style.background   = opening ? 'var(--accent-dim)' : 'var(--surface2)';
+    btn.style.color        = opening ? 'var(--accent)'     : 'var(--text3)';
+    btn.style.borderColor  = opening ? 'var(--accent)'     : 'var(--border)';
+  }
+  if (opening) setTimeout(() => document.getElementById('trade-input')?.focus(), 50);
+}
+
 window.addCustomTag=function(pid,sid){
   const input=document.getElementById('custom-tag-input');
   const tag=(input?.value||'').trim();
@@ -8076,12 +8111,14 @@ function syncEditorToStore(pid, sid) {
   const item = getSI(pid, sid); if(!item) return;
   const n  = document.getElementById('notes-input');
   const a  = document.getElementById('assigned-input');
+  const tr = document.getElementById('trade-input');
   const d  = document.getElementById('due-input');
   const dd = document.getElementById('si-delivery-date');
   const pd = document.getElementById('si-punch-date');
   const ps = document.getElementById('si-projected-start');
   if(n)  item.notes        = n.value;
   if(a)  item.assignedTo   = a.value;
+  if(tr) item.trade        = tr.value;
   if(d)  item.dueDate      = d.value;
   if(dd) item.deliveryDate = dd.value;
   if(pd) item.punchDate    = pd.value;
@@ -9020,7 +9057,7 @@ function showNewSIModal(pid) {
       id:'si_'+Date.now(),
       sectionId:secId,
       num,
-      title,status:'pending',assignedTo:'',dueDate:'',notes:'',tags:[],customTags:[],photos:[]
+      title,status:'pending',assignedTo:'',trade:'',dueDate:'',notes:'',tags:[],customTags:[],photos:[]
     };
     proj.items.push(item); markProjectDirty(pid); save(); closeModal();
     // Defer nav so modal teardown completes first on iOS
