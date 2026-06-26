@@ -4795,10 +4795,11 @@ function renderLeft(r) {
 }
 
 function emptyMsg(t) { return `<div style="padding:20px;text-align:center;color:var(--text3);font-size:12px">${t}</div>`; }
+function _htmlEsc(s) { return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function emptySearch(q) {
   return `<div class="empty-state" style="padding:28px 16px;text-align:center">
     <div class="empty-state-icon" style="font-size:26px;margin-bottom:10px;opacity:0.5">🔍</div>
-    <div class="empty-state-text" style="font-size:13px;color:var(--text3)">No results for <strong style="color:var(--text2)">"${q}"</strong></div>
+    <div class="empty-state-text" style="font-size:13px;color:var(--text3)">No results for <strong style="color:var(--text2)">"${_htmlEsc(q)}"</strong></div>
   </div>`;
 }
 
