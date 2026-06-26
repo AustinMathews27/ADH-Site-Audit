@@ -4155,9 +4155,9 @@ async function _initStore() {
         await _idbSet('fap_v3', store);
         await _saveCloudTs();
         console.log(`[ADH] Loaded ${fetched}/${projectIds.length} projects from cloud`);
-        
-        // Re-render after cloud data comes in
-        render();
+
+        // Patch folder card counts in-place so counts appear without a full-page flicker
+        _patchFolderCardCounts();
       }
     } catch(e) {
       console.warn('[ADH] Cloud load on startup skipped:', e.message);
@@ -5094,11 +5094,34 @@ function folderCardHTML(f) {
   const countHTML = parts.length
     ? `<div class="fc-count">${parts.join(' · ')}</div>`
     : '';
-  return `<div class="folder-card${hasLogo ? ' folder-card--logo' : ''}" onclick="navToFolder('${f.id}')">
+  return `<div class="folder-card${hasLogo ? ' folder-card--logo' : ''}" data-fid="${f.id}" onclick="navToFolder('${f.id}')">
     <div class="fc-icon">${f.icon}</div>
     <div class="fc-name">${f.name}</div>
     ${countHTML}
   </div>`;
+}
+
+function _patchFolderCardCounts() {
+  store.folders.forEach(f => {
+    const card = document.querySelector(`.folder-card[data-fid="${f.id}"]`);
+    if (!card) return;
+    const projCount = f.projects.length;
+    const subCount = store.folders.filter(s => s.parentId === f.id).length;
+    const parts = [];
+    if (projCount > 0) parts.push(`${projCount} project${projCount !== 1 ? 's' : ''}`);
+    if (subCount > 0) parts.push(`${subCount} sub`);
+    let countEl = card.querySelector('.fc-count');
+    if (parts.length) {
+      if (!countEl) {
+        countEl = document.createElement('div');
+        countEl.className = 'fc-count';
+        card.appendChild(countEl);
+      }
+      countEl.textContent = parts.join(' · ');
+    } else {
+      if (countEl) countEl.remove();
+    }
+  });
 }
 
 // TOOLBOX TALK / SAFETY CHECKLIST VIEW
