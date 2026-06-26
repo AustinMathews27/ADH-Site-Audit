@@ -367,24 +367,17 @@
     }
 
     // ── SIGNATURE PAGE ────────────────────────────────────────────────────────
-    const audSig = branding.auditorSig, cliSig = branding.clientSig;
-    const sigPage = (audSig || cliSig) ? `
+    const audSig = branding.auditorSig;
+    const sigPage = audSig ? `
       <div class="page-container">
       <div class="page-scaler">
         <div class="page-num">${pgNum}</div>
         ${sectionHeader('Report Sign-Off', 0).replace(/<span style="font-size:8px[^>]*>[^<]*<\/span>/, '')}
         <div style="padding:18px;flex:1">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:22px">
-            <div>
-              <div style="font-size:8px;font-weight:700;color:${P.sub};margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Auditor / Inspector</div>
-              ${audSig?`<img src="${audSig}" style="height:44px;max-width:140px;object-fit:contain;display:block;margin-bottom:6px">`:`<div style="height:44px;border-bottom:1px solid ${P.border};margin-bottom:6px;width:140px"></div>`}
-              <div style="font-size:8px;color:${P.sub}">Signature &nbsp;&nbsp; Date: ___________</div>
-            </div>
-            <div>
-              <div style="font-size:8px;font-weight:700;color:${P.sub};margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Client / GC</div>
-              ${cliSig?`<img src="${cliSig}" style="height:44px;max-width:140px;object-fit:contain;display:block;margin-bottom:6px">`:`<div style="height:44px;border-bottom:1px solid ${P.border};margin-bottom:6px;width:140px"></div>`}
-              <div style="font-size:8px;color:${P.sub}">Signature &nbsp;&nbsp; Date: ___________</div>
-            </div>
+          <div>
+            <div style="font-size:8px;font-weight:700;color:${P.sub};margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Auditor / Inspector</div>
+            <img src="${audSig}" style="height:44px;max-width:140px;object-fit:contain;display:block;margin-bottom:6px">
+            <div style="font-size:8px;color:${P.sub}">Signature &nbsp;&nbsp; Date: ___________</div>
           </div>
         </div>
         <div class="pg-footer"><span>${esc(proj.name||'')}</span><span>Page ${pgNum}</span></div>
@@ -997,20 +990,15 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
     }
 
     // ── SIGNATURE PAGE ────────────────────────────────────────────────────────
-    if (window._pdfBranding?.auditorSig || window._pdfBranding?.clientSig) {
+    if (window._pdfBranding?.auditorSig) {
       newPage();
       setFill(P.ink); doc.rect(0,0,PW,18,'F');
       doc.setFontSize(10); doc.setFont(P.font,'bold'); setText('#ffffff'); doc.text('REPORT SIGN-OFF',15,12);
       let sy = 38;
       doc.setFontSize(11); doc.setFont(P.font,'bold'); setText(P.ink); doc.text('Auditor / Inspector',15,sy);
-      if (window._pdfBranding.auditorSig) doc.addImage(window._pdfBranding.auditorSig,'PNG',15,sy+5,60,20);
+      doc.addImage(window._pdfBranding.auditorSig,'PNG',15,sy+5,60,20);
       doc.setFontSize(9); doc.setFont(P.font,'normal'); setText(P.sub);
       doc.line(15,sy+26,85,sy+26); doc.text('Signature',15,sy+30); doc.text('Date: '+new Date().toLocaleDateString(),60,sy+30);
-      sy = 98;
-      doc.setFontSize(11); doc.setFont(P.font,'bold'); setText(P.ink); doc.text('Client / General Contractor',15,sy);
-      if (window._pdfBranding.clientSig) doc.addImage(window._pdfBranding.clientSig,'PNG',15,sy+5,60,20);
-      doc.setFontSize(9); doc.setFont(P.font,'normal'); setText(P.sub);
-      doc.line(15,sy+26,85,sy+26); doc.text('Signature',15,sy+30); doc.text('Date: ________________',60,sy+30);
     }
 
     // ── FOOTERS ───────────────────────────────────────────────────────────────

@@ -2998,9 +2998,7 @@ textarea.field-input { min-height: 88px !important; line-height: 1.6 !important;
 <input type="file" id="cover-photo-input" accept="image/*" onchange="handleCoverPhotoUpload(event)" style="display:none">
 <input type="file" id="env-file-input" onchange="handleEnvFile(event)" style="display:none">
 <input type="file" id="xls-file-input" accept=".xls,.xlsx" onchange="handleXLSImport(event)" style="display:none">
-<input type="file" id="pdf-logo-input" accept="image/*" onchange="handleBrandingUpload(event, 'logo')" style="display:none">
 <input type="file" id="pdf-auditor-input" accept="image/*" onchange="handleBrandingUpload(event, 'auditorSig')" style="display:none">
-<input type="file" id="pdf-client-input" accept="image/*" onchange="handleBrandingUpload(event, 'clientSig')" style="display:none">
 <input type="file" id="contact-csv-input"  accept=".csv,text/csv"          onchange="handleContactCSV(event)"  style="display:none">
 <input type="file" id="contact-vcf-input"  accept=".vcf,text/vcard"         onchange="handleContactVCF(event)"  style="display:none">
 <input type="file" id="contact-xlsx-input" accept=".xlsx,.xls"              onchange="handleContactXLSX(event)" style="display:none">
@@ -8767,7 +8765,6 @@ window._pdfBranding = {
   companyId:   'ami',      // active company
   logo:        null,       // base64 image or null
   auditorSig:  null,       // base64 image or null
-  clientSig:   null,       // base64 image or null
   // Per-company logos stored separately
   logos: {},               // { companyId: base64 }
   auditorSigs: {},         // { companyId: base64 }
@@ -8823,14 +8820,12 @@ window.handleBrandingUpload = function(e, type) {
       if (!window._pdfBranding.auditorSigs) window._pdfBranding.auditorSigs = {};
       window._pdfBranding.auditorSigs[cid] = data;
       window._pdfBranding.auditorSig        = data;
-    } else if (type === 'clientSig') {
-      window._pdfBranding.clientSig = data;
     }
     _saveBranding();
     showToast(type === 'logo' ? '✓ Logo saved' : '✓ Signature saved', 'green');
     // Refresh RG preview if open
     if (document.getElementById('rg-overlay')) {
-      window._rgRefreshLogoStrip?.();
+      window._rgRebuildAll?.();
     }
   };
   reader.readAsDataURL(file);
@@ -9200,8 +9195,6 @@ function showShareModal() {
     const co = window.getActiveCompany?.() || ADH_COMPANIES[0];
     const logo = window._pdfBranding?.logo;
     const audSig = window._pdfBranding?.auditorSig;
-    const cliSig = window._pdfBranding?.clientSig;
-
     return `
       <div class="rg-sidebar-topbar">
         <span style="font-size:14px">✏️</span> Edit Report
@@ -9295,68 +9288,71 @@ function showShareModal() {
             </select>
           </div>
 
-          <!-- Logo upload -->
+          <!-- Logo picker -->
           <div style="margin-bottom:10px">
             <div style="font-size:9px;color:var(--text3);font-family:var(--mono);font-weight:600;
               text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">
               Company Logo <span style="color:var(--accent)">(${co.abbr})</span>
             </div>
-            <div style="display:flex;align-items:center;gap:8px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
               ${logo ? `<img src="${logo}" style="height:36px;max-width:90px;object-fit:contain;border-radius:4px;border:1px solid var(--border)">` :
                 `<div style="height:36px;width:60px;background:var(--surface3);border:1px dashed var(--border);
                   border-radius:4px;display:flex;align-items:center;justify-content:center;
                   font-size:9px;color:var(--text3)">No logo</div>`}
-              <button onclick="document.getElementById('pdf-logo-input').click()"
-                style="flex:1;padding:6px 10px;background:var(--accent-dim);color:var(--accent);
-                  border:1px solid rgba(61,184,245,0.25);border-radius:7px;font-size:10px;
-                  font-family:var(--mono);font-weight:600;cursor:pointer;">
-                ${logo?'Change':'Upload'} Logo
-              </button>
               ${logo?`<button onclick="window._rgClearLogo()" title="Remove logo"
                 style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border);
                 background:var(--surface2);color:var(--red);cursor:pointer;font-size:12px;">✕</button>`:''}
             </div>
+            <select onchange="window._rgSelectLogo(this.value)"
+              style="width:100%;background:var(--surface2);border:1px solid var(--border);
+                border-radius:7px;padding:6px 9px;font-size:11px;color:var(--text);outline:none;cursor:pointer;">
+              <option value="">-- pick logo --</option>
+              ${['acd-dark.png','acd-light.png','acd.png','acm-dark.png','acm-light.png','acm.png','acs.png','adh.png','ami.png','asst.png']
+                .map(f=>`<option value="logos/${f}">${f}</option>`).join('')}
+            </select>
           </div>
 
           <!-- Auditor signature -->
           <div style="margin-bottom:10px">
             <div style="font-size:9px;color:var(--text3);font-family:var(--mono);font-weight:600;
               text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Auditor Signature</div>
-            <div style="display:flex;align-items:center;gap:8px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
               ${audSig ? `<img src="${audSig}" style="height:36px;max-width:90px;object-fit:contain;border-radius:4px;border:1px solid var(--border)">` :
                 `<div style="height:36px;width:60px;background:var(--surface3);border:1px dashed var(--border);
                   border-radius:4px;display:flex;align-items:center;justify-content:center;
                   font-size:9px;color:var(--text3)">No sig</div>`}
-              <button onclick="document.getElementById('pdf-auditor-input').click()"
-                style="flex:1;padding:6px 10px;background:var(--green-dim);color:var(--green);
-                  border:1px solid rgba(52,211,153,0.25);border-radius:7px;font-size:10px;
-                  font-family:var(--mono);font-weight:600;cursor:pointer;">
-                ${audSig?'Change':'Upload'} Sig
-              </button>
               ${audSig?`<button onclick="window._rgClearSig('auditor')" title="Remove"
                 style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border);
                 background:var(--surface2);color:var(--red);cursor:pointer;font-size:12px;">✕</button>`:''}
             </div>
-          </div>
-
-          <!-- Client signature -->
-          <div style="margin-bottom:10px">
-            <div style="font-size:9px;color:var(--text3);font-family:var(--mono);font-weight:600;
-              text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Client Signature</div>
-            <div style="display:flex;align-items:center;gap:8px">
-              ${cliSig ? `<img src="${cliSig}" style="height:36px;max-width:90px;object-fit:contain;border-radius:4px;border:1px solid var(--border)">` :
-                `<div style="height:36px;width:60px;background:var(--surface3);border:1px dashed var(--border);
-                  border-radius:4px;display:flex;align-items:center;justify-content:center;
-                  font-size:9px;color:var(--text3)">No sig</div>`}
-              <button onclick="document.getElementById('pdf-client-input').click()"
-                style="flex:1;padding:6px 10px;background:var(--folder-dim);color:var(--folder);
-                  border:1px solid rgba(245,158,11,0.25);border-radius:7px;font-size:10px;
+            <div style="display:flex;gap:6px">
+              <button onclick="document.getElementById('pdf-auditor-input').click()"
+                style="flex:1;padding:6px 10px;background:var(--green-dim);color:var(--green);
+                  border:1px solid rgba(52,211,153,0.25);border-radius:7px;font-size:10px;
                   font-family:var(--mono);font-weight:600;cursor:pointer;">
-                ${cliSig?'Change':'Upload'} Sig
+                ↑ Upload
               </button>
-              ${cliSig?`<button onclick="window._rgClearSig('client')" title="Remove"
-                style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border);
-                background:var(--surface2);color:var(--red);cursor:pointer;font-size:12px;">✕</button>`:''}
+              <button onclick="window._rgToggleSigPad()"
+                style="flex:1;padding:6px 10px;background:var(--accent-dim);color:var(--accent);
+                  border:1px solid rgba(61,184,245,0.25);border-radius:7px;font-size:10px;
+                  font-family:var(--mono);font-weight:600;cursor:pointer;">
+                ✏ Draw
+              </button>
+            </div>
+            <div id="rg-sigpad-wrap" style="display:none;margin-top:8px">
+              <canvas id="rg-sigpad" width="260" height="90"
+                style="border:1px solid var(--border);border-radius:6px;background:#fff;
+                  cursor:crosshair;display:block;width:100%;touch-action:none"></canvas>
+              <div style="display:flex;gap:6px;margin-top:6px">
+                <button onclick="window._rgSigPadClear()"
+                  style="flex:1;padding:5px 8px;background:var(--surface2);color:var(--text3);
+                    border:1px solid var(--border);border-radius:6px;font-size:10px;
+                    font-family:var(--mono);cursor:pointer;">Clear</button>
+                <button onclick="window._rgSigPadSave()"
+                  style="flex:1;padding:5px 8px;background:var(--green-dim);color:var(--green);
+                    border:1px solid rgba(52,211,153,0.25);border-radius:6px;font-size:10px;
+                    font-family:var(--mono);font-weight:600;cursor:pointer;">Save</button>
+              </div>
             </div>
           </div>
 
@@ -9546,10 +9542,90 @@ function showShareModal() {
     if (type === 'auditor') {
       if (window._pdfBranding.auditorSigs) delete window._pdfBranding.auditorSigs[cid];
       window._pdfBranding.auditorSig = null;
-    } else {
-      window._pdfBranding.clientSig = null;
     }
     _saveBranding();
+    _rebuildSidebar(); _rebuildPreview();
+  };
+
+  window._rgSelectLogo = async function(path) {
+    if (!path) return;
+    try {
+      const resp = await fetch(path);
+      const blob = await resp.blob();
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const data = ev.target.result;
+        const cid = window._pdfBranding.companyId || 'ami';
+        if (!window._pdfBranding.logos) window._pdfBranding.logos = {};
+        window._pdfBranding.logos[cid] = data;
+        window._pdfBranding.logo = data;
+        _saveBranding();
+        showToast('✓ Logo saved', 'green');
+        _rebuildSidebar(); _rebuildPreview();
+      };
+      reader.readAsDataURL(blob);
+    } catch(e) { showToast('Failed to load logo', 'red'); }
+  };
+
+  window._rgToggleSigPad = function() {
+    const wrap = document.getElementById('rg-sigpad-wrap');
+    if (!wrap) return;
+    const isOpen = wrap.style.display !== 'none';
+    wrap.style.display = isOpen ? 'none' : 'block';
+    if (!isOpen) _rgInitSigPadCanvas();
+  };
+
+  function _rgInitSigPadCanvas() {
+    const canvas = document.getElementById('rg-sigpad');
+    if (!canvas || canvas._sigInit) return;
+    canvas._sigInit = true;
+    const ctx = canvas.getContext('2d');
+    let drawing = false, lastX = 0, lastY = 0;
+    function getPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const src = e.touches ? e.touches[0] : e;
+      return [(src.clientX - rect.left) * scaleX, (src.clientY - rect.top) * scaleY];
+    }
+    function start(e) { e.preventDefault(); drawing = true; [lastX, lastY] = getPos(e); }
+    function move(e) {
+      e.preventDefault();
+      if (!drawing) return;
+      const [x, y] = getPos(e);
+      ctx.beginPath(); ctx.moveTo(lastX, lastY); ctx.lineTo(x, y);
+      ctx.strokeStyle = '#111827'; ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.stroke();
+      [lastX, lastY] = [x, y];
+    }
+    function end() { drawing = false; }
+    canvas.addEventListener('mousedown', start);
+    canvas.addEventListener('mousemove', move);
+    canvas.addEventListener('mouseup', end);
+    canvas.addEventListener('mouseleave', end);
+    canvas.addEventListener('touchstart', start, { passive: false });
+    canvas.addEventListener('touchmove', move, { passive: false });
+    canvas.addEventListener('touchend', end);
+  }
+
+  window._rgSigPadClear = function() {
+    const canvas = document.getElementById('rg-sigpad');
+    if (!canvas) return;
+    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+  };
+
+  window._rgSigPadSave = function() {
+    const canvas = document.getElementById('rg-sigpad');
+    if (!canvas) return;
+    const dataURL = canvas.toDataURL('image/png');
+    const cid = window._pdfBranding.companyId || 'ami';
+    if (!window._pdfBranding.auditorSigs) window._pdfBranding.auditorSigs = {};
+    window._pdfBranding.auditorSigs[cid] = dataURL;
+    window._pdfBranding.auditorSig = dataURL;
+    _saveBranding();
+    showToast('✓ Signature saved', 'green');
+    const wrap = document.getElementById('rg-sigpad-wrap');
+    if (wrap) wrap.style.display = 'none';
     _rebuildSidebar(); _rebuildPreview();
   };
   window._rgRefreshLogoStrip = () => {
