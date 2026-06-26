@@ -10061,6 +10061,7 @@ function confirmDeleteProject(pid,fid) {
       _delProj._fieldTs._deleted = _delProj._deletedAt;
     }
     markStoreDirty(); save(); closeModal();
+    _patchFolderCardCounts();
     // If we were inside this project, go back
     if(route().projectId===pid) fid?navToFolder(fid):navToRoot();
     else {
@@ -10142,7 +10143,7 @@ window.moveProject = function(pid, oldFid, newFid) {
     const f = getFolder(newFid);
     if (f && !f.projects.includes(pid)) f.projects.push(pid);
   }
-  markStoreDirty(); save(); closeModal(); render();
+  markStoreDirty(); save(); closeModal(); render(); _patchFolderCardCounts();
   showToast('✓ Project moved', 'green');
 };
 
