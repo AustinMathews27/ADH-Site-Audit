@@ -9175,9 +9175,14 @@ function showShareModal() {
       inclPhotos:  _rgInclPhotos,
       inclNotes:   _rgInclNotes,
       inclTags:    _rgInclTags,
+      inclTS:      _rgInclTS,
+      inclEnv:     _rgInclEnv,
       coverNotes:  _rgCoverNotes,
       reportTitle: _rgReportTitle,
       whiteLabel:  _rgWhiteLabel,
+      square:      _rgSquare,
+      pageNums:    _rgPageNums,
+      imgQual:     _rgImgQual,
       branding:    window._pdfBranding || {},
       company:     co,
     });
@@ -9523,9 +9528,10 @@ function showShareModal() {
   window._rgSetTheme       = v  => { _rgTheme   = v; _rebuildSidebar(); _rebuildPreview(); };
   window._rgSetLayout      = v  => { _rgLayout  = v; _rebuildSidebar(); _rebuildPreview(); };
   window._rgSetImgSize     = v  => { _rgImgSize = v; _rebuildPreview(); };
-  window._rgSetImgQual     = v  => { _rgImgQual = v; };
+  window._rgSetImgQual     = v  => { _rgImgQual = v; _rebuildSidebar(); _rebuildPreview(); };
   window._rgSetPrimary     = v  => { _rgPrimary = v; _rebuildPreview(); };
-  window._rgSetReportTitle = v  => { _rgReportTitle = v; };
+  let _rgTitleDebounce = null;
+  window._rgSetReportTitle = v  => { _rgReportTitle = v; clearTimeout(_rgTitleDebounce); _rgTitleDebounce = setTimeout(_rebuildPreview, 500); };
   window._rgSecToggle      = name => { secToggle(name); };
 
   window._rgClearLogo = () => {
@@ -12070,6 +12076,16 @@ function _postChangeLog(pid, details) {
 // Hits /api/generatePdf and triggers a browser download
 // ══════════════════════════════════════════════════════════════════
 async function downloadServerPDF(pid) {
+  const proj = (typeof getProject === 'function') ? getProject(pid) : null;
+  if (typeof window.checkRequiredBeforeExport === 'function' && proj) {
+    const missing = window.checkRequiredBeforeExport(proj);
+    if (missing.length > 0) {
+      if (typeof window.showExportValidationModal === 'function') {
+        window.showExportValidationModal(pid, missing);
+      }
+      return;
+    }
+  }
   document.getElementById('rg-overlay')?.remove();
   showToast('⏳ Generating PDF…');
   try {
