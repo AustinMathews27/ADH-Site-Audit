@@ -8818,6 +8818,7 @@ async function _saveBranding() {
       companyId:   window._pdfBranding.companyId,
       logos:       window._pdfBranding.logos,
       auditorSigs: window._pdfBranding.auditorSigs,
+      logoFile:    window._pdfBranding.logoFile,
     });
   } catch(e) {}
 }
@@ -9336,7 +9337,7 @@ function showShareModal() {
                 border-radius:7px;padding:6px 9px;font-size:11px;color:var(--text);outline:none;cursor:pointer;">
               <option value="">-- pick logo --</option>
               ${['acd-dark.png','acd-light.png','acd.png','acm-dark.png','acm-light.png','acm.png','acs.png','adh.png','ami.png','asst.png']
-                .map(f=>`<option value="logos/${f}">${f}</option>`).join('')}
+                .map(f=>`<option value="logos/${f}"${window._pdfBranding.logoFile==='logos/'+f?' selected':''} >${f}</option>`).join('')}
             </select>
           </div>
 
@@ -9587,6 +9588,7 @@ function showShareModal() {
         if (!window._pdfBranding.logos) window._pdfBranding.logos = {};
         window._pdfBranding.logos[cid] = data;
         window._pdfBranding.logo = data;
+        window._pdfBranding.logoFile = path;
         _saveBranding();
         showToast('✓ Logo saved', 'green');
         _rebuildSidebar(); _rebuildPreview();
