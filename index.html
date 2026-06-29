@@ -4632,7 +4632,11 @@ function renderLeft(r) {
   const leftPanel = document.querySelector('.left-panel');
   const isRootView = !r.folderId && !r.projectId &&
     !['contacts','toolbox','awi','resources','tblog','env','schedule','manpower','activity','floorplan'].includes(r.view);
-  if (leftPanel) leftPanel.classList.toggle('is-hidden', isRootView);
+
+  const q = (document.getElementById('search-input')?.value || '').toLowerCase();
+
+  // When a global search query is active, always show the left panel
+  if (leftPanel) leftPanel.classList.toggle('is-hidden', isRootView && !q);
 
   // Do not waste CPU building the left panel if it is hidden on mobile
   if (document.documentElement.classList.contains('is-phone')) {
@@ -4641,7 +4645,105 @@ function renderLeft(r) {
 
   const title = document.getElementById('left-panel-title');
   const scroll = document.getElementById('list-scroll');
-  const q = (document.getElementById('search-input')?.value || '').toLowerCase();
+
+  // ── GLOBAL SEARCH ─────────────────────────────────────────────
+  // When a query is present, search across ALL folders, projects, and SIs
+  // regardless of current navigation context.
+  if (q) {
+    title.textContent = 'SEARCH RESULTS';
+    let html = '';
+
+    // 1. Matching folders
+    const matchFolders = store.folders.filter(f =>
+      f.name.toLowerCase().includes(q)
+    );
+    if (matchFolders.length) {
+      html += `<div class="section-group">Folders<span class="section-count">${matchFolders.length}</span></div>`;
+      matchFolders.forEach(f => {
+        const parent = f.parentId ? getFolder(f.parentId) : null;
+        const meta = parent ? parent.name : '';
+        const pc = (f.projects || []).length;
+        const sc = store.folders.filter(sub => sub.parentId === f.id).length;
+        const parts = []; if (pc > 0) parts.push(`${pc} project${pc !== 1 ? 's' : ''}`); if (sc > 0) parts.push(`${sc} sub`);
+        html += `<div class="folder-row" onclick="navToFolder('${f.id}')">
+          <div class="folder-icon-wrap">${f.icon}</div>
+          <div class="folder-info">
+            <div class="folder-name">${f.name}</div>
+            ${meta ? `<div class="folder-meta">${meta}${parts.length ? ' · ' + parts.join(' · ') : ''}</div>` : (parts.length ? `<div class="folder-meta">${parts.join(' · ')}</div>` : '')}
+          </div>
+          <div class="folder-arrow">›</div>
+        </div>`;
+      });
+    }
+
+    // 2. Matching projects + their matching SIs
+    const activeProjects = store.projects.filter(p => !p._deleted);
+    activeProjects.forEach(p => {
+      const folder = store.folders.find(f => (f.projects || []).includes(p.id));
+      const fid = folder ? folder.id : '';
+      const folderName = folder ? folder.name : '';
+
+      const projNameMatch =
+        p.name.toLowerCase().includes(q) ||
+        (p.client || '').toLowerCase().includes(q) ||
+        (p.date || '').toLowerCase().includes(q);
+
+      const matchingSIs = p.items.filter(i =>
+        i.title.toLowerCase().includes(q) ||
+        i.num.toLowerCase().includes(q) ||
+        (i.notes || '').toLowerCase().includes(q) ||
+        (i.fieldCheck || '').toLowerCase().includes(q) ||
+        (i._updatedBy || '').toLowerCase().includes(q) ||
+        (Array.isArray(i.conditions) ? i.conditions.join(' ').toLowerCase().includes(q) : false)
+      );
+
+      if (!projNameMatch && !matchingSIs.length) return;
+
+      // Project group header (clickable → navigates to project)
+      const siCount = matchingSIs.length;
+      html += `<div class="section-group" style="cursor:pointer" onclick="navToProject('${p.id}','${fid}')">
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">
+          ${folderName ? `<span style="opacity:0.55">${folderName} › </span>` : ''}${_htmlEsc(p.name)}
+        </span>
+        ${siCount ? `<span class="section-count">${siCount} SI${siCount !== 1 ? 's' : ''}</span>` : ''}
+      </div>`;
+
+      if (!siCount) {
+        // Only project name/meta matched — show a project row
+        const ready = p.items.filter(i => i.status === 'completed').length;
+        html += `<div class="si-row" onclick="navToProject('${p.id}','${fid}')">
+          <div class="si-thumb" style="font-size:16px">🏗</div>
+          <div class="si-info">
+            <div class="si-num">${_htmlEsc(p.date)} · ${_htmlEsc(p.client)}</div>
+            <div class="si-title">${_htmlEsc(p.name)}</div>
+          </div>
+          <div style="font-family:var(--mono);font-size:9px;color:var(--text3);text-align:right;flex-shrink:0">${ready}/${p.items.length}<br>ready</div>
+        </div>`;
+      } else {
+        // Show matching SI rows
+        matchingSIs.forEach(item => {
+          const thumb = item.photos && item.photos.length
+            ? `<img src="${getPhotoSrcForDisplay(item.photos[0])}" loading="lazy" />`
+            : `<span>📷</span>`;
+          html += `<div class="si-row ${r.siId === item.id ? 'active' : ''}" onclick="navToSI('${p.id}','${item.id}')">
+            <div class="si-thumb">${thumb}</div>
+            <div class="si-info">
+              <div class="si-num">SI# ${_htmlEsc(item.num.replace(/^SI\s+/, ''))}</div>
+              <div class="si-title">${_htmlEsc(item.title)}</div>
+              ${_updatedByBadge ? _updatedByBadge(item) : ''}
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+              <div class="si-status ${item.status}"></div>
+            </div>
+          </div>`;
+        });
+      }
+    });
+
+    scroll.innerHTML = html || emptySearch(q);
+    return;
+  }
+  // ── END GLOBAL SEARCH ─────────────────────────────────────────
 
   if (r.view === 'contacts') {
     title.textContent = 'CONTACTS';
@@ -10864,6 +10966,173 @@ function closeModal() {
   if (ov?._escHandler) document.removeEventListener('keydown', ov._escHandler);
   ov?.remove();
 }
+
+// ══════════════════════════════════════════
+// GLOBAL SEARCH OVERLAY (⌘K / nav-bar button)
+// ══════════════════════════════════════════
+function openGlobalSearch() {
+  if (document.getElementById('gs-overlay')) return;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'global-search-overlay';
+  overlay.id = 'gs-overlay';
+
+  const box = document.createElement('div');
+  box.className = 'global-search-box';
+
+  const inputWrap = document.createElement('div');
+  inputWrap.className = 'global-search-input-wrap';
+  inputWrap.innerHTML = '<span style="font-size:16px;opacity:0.5;flex-shrink:0">⌕</span>';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'Search folders, projects, site items…';
+  input.autocomplete = 'off';
+  inputWrap.appendChild(input);
+
+  const esc = document.createElement('span');
+  esc.className = 'gs-shortcut';
+  esc.textContent = 'ESC';
+  inputWrap.appendChild(esc);
+
+  const results = document.createElement('div');
+  results.className = 'global-search-results';
+
+  box.appendChild(inputWrap);
+  box.appendChild(results);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  function close() {
+    overlay.remove();
+    document.removeEventListener('keydown', onKey);
+  }
+
+  function buildResults(q) {
+    q = (q || '').toLowerCase().trim();
+    if (!q) {
+      results.innerHTML = '<div class="gs-empty">Start typing to search everything…</div>';
+      return;
+    }
+
+    const rows = []; // { type, icon, title, sub, badge, action }
+
+    // 1. Matching folders
+    const matchFolders = store.folders.filter(f => f.name.toLowerCase().includes(q));
+    if (matchFolders.length) {
+      rows.push({ type: 'label', text: 'Folders' });
+      matchFolders.forEach(f => {
+        const parent = f.parentId ? getFolder(f.parentId) : null;
+        const sub = parent ? parent.name : ((f.projects||[]).length + ' project' + ((f.projects||[]).length !== 1 ? 's' : ''));
+        rows.push({ icon: f.icon || '📁', title: f.name, sub, badge: 'Folder',
+          action: () => navToFolder(f.id) });
+      });
+    }
+
+    // 2. Matching projects
+    const matchProjects = store.projects.filter(p => !p._deleted && (
+      p.name.toLowerCase().includes(q) ||
+      (p.client||'').toLowerCase().includes(q) ||
+      (p.date||'').toLowerCase().includes(q)
+    ));
+    if (matchProjects.length) {
+      rows.push({ type: 'label', text: 'Projects' });
+      matchProjects.forEach(p => {
+        const folder = store.folders.find(f => (f.projects||[]).includes(p.id));
+        const fid = folder ? folder.id : '';
+        const sub = [p.date, p.client, folder ? folder.name : ''].filter(Boolean).join(' · ');
+        rows.push({ icon: '🏗', title: p.name, sub, badge: 'Project',
+          action: () => navToProject(p.id, fid) });
+      });
+    }
+
+    // 3. Matching SIs
+    const matchSIs = [];
+    store.projects.filter(p => !p._deleted).forEach(p => {
+      const folder = store.folders.find(f => (f.projects||[]).includes(p.id));
+      const fid = folder ? folder.id : '';
+      p.items.forEach(i => {
+        if (
+          i.title.toLowerCase().includes(q) ||
+          i.num.toLowerCase().includes(q) ||
+          (i.notes||'').toLowerCase().includes(q) ||
+          (i.fieldCheck||'').toLowerCase().includes(q) ||
+          (i._updatedBy||'').toLowerCase().includes(q) ||
+          (Array.isArray(i.conditions) ? i.conditions.join(' ').toLowerCase().includes(q) : false)
+        ) {
+          matchSIs.push({ item: i, proj: p, fid });
+        }
+      });
+    });
+    if (matchSIs.length) {
+      rows.push({ type: 'label', text: 'Site Items' });
+      matchSIs.slice(0, 40).forEach(({ item, proj }) => {
+        const sub = 'SI# ' + item.num.replace(/^SI\s+/, '') + ' · ' + proj.name;
+        rows.push({ icon: '📋', title: item.title, sub, badge: item.status || '—',
+          action: () => navToSI(proj.id, item.id) });
+      });
+      if (matchSIs.length > 40) {
+        rows.push({ type: 'more', text: '…and ' + (matchSIs.length - 40) + ' more — refine your search' });
+      }
+    }
+
+    results.innerHTML = '';
+
+    if (!rows.length) {
+      results.innerHTML = '<div class="gs-empty">No results for "<strong>' + _htmlEsc(q) + '</strong>"</div>';
+      return;
+    }
+
+    rows.forEach(row => {
+      if (row.type === 'label') {
+        const el = document.createElement('div');
+        el.className = 'gs-section-label';
+        el.textContent = row.text;
+        results.appendChild(el);
+        return;
+      }
+      if (row.type === 'more') {
+        const el = document.createElement('div');
+        el.className = 'gs-empty';
+        el.style.cssText = 'padding:8px 16px;font-size:11px';
+        el.textContent = row.text;
+        results.appendChild(el);
+        return;
+      }
+      const el = document.createElement('div');
+      el.className = 'gs-result-row';
+      el.innerHTML =
+        '<div class="gs-result-icon">' + row.icon + '</div>' +
+        '<div class="gs-result-main">' +
+          '<div class="gs-result-title">' + _htmlEsc(row.title) + '</div>' +
+          (row.sub ? '<div class="gs-result-sub">' + _htmlEsc(row.sub) + '</div>' : '') +
+        '</div>' +
+        '<div class="gs-result-badge">' + _htmlEsc(row.badge) + '</div>';
+      el.addEventListener('click', () => { close(); row.action(); });
+      results.appendChild(el);
+    });
+  }
+
+  input.addEventListener('input', () => buildResults(input.value));
+
+  function onKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+  }
+  document.addEventListener('keydown', onKey);
+
+  overlay.addEventListener('mousedown', e => { if (e.target === overlay) close(); });
+
+  buildResults('');
+  setTimeout(() => input.focus(), 30);
+}
+
+// Keyboard shortcut ⌘K / Ctrl+K
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+    e.preventDefault();
+    openGlobalSearch();
+  }
+});
 
 // ══════════════════════════════════════════
 // UTILS
