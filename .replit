@@ -35,8 +35,9 @@ localPort = 5000
 externalPort = 80
 
 [deployment]
-deploymentTarget = "static"
+deploymentTarget = "autoscale"
 publicDir = "."
+run = ["node", "server.js"]
 
 [postMerge]
 path = "scripts/post-merge.sh"
