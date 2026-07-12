@@ -1,9 +1,13 @@
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
 const PORT = 5000;
 const HOST = '0.0.0.0';
+
+const INNERGY_BASE = 'https://app.innergy.com';
+const INNERGY_API_KEY = process.env.INNERGY_API_KEY || '';
 
 const mimeTypes = {
   '.html': 'text/html',
@@ -23,12 +27,62 @@ const mimeTypes = {
   '.ttf': 'font/ttf',
 };
 
+function proxyInnergy(req, res, innergyPath) {
+  if (!INNERGY_API_KEY) {
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'INNERGY_API_KEY not configured' }));
+    return;
+  }
+
+  const targetUrl = new URL(innergyPath, INNERGY_BASE);
+  // Forward any query string from the original request
+  const origQuery = req.url.split('?')[1];
+  if (origQuery) targetUrl.search = '?' + origQuery;
+
+  const options = {
+    hostname: targetUrl.hostname,
+    path: targetUrl.pathname + targetUrl.search,
+    method: req.method,
+    headers: {
+      'X-API-Key': INNERGY_API_KEY,
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    },
+  };
+
+  const proxyReq = https.request(options, (proxyRes) => {
+    res.writeHead(proxyRes.statusCode, {
+      'Content-Type': proxyRes.headers['content-type'] || 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    });
+    proxyRes.pipe(res, { end: true });
+  });
+
+  proxyReq.on('error', (err) => {
+    console.error('[Innergy proxy] Error:', err.message);
+    res.writeHead(502, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Innergy proxy error', detail: err.message }));
+  });
+
+  if (req.method === 'POST') {
+    req.pipe(proxyReq, { end: true });
+  } else {
+    proxyReq.end();
+  }
+}
+
 const server = http.createServer((req, res) => {
   let urlPath = req.url.split('?')[0];
 
-  if (urlPath === '/') {
-    urlPath = '/index.html';
+  // ── Innergy proxy ──────────────────────────────────────────────────────────
+  if (urlPath.startsWith('/innergy/')) {
+    const innergyPath = urlPath.replace(/^\/innergy/, '');
+    proxyInnergy(req, res, innergyPath);
+    return;
   }
+
+  // ── Static file serving ────────────────────────────────────────────────────
+  if (urlPath === '/') urlPath = '/index.html';
 
   const filePath = path.join(__dirname, urlPath);
 
@@ -64,4 +118,5 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`ADH Field Audit Tool running at http://${HOST}:${PORT}`);
+  console.log(`Innergy proxy: ${INNERGY_API_KEY ? 'ready' : 'NO API KEY — set INNERGY_API_KEY'}`);
 });

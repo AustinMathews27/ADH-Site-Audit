@@ -1538,6 +1538,26 @@ body.theme-dark .week-cell.labor-row { background:var(--accent); color:#000; }
   border:1px solid rgba(251,191,36,0.25);
 }
 .import-xls-btn:hover { background:rgba(251,191,36,0.2); }
+.innergy-btn { background:rgba(139,92,246,0.12) !important; color:#a78bfa !important; border-color:rgba(139,92,246,0.25) !important; }
+.innergy-btn:hover { background:rgba(139,92,246,0.22) !important; }
+.innergy-job-list { display:flex; flex-direction:column; gap:6px; max-height:380px; overflow-y:auto; margin-top:8px; }
+.innergy-job-row { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--surface2); cursor:pointer; transition:all 0.15s; }
+.innergy-job-row:hover { border-color:#a78bfa; background:rgba(139,92,246,0.08); }
+.innergy-job-row.selected { border-color:#a78bfa; background:rgba(139,92,246,0.15); }
+.innergy-job-num { font-family:var(--mono); font-size:11px; font-weight:700; color:#a78bfa; min-width:70px; }
+.innergy-job-name { flex:1; font-size:13px; font-weight:500; }
+.innergy-job-client { font-size:11px; color:var(--text2); }
+.innergy-job-status { font-size:10px; padding:2px 7px; border-radius:20px; background:var(--surface3); color:var(--text2); white-space:nowrap; }
+.innergy-search { width:100%; box-sizing:border-box; margin-bottom:10px; padding:8px 12px; border-radius:8px; border:1px solid var(--border); background:var(--surface2); color:var(--text1); font-size:13px; outline:none; }
+.innergy-search:focus { border-color:#a78bfa; }
+.innergy-detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:4px; }
+.innergy-detail-field { display:flex; flex-direction:column; gap:3px; }
+.innergy-detail-label { font-size:10px; color:var(--text2); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+.innergy-detail-value { font-size:13px; color:var(--text1); }
+.innergy-section-title { font-size:11px; font-weight:700; color:var(--text2); text-transform:uppercase; letter-spacing:.06em; margin:14px 0 6px; }
+.innergy-labor-row { display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid var(--border); font-size:12px; }
+.innergy-labor-row:last-child { border-bottom:none; }
+.innergy-labor-row span:last-child { font-family:var(--mono); color:#a78bfa; font-weight:700; }
 .xls-preview-wrap { display:flex; flex-direction:column; gap:0; }
 .xls-preview-meta {
   background:var(--surface2); border:1px solid var(--border);
@@ -6156,6 +6176,7 @@ function buildFolderView(fid) {
       <button class="btn-add" onclick="showNewProjectModal('${fid}')">＋ Project</button>
       <button class="import-xls-btn" onclick="triggerXLSImport('${fid}')">📥 Import XLS</button>
       <button class="import-xls-btn" onclick="triggerWorkOrdersImport('${fid}')" style="background:rgba(96,165,250,0.08);border-color:rgba(96,165,250,0.25);color:#60a5fa">📋 Work Orders</button>
+      <button class="import-xls-btn innergy-btn" onclick="showInnergyImport('${fid}')">⚡ Innergy</button>
       <button class="btn-icon" onclick="confirmDeleteFolder('${fid}')" title="Delete Folder" style="border-color:var(--red-dim);color:var(--red)">🗑</button>
     </div>
 
@@ -13156,6 +13177,254 @@ window._flagRequiredFields = function(pid, sid){
     requestAnimationFrame(()=>{ try { window._flagRequiredFields(pid, sid); } catch(e){} });
   };
 })();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INNERGY IMPORT
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** Fetch from the local Innergy proxy route on server.js */
+async function _innergyFetch(path) {
+  const res = await fetch('/innergy' + path, { headers: { 'Accept': 'application/json' } });
+  if (!res.ok) throw new Error(`Innergy ${path} → HTTP ${res.status}`);
+  return res.json();
+}
+
+/** Derive a short status label from Innergy project status codes */
+function _innergyStatus(proj) {
+  const s = (proj.status || proj.projectStatus || '').toLowerCase();
+  if (s.includes('complet')) return 'Completed';
+  if (s.includes('close'))   return 'Closed';
+  if (s.includes('hold'))    return 'On Hold';
+  if (s.includes('cancel'))  return 'Cancelled';
+  return proj.status || proj.projectStatus || '—';
+}
+
+/** Extract customer/client name from various Innergy project shapes */
+function _innergyClient(proj) {
+  return proj.customerName
+    || proj.customer?.name
+    || proj.clientName
+    || proj.client
+    || (proj.customerInformation && proj.customerInformation.name)
+    || '—';
+}
+
+/** Extract project number (SI #) */
+function _innergyNumber(proj) {
+  return proj.number || proj.projectNumber || proj.sequenceNumber || proj.id || '—';
+}
+
+/** Total labor hours from budget groups response */
+function _innergyTotalHours(budgetGroups) {
+  if (!Array.isArray(budgetGroups)) return 0;
+  let total = 0;
+  budgetGroups.forEach(bg => {
+    if (typeof bg.totalLaborHours === 'number') { total += bg.totalLaborHours; return; }
+    if (Array.isArray(bg.laborItems)) {
+      bg.laborItems.forEach(li => { total += (li.hours || li.totalHours || li.estimatedHours || 0); });
+    }
+  });
+  return Math.round(total * 10) / 10;
+}
+
+// State for the two-step Innergy modal
+let _innergyFid = '';
+let _innergyAllProjects = [];
+let _innergySelected = null;
+let _innergyBudgetGroups = [];
+
+async function showInnergyImport(fid) {
+  _innergyFid = fid;
+  _innergyAllProjects = [];
+  _innergySelected = null;
+  _innergyBudgetGroups = [];
+
+  // Step 1 — show loading modal
+  makeModal('⚡ Import from Innergy',
+    `<div style="text-align:center;padding:24px 0;color:var(--text2)">Loading projects from Innergy…</div>`,
+    null, true
+  );
+
+  try {
+    const data = await _innergyFetch('/api/projects');
+    // API returns either an array directly or {items:[...]} or {data:{items:[...]}}
+    _innergyAllProjects = Array.isArray(data) ? data
+      : Array.isArray(data.items) ? data.items
+      : Array.isArray(data.data) ? data.data
+      : Array.isArray(data.data?.items) ? data.data.items
+      : [];
+
+    if (!_innergyAllProjects.length) {
+      _innergyShowError('No projects found in Innergy, or the API key may not have Project View permission.');
+      return;
+    }
+    _innergyRenderPicker();
+  } catch(e) {
+    _innergyShowError('Could not reach Innergy: ' + e.message);
+  }
+}
+
+function _innergyShowError(msg) {
+  const el = document.querySelector('#modal-body');
+  if (el) el.innerHTML = `<div style="color:var(--red);padding:16px 0">${_htmlEsc(msg)}</div>`;
+}
+
+function _innergyRenderPicker(filter) {
+  const q = (filter || '').toLowerCase();
+  const projs = q
+    ? _innergyAllProjects.filter(p =>
+        (_innergyNumber(p) + ' ' + (p.name||'') + ' ' + _innergyClient(p)).toLowerCase().includes(q))
+    : _innergyAllProjects;
+
+  const rows = projs.slice(0, 150).map(p => {
+    const num    = _htmlEsc(_innergyNumber(p));
+    const name   = _htmlEsc(p.name || '—');
+    const client = _htmlEsc(_innergyClient(p));
+    const status = _htmlEsc(_innergyStatus(p));
+    const sel    = _innergySelected && _innergySelected.id === p.id ? 'selected' : '';
+    return `<div class="innergy-job-row ${sel}" onclick="_innergySelectJob('${p.id}')">
+      <span class="innergy-job-num">${num}</span>
+      <span class="innergy-job-name">${name}</span>
+      <span class="innergy-job-client">${client}</span>
+      <span class="innergy-job-status">${status}</span>
+    </div>`;
+  }).join('');
+
+  const body = `
+    <input class="innergy-search" id="innergy-search" placeholder="Search by number, name or client…"
+      oninput="_innergyRenderPicker(this.value)" value="${_htmlEsc(filter||'')}">
+    <div style="font-size:11px;color:var(--text2);margin-bottom:4px">${projs.length} project${projs.length!==1?'s':''} · click one to preview</div>
+    <div class="innergy-job-list">${rows || '<div style="padding:16px;color:var(--text2);text-align:center">No matches</div>'}</div>
+    <div id="innergy-detail"></div>`;
+
+  const bodyEl = document.querySelector('#modal-body');
+  if (bodyEl) {
+    bodyEl.innerHTML = body;
+    // Re-focus search if there was a filter value
+    const si = document.getElementById('innergy-search');
+    if (si && filter) { si.focus(); const v=si.value; si.value=''; si.value=v; }
+  }
+}
+
+async function _innergySelectJob(projectId) {
+  _innergySelected = _innergyAllProjects.find(p => p.id === projectId) || null;
+  if (!_innergySelected) return;
+
+  // Highlight the selected row
+  document.querySelectorAll('.innergy-job-row').forEach(r => r.classList.remove('selected'));
+  const row = [...document.querySelectorAll('.innergy-job-row')]
+    .find(r => r.getAttribute('onclick') === `_innergySelectJob('${projectId}')`);
+  if (row) row.classList.add('selected');
+
+  const detailEl = document.getElementById('innergy-detail');
+  if (detailEl) detailEl.innerHTML = `<div style="text-align:center;padding:12px;color:var(--text2);font-size:12px">Loading details…</div>`;
+
+  try {
+    _innergyBudgetGroups = await _innergyFetch(`/api/projects/${projectId}/budgetGroups`);
+    if (!Array.isArray(_innergyBudgetGroups)) {
+      _innergyBudgetGroups = _innergyBudgetGroups?.items || _innergyBudgetGroups?.data || [];
+    }
+  } catch(e) {
+    _innergyBudgetGroups = [];
+  }
+
+  const p      = _innergySelected;
+  const num    = _innergyNumber(p);
+  const client = _innergyClient(p);
+  const totalH = _innergyTotalHours(_innergyBudgetGroups);
+  const addr   = [p.address, p.city, p.state].filter(Boolean).join(', ') || '—';
+
+  const laborRows = _innergyBudgetGroups.slice(0, 20).map(bg => {
+    const hrs = typeof bg.totalLaborHours === 'number' ? bg.totalLaborHours
+      : (bg.laborItems || []).reduce((s, li) => s + (li.hours || li.totalHours || 0), 0);
+    return `<div class="innergy-labor-row"><span>${_htmlEsc(bg.name || bg.budgetGroupName || '—')}</span><span>${Math.round(hrs*10)/10} hrs</span></div>`;
+  }).join('');
+
+  if (detailEl) detailEl.innerHTML = `
+    <div class="innergy-section-title">Project Preview</div>
+    <div class="innergy-detail-grid">
+      <div class="innergy-detail-field"><div class="innergy-detail-label">Project #</div><div class="innergy-detail-value">${_htmlEsc(num)}</div></div>
+      <div class="innergy-detail-field"><div class="innergy-detail-label">Client</div><div class="innergy-detail-value">${_htmlEsc(client)}</div></div>
+      <div class="innergy-detail-field"><div class="innergy-detail-label">Status</div><div class="innergy-detail-value">${_htmlEsc(_innergyStatus(p))}</div></div>
+      <div class="innergy-detail-field"><div class="innergy-detail-label">Address</div><div class="innergy-detail-value">${_htmlEsc(addr)}</div></div>
+      <div class="innergy-detail-field"><div class="innergy-detail-label">Total Labor Hrs</div><div class="innergy-detail-value" style="color:#a78bfa;font-weight:700">${totalH > 0 ? totalH + ' hrs' : '—'}</div></div>
+    </div>
+    ${_innergyBudgetGroups.length ? `<div class="innergy-section-title">Labor by Budget Group</div><div>${laborRows}</div>` : ''}
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn-add" onclick="_innergyCreateProject()" style="background:rgba(139,92,246,0.15);border-color:rgba(139,92,246,0.4);color:#a78bfa;font-size:13px;padding:9px 20px">
+        ＋ Create Project from This
+      </button>
+    </div>`;
+}
+
+function _innergyCreateProject() {
+  const p = _innergySelected;
+  if (!p) return;
+
+  const num     = _innergyNumber(p);
+  const client  = _innergyClient(p);
+  const totalH  = _innergyTotalHours(_innergyBudgetGroups);
+  const fid     = _innergyFid;
+
+  // Close the Innergy picker
+  closeModal();
+
+  // Build a pre-filled new project — reuse showNewProjectModal flow but override fields
+  makeModal('New Project from Innergy', `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;padding:8px 12px;border-radius:8px;background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.2)">
+      <span style="font-size:16px">⚡</span>
+      <span style="font-size:12px;color:#a78bfa">Pre-filled from Innergy project <strong>${_htmlEsc(num)}</strong></span>
+    </div>
+    <div class="field-group"><div class="field-label">Project Name</div><input class="field-input" id="m-name" value="${_htmlEsc(p.name || '')}" /></div>
+    <div class="field-row">
+      <div class="field-group"><div class="field-label">Project # (SI)</div><input class="field-input" id="m-projnum" value="${_htmlEsc(num)}" /></div>
+      <div class="field-group"><div class="field-label">Client</div><input class="field-input" id="m-client" value="${_htmlEsc(client)}" /></div>
+    </div>
+    <div class="field-group"><div class="field-label">Your Company</div><input class="field-input" id="m-company" placeholder="Your company" /></div>
+    <div class="field-group"><div class="field-label">Project Type</div>
+      <select class="field-input" id="m-type">
+        <option value="">— Select type —</option>
+        <option value="Division 4">Division 4</option>
+        <option value="Division 6">Division 6</option>
+        <option value="Division 8">Division 8</option>
+        <option value="Division 10">Division 10</option>
+      </select>
+    </div>
+    <div class="field-row">
+      <div class="field-group"><div class="field-label">Auditor Name</div><input class="field-input" id="m-auditor" placeholder="Your name" /></div>
+      <div class="field-group"><div class="field-label">Date</div><input class="field-input" id="m-date" type="date" /></div>
+    </div>
+    ${totalH > 0 ? `<div class="field-group"><div class="field-label">Estimated Labor Hours (from Innergy)</div><input class="field-input" id="m-hours" type="number" value="${totalH}" /></div>` : ''}
+  `, () => {
+    const name = document.getElementById('m-name')?.value.trim();
+    if (!name) return showToast('Project name required');
+    const projNum = document.getElementById('m-projnum')?.value.trim();
+    const hours   = parseFloat(document.getElementById('m-hours')?.value || '0') || 0;
+    const proj = {
+      id: 'proj_' + Date.now(),
+      name,
+      ownedBy: _currentUser?.userId || '',
+      client: document.getElementById('m-client')?.value || '—',
+      company: document.getElementById('m-company')?.value || '—',
+      auditor: document.getElementById('m-auditor')?.value || '—',
+      date: document.getElementById('m-date')?.value || new Date().toLocaleDateString(),
+      projectType: document.getElementById('m-type')?.value || '',
+      projectNumber: projNum || '',
+      innergyId: p.id || '',
+      laborSettings: hours > 0
+        ? { show: true, workers: 4, hoursPerDay: 8, workDays: 5, estimatedHours: hours }
+        : { show: false, workers: 4, hoursPerDay: 8, workDays: 5 },
+      coverPhoto: null,
+      sections: [{ id: 'sec_' + Date.now(), name: 'General' }],
+      items: [],
+    };
+    store.projects.push(proj);
+    if (fid) { const f = getFolder(fid); if (f && !f.projects.includes(proj.id)) f.projects.push(proj.id); }
+    markStoreDirty(); save(); closeModal();
+    showToast('✓ Project created from Innergy', 'green');
+    setTimeout(() => navToProject(proj.id, fid), 50);
+  });
+}
 </script>
 </body>
 </html>
