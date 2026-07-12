@@ -13296,7 +13296,7 @@ async function showInnergyImport(fid) {
 }
 
 function _innergyShowError(msg) {
-  const el = document.querySelector('#modal-body');
+  const el = document.querySelector('#modal-overlay .modal-body');
   if (el) el.innerHTML = `<div style="color:var(--red);padding:16px 0">${_htmlEsc(msg)}</div>`;
 }
 
@@ -13329,7 +13329,7 @@ function _innergyRenderPicker(filter) {
     <div class="innergy-job-list">${rows || '<div style="padding:16px;color:var(--text2);text-align:center">No matches</div>'}</div>
     <div id="innergy-detail"></div>`;
 
-  const bodyEl = document.querySelector('#modal-body');
+  const bodyEl = document.querySelector('#modal-overlay .modal-body');
   if (bodyEl) {
     bodyEl.innerHTML = body;
     const si = document.getElementById('innergy-search');
