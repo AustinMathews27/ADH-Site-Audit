@@ -13182,6 +13182,51 @@ window._flagRequiredFields = function(pid, sid){
 // INNERGY IMPORT
 // ══════════════════════════════════════════════════════════════════════════════
 
+/** Parse Innergy EstimatedHours — stored as .NET TimeSpan "d.hh:mm:ss.fff" */
+function _innergyParseHours(s) {
+  if (!s) return null;
+  const str = String(s).trim();
+  const m = str.match(/^(\d+)\.(\d+):(\d+)/);
+  if (m) return Math.round((+m[1] * 24 + +m[2] + +m[3] / 60) * 10) / 10;
+  const h = str.match(/^(\d+):(\d+)/);
+  if (h) return Math.round((+h[1] + +h[2] / 60) * 10) / 10;
+  const n = parseFloat(str);
+  return isNaN(n) ? null : Math.round(n * 10) / 10;
+}
+
+/** Map Innergy work order status → app status */
+function _innergyMapStatus(s) {
+  const st = (s || '').toLowerCase();
+  if (st.includes('closed') || st.includes('complete')) return 'complete';
+  if (st.includes('cancel')) return 'na';
+  if (st.includes('progress') || st.includes('production')) return 'in-progress';
+  return 'pending';
+}
+
+/** Map a single Innergy work order → an SI scope item */
+function _innergyWOtoSIItem(wo, sectionId, includeHours, includeDates) {
+  const { si, title } = _woParseName(wo.Name || wo.name || '');
+  const hours = includeHours ? _innergyParseHours(wo.EstimatedHours || wo.estimatedHours) : null;
+  return {
+    id: 'si_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+    sectionId,
+    num: 'SI ' + (si || '0001'),
+    title: title || wo.Name || '—',
+    status: _innergyMapStatus(wo.Status || wo.status),
+    assignedTo: '', notes: '', tags: [], customTags: [], photos: [],
+    dueDate:         includeDates ? (_woToISODate(wo.PlannedCriticalDate || wo.plannedCriticalDate) || '') : '',
+    plannedStart:    includeDates ? (_woToISODate(wo.PlannedStartDate    || wo.plannedStartDate)    || '') : '',
+    plannedCritical: includeDates ? (_woToISODate(wo.PlannedCriticalDate || wo.plannedCriticalDate) || '') : '',
+    shipmentDate:    includeDates ? (_woToISODate(wo.PlannedShipmentDate || wo.ShipmentDate         || wo.shipmentDate) || '') : '',
+    deliveryDate: '',
+    laborHours: hours,
+    workflow: wo.WorkflowName || wo.workflowName || '',
+    workOrderType: wo.Type || wo.type || '',
+    innergyWONumber: wo.Number || wo.number || '',
+    delivery: { deliveryDate: '', truck: '' }
+  };
+}
+
 /** Fetch from the Azure Function proxy at /api/innergy/*.
  *  Works on Azure Static Web Apps (via api/innergy/index.js Azure Function)
  *  and on local Replit dev (via server.js which handles /api/innergy/*). */
@@ -13267,6 +13312,7 @@ let _innergyFid = '';
 let _innergyAllProjects = [];
 let _innergySelected = null;
 let _innergyBudgetGroups = [];
+let _innergyWorkOrders = [];   // Installation (and optionally other types) WOs
 
 async function showInnergyImport(fid) {
   _innergyFid = fid;
@@ -13349,31 +13395,42 @@ async function _innergySelectJob(projectId) {
   if (row) row.classList.add('selected');
 
   const detailEl = document.getElementById('innergy-detail');
-  if (detailEl) detailEl.innerHTML = `<div style="text-align:center;padding:12px;color:var(--text2);font-size:12px">Loading details…</div>`;
+  if (detailEl) detailEl.innerHTML = `<div style="text-align:center;padding:12px;color:var(--text2);font-size:12px">Loading work orders…</div>`;
 
+  // Fetch work orders (scope items) — budget groups are typically empty (permissions)
+  _innergyWorkOrders = [];
+  _innergyBudgetGroups = [];
   try {
-    const bgData = await _innergyFetch(`/api/projects/${projectId}/budgetGroups`);
-    // Innergy may return { Items:[...] } or a plain array
-    _innergyBudgetGroups = Array.isArray(bgData) ? bgData
-      : Array.isArray(bgData?.Items) ? bgData.Items
-      : Array.isArray(bgData?.items) ? bgData.items
-      : [];
-  } catch(e) {
-    _innergyBudgetGroups = [];
-  }
+    const woData = await _innergyFetch(`/api/projects/${projectId}/workOrders`);
+    const allWOs = Array.isArray(woData) ? woData
+      : Array.isArray(woData?.Items) ? woData.Items
+      : Array.isArray(woData?.items) ? woData.items : [];
+    _innergyWorkOrders = allWOs;
+  } catch(e) { _innergyWorkOrders = []; }
 
   const p      = _innergySelected;
   const num    = _innergyNumber(p);
   const client = _innergyClient(p);
-  const totalH = _innergyTotalHours(_innergyBudgetGroups);
   const addr   = _innergyAddr(p);
 
-  const laborRows = _innergyBudgetGroups.slice(0, 20).map(bg => {
-    const hrs = bg.TotalLaborHours ?? bg.totalLaborHours
-      ?? (bg.LaborItems || bg.laborItems || [])
-           .reduce((s, li) => s + (li.Hours ?? li.hours ?? li.TotalHours ?? li.totalHours ?? 0), 0);
-    const bgName = bg.Name || bg.name || bg.BudgetGroupName || bg.budgetGroupName || '—';
-    return `<div class="innergy-labor-row"><span>${_htmlEsc(bgName)}</span><span>${Math.round((hrs||0)*10)/10} hrs</span></div>`;
+  const installs = _innergyWorkOrders.filter(w => (w.Type||w.type||'') === 'Installation');
+  const others   = _innergyWorkOrders.filter(w => (w.Type||w.type||'') !== 'Installation');
+  const typeGroups = {};
+  others.forEach(w => { const t = w.Type||w.type||'Other'; typeGroups[t] = (typeGroups[t]||0)+1; });
+
+  const totalHrs = _innergyWorkOrders.reduce((s, w) => {
+    const h = _innergyParseHours(w.EstimatedHours || w.estimatedHours);
+    return s + (h || 0);
+  }, 0);
+
+  const woPreviewRows = installs.slice(0, 5).map(w => {
+    const { si, title } = _woParseName(w.Name || '');
+    const hrs = _innergyParseHours(w.EstimatedHours);
+    return `<div class="innergy-labor-row">
+      <span style="font-family:var(--mono);font-size:11px;color:var(--accent);flex-shrink:0">SI ${si||'?'}</span>
+      <span style="flex:1;margin:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_htmlEsc(title)}</span>
+      ${hrs ? `<span style="font-size:11px;color:var(--text2);flex-shrink:0">${hrs}h</span>` : ''}
+    </div>`;
   }).join('');
 
   if (detailEl) detailEl.innerHTML = `
@@ -13383,11 +13440,13 @@ async function _innergySelectJob(projectId) {
       <div class="innergy-detail-field"><div class="innergy-detail-label">Client</div><div class="innergy-detail-value">${_htmlEsc(client)}</div></div>
       <div class="innergy-detail-field"><div class="innergy-detail-label">Status</div><div class="innergy-detail-value">${_htmlEsc(_innergyStatus(p))}</div></div>
       <div class="innergy-detail-field"><div class="innergy-detail-label">Address</div><div class="innergy-detail-value">${_htmlEsc(addr)}</div></div>
-      ${totalH > 0 ? `<div class="innergy-detail-field"><div class="innergy-detail-label">Total Labor Hrs</div><div class="innergy-detail-value" style="color:#a78bfa;font-weight:700">${totalH} hrs</div></div>` : ''}
+      <div class="innergy-detail-field"><div class="innergy-detail-label">Installation WOs</div><div class="innergy-detail-value" style="color:#a78bfa;font-weight:700">${installs.length} scope items</div></div>
+      ${Object.entries(typeGroups).map(([t,c]) => `<div class="innergy-detail-field"><div class="innergy-detail-label">${_htmlEsc(t)} WOs</div><div class="innergy-detail-value">${c}</div></div>`).join('')}
+      ${totalHrs > 0 ? `<div class="innergy-detail-field"><div class="innergy-detail-label">Est. Total Hours</div><div class="innergy-detail-value">${Math.round(totalHrs)} h</div></div>` : ''}
     </div>
-    ${_innergyBudgetGroups.length ? `<div class="innergy-section-title">Labor by Budget Group</div><div>${laborRows}</div>` : ''}
+    ${installs.length ? `<div class="innergy-section-title">Installation Work Orders (preview)</div><div>${woPreviewRows}${installs.length > 5 ? `<div style="font-size:11px;color:var(--text2);padding:4px 0">…and ${installs.length-5} more</div>` : ''}</div>` : '<div style="font-size:12px;color:var(--text2);padding:8px 0">No Installation work orders found.</div>'}
     <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
-      <button class="btn-add" onclick="_innergyCreateProject()" style="background:rgba(139,92,246,0.15);border-color:rgba(139,92,246,0.4);color:#a78bfa;font-size:13px;padding:9px 20px">
+      <button class="btn-add" onclick="_innergyCreateProject()" ${!installs.length ? 'disabled title="No Installation work orders to import"' : ''} style="background:rgba(139,92,246,0.15);border-color:rgba(139,92,246,0.4);color:#a78bfa;font-size:13px;padding:9px 20px">
         ＋ Create Project from This
       </button>
     </div>`;
@@ -13397,69 +13456,167 @@ function _innergyCreateProject() {
   const p = _innergySelected;
   if (!p) return;
 
-  const num     = _innergyNumber(p);
-  const client  = _innergyClient(p);
-  const totalH  = _innergyTotalHours(_innergyBudgetGroups);
-  const fid     = _innergyFid;
+  const num    = _innergyNumber(p);
+  const client = _innergyClient(p);
+  const fid    = _innergyFid;
 
-  // Close the Innergy picker
+  const installs = _innergyWorkOrders.filter(w => (w.Type||w.type||'') === 'Installation');
+  const otherTypes = [...new Set(_innergyWorkOrders
+    .filter(w => (w.Type||w.type||'') !== 'Installation')
+    .map(w => w.Type||w.type||'Other'))];
+
   closeModal();
 
-  // Build a pre-filled new project — reuse showNewProjectModal flow but override fields
-  makeModal('New Project from Innergy', `
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;padding:8px 12px;border-radius:8px;background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.2)">
-      <span style="font-size:16px">⚡</span>
-      <span style="font-size:12px;color:#a78bfa">Pre-filled from Innergy project <strong>${_htmlEsc(num)}</strong></span>
+  // ── Build the selection + options modal ──────────────────────────────────
+  const toggleRows = otherTypes.map(t => {
+    const count = _innergyWorkOrders.filter(w => (w.Type||w.type||'') === t).length;
+    const tid   = 'innergy-tog-' + t.replace(/\W/g,'_');
+    return `<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);cursor:pointer;margin-bottom:4px">
+      <input type="checkbox" id="${tid}" style="accent-color:var(--accent)">
+      Also include <strong style="color:var(--text1)">${_htmlEsc(t)}</strong> work orders (${count})
+    </label>`;
+  }).join('');
+
+  const woRows = installs.map((wo, idx) => {
+    const { si, title } = _woParseName(wo.Name || '');
+    const hrs = _innergyParseHours(wo.EstimatedHours);
+    const wid = 'innergy-wo-' + idx;
+    return `<label style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);cursor:pointer">
+      <input type="checkbox" class="innergy-wo-check" data-idx="${idx}" checked style="accent-color:var(--accent);margin-top:2px;flex-shrink:0">
+      <span style="font-family:var(--mono);font-size:11px;color:var(--accent);flex-shrink:0;min-width:38px">SI ${si||'?'}</span>
+      <span style="flex:1;font-size:12px;color:var(--text1)">${_htmlEsc(title)}</span>
+      ${hrs ? `<span style="font-size:11px;color:var(--text2);flex-shrink:0">${hrs}h</span>` : ''}
+    </label>`;
+  }).join('');
+
+  makeModal('⚡ Import from Innergy', `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:7px 10px;border-radius:8px;background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.2)">
+      <span style="font-size:14px">⚡</span>
+      <span style="font-size:12px;color:#a78bfa">Importing from <strong>${_htmlEsc(num)}</strong> · ${_htmlEsc(_innergyName(p))}</span>
     </div>
-    <div class="field-group"><div class="field-label">Project Name</div><input class="field-input" id="m-name" value="${_htmlEsc(_innergyName(p))}" /></div>
-    <div class="field-row">
-      <div class="field-group"><div class="field-label">Project # (SI)</div><input class="field-input" id="m-projnum" value="${_htmlEsc(num)}" /></div>
-      <div class="field-group"><div class="field-label">Client</div><input class="field-input" id="m-client" value="${_htmlEsc(client)}" /></div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+      <div class="field-group" style="margin:0"><div class="field-label">Project Name</div><input class="field-input" id="m-name" value="${_htmlEsc(_innergyName(p))}" /></div>
+      <div class="field-group" style="margin:0"><div class="field-label">Project #</div><input class="field-input" id="m-projnum" value="${_htmlEsc(num)}" /></div>
+      <div class="field-group" style="margin:0"><div class="field-label">Client</div><input class="field-input" id="m-client" value="${_htmlEsc(client)}" /></div>
+      <div class="field-group" style="margin:0"><div class="field-label">Your Company</div><input class="field-input" id="m-company" placeholder="Your company" /></div>
+      <div class="field-group" style="margin:0"><div class="field-label">Auditor</div><input class="field-input" id="m-auditor" placeholder="Your name" /></div>
+      <div class="field-group" style="margin:0"><div class="field-label">Project Type</div>
+        <select class="field-input" id="m-type">
+          <option value="">— Select —</option>
+          <option>Division 4</option><option>Division 6</option><option>Division 8</option><option>Division 10</option>
+        </select>
+      </div>
     </div>
-    <div class="field-group"><div class="field-label">Your Company</div><input class="field-input" id="m-company" placeholder="Your company" /></div>
-    <div class="field-group"><div class="field-label">Project Type</div>
-      <select class="field-input" id="m-type">
-        <option value="">— Select type —</option>
-        <option value="Division 4">Division 4</option>
-        <option value="Division 6">Division 6</option>
-        <option value="Division 8">Division 8</option>
-        <option value="Division 10">Division 10</option>
-      </select>
+
+    <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">
+      Scope Items · Installation Work Orders
+      <span style="font-weight:400;text-transform:none;margin-left:6px">
+        <label style="cursor:pointer"><input type="checkbox" id="innergy-chk-all" checked style="accent-color:var(--accent)"> select all</label>
+      </span>
     </div>
-    <div class="field-row">
-      <div class="field-group"><div class="field-label">Auditor Name</div><input class="field-input" id="m-auditor" placeholder="Your name" /></div>
-      <div class="field-group"><div class="field-label">Date</div><input class="field-input" id="m-date" type="date" /></div>
+    <div style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:4px 8px;margin-bottom:10px">
+      ${woRows || '<div style="padding:8px;color:var(--text2);font-size:12px">No Installation work orders found.</div>'}
     </div>
-    ${totalH > 0 ? `<div class="field-group"><div class="field-label">Estimated Labor Hours (from Innergy)</div><input class="field-input" id="m-hours" type="number" value="${totalH}" /></div>` : ''}
+
+    ${toggleRows ? `<div style="margin-bottom:10px">${toggleRows}</div>` : ''}
+
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer">
+        <input type="checkbox" id="innergy-inc-hours" checked style="accent-color:var(--accent)"> Include estimated hours
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer">
+        <input type="checkbox" id="innergy-inc-dates" checked style="accent-color:var(--accent)"> Include planned dates
+      </label>
+    </div>
   `, () => {
     const name = document.getElementById('m-name')?.value.trim();
     if (!name) return showToast('Project name required');
-    const projNum = document.getElementById('m-projnum')?.value.trim();
-    const hours   = parseFloat(document.getElementById('m-hours')?.value || '0') || 0;
+
+    const includeHours = document.getElementById('innergy-inc-hours')?.checked ?? true;
+    const includeDates = document.getElementById('innergy-inc-dates')?.checked ?? true;
+
+    // Collect selected Installation WOs
+    const selectedInstalls = installs.filter((_, idx) => {
+      const cb = document.querySelector(`.innergy-wo-check[data-idx="${idx}"]`);
+      return cb ? cb.checked : true;
+    });
+
+    // Collect any additionally toggled types
+    const extraWOs = [];
+    otherTypes.forEach(t => {
+      const tid = 'innergy-tog-' + t.replace(/\W/g,'_');
+      if (document.getElementById(tid)?.checked) {
+        extraWOs.push(..._innergyWorkOrders.filter(w => (w.Type||w.type||'') === t));
+      }
+    });
+
+    const allSelectedWOs = [...selectedInstalls, ...extraWOs];
+
+    // Build sections: one per type, Installation first
+    const sections = [];
+    const sectionMap = {};
+    ['Installation', ...otherTypes].forEach(t => {
+      const hasItems = allSelectedWOs.some(w => (w.Type||w.type||'') === t);
+      if (hasItems) {
+        const sec = { id: 'sec_' + t.toLowerCase() + '_' + Date.now(), name: t };
+        sections.push(sec);
+        sectionMap[t] = sec.id;
+      }
+    });
+    if (!sections.length) {
+      const sec = { id: 'sec_' + Date.now(), name: 'Work Orders' };
+      sections.push(sec);
+      sectionMap['_default'] = sec.id;
+    }
+
+    const items = allSelectedWOs.map(wo => {
+      const t   = wo.Type || wo.type || '_default';
+      const sid = sectionMap[t] || sections[0].id;
+      return _innergyWOtoSIItem(wo, sid, includeHours, includeDates);
+    });
+
+    const instHours = allSelectedWOs
+      .filter(w => (w.Type||w.type||'') === 'Installation')
+      .reduce((s, w) => s + (_innergyParseHours(w.EstimatedHours) || 0), 0);
+
     const proj = {
       id: 'proj_' + Date.now(),
       name,
       ownedBy: _currentUser?.userId || '',
-      client: document.getElementById('m-client')?.value || '—',
-      company: document.getElementById('m-company')?.value || '—',
-      auditor: document.getElementById('m-auditor')?.value || '—',
-      date: document.getElementById('m-date')?.value || new Date().toLocaleDateString(),
+      client:      document.getElementById('m-client')?.value.trim()  || client || '—',
+      company:     document.getElementById('m-company')?.value.trim() || '—',
+      auditor:     document.getElementById('m-auditor')?.value.trim() || '—',
+      date:        new Date().toLocaleDateString(),
       projectType: document.getElementById('m-type')?.value || '',
-      projectNumber: projNum || '',
-      innergyId: p.Id || p.id || '',
-      laborSettings: hours > 0
-        ? { show: true, workers: 4, hoursPerDay: 8, workDays: 5, estimatedHours: hours }
+      projectNumber: document.getElementById('m-projnum')?.value.trim() || num || '',
+      innergyId:   p.Id || p.id || '',
+      laborSettings: instHours > 0
+        ? { show: true, workers: 4, hoursPerDay: 8, workDays: 5, estimatedHours: Math.round(instHours) }
         : { show: false, workers: 4, hoursPerDay: 8, workDays: 5 },
       coverPhoto: null,
-      sections: [{ id: 'sec_' + Date.now(), name: 'General' }],
-      items: [],
+      sections,
+      items,
+      schedule: {},
+      importLog: [{ date: new Date().toISOString(),
+        summary: { added: items.length, modified: 0, removed: 0, conflicts: 0, scheduled: 0 },
+        source: 'innergy-api' }]
     };
+    _woPopulateSchedule(proj, items.filter(i => i.plannedStart));
     store.projects.push(proj);
     if (fid) { const f = getFolder(fid); if (f && !f.projects.includes(proj.id)) f.projects.push(proj.id); }
     markStoreDirty(); save(); closeModal();
-    showToast('✓ Project created from Innergy', 'green');
+    showToast(`✓ ${items.length} scope items imported from Innergy`, 'green');
     setTimeout(() => navToProject(proj.id, fid), 50);
   });
+
+  // Wire up "select all" checkbox
+  setTimeout(() => {
+    const allCb = document.getElementById('innergy-chk-all');
+    if (allCb) allCb.addEventListener('change', () => {
+      document.querySelectorAll('.innergy-wo-check').forEach(c => c.checked = allCb.checked);
+    });
+  }, 50);
 }
 </script>
 </body>
