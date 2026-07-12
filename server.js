@@ -107,22 +107,20 @@ const CORS_HEADERS = {
 const server = http.createServer((req, res) => {
   let urlPath = req.url.split('?')[0];
 
-  // ── Innergy proxy ──────────────────────────────────────────────────────────
-  if (urlPath.startsWith('/innergy/')) {
-    // Handle CORS preflight
+  // ── Innergy proxy — matches /api/innergy/* (same route as the Azure Function)
+  if (urlPath.startsWith('/api/innergy/') || urlPath === '/api/innergy') {
     if (req.method === 'OPTIONS') {
       res.writeHead(204, CORS_HEADERS);
       res.end();
       return;
     }
-    // Health check — fast response, no Innergy call
-    if (urlPath === '/innergy/health') {
+    if (urlPath === '/api/innergy/health') {
       res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true, key: !!INNERGY_API_KEY }));
       return;
     }
-    const innergyPath = urlPath.replace(/^\/innergy/, '');
-    proxyInnergy(req, res, innergyPath);
+    const innergyPath = urlPath.replace(/^\/api\/innergy/, '');
+    proxyInnergy(req, res, innergyPath || '/');
     return;
   }
 
