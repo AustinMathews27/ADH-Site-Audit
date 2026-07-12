@@ -3550,6 +3550,15 @@ async function _apiSaveProject(proj) {
 
 // ── Merge helpers ─────────────────────────────────────────────────────────────
 
+/** Restore SEED logo icons for the 6 main folders so cloud data never overwrites them. */
+function _fixFolderIcons() {
+  ['fld_ast','fld_ami','fld_acd','fld_acs','fld_adh','fld_acm'].forEach(id => {
+    const f    = store.folders.find(folder => folder.id === id);
+    const seedF = SEED.folders.find(sf => sf.id === id);
+    if (f && seedF) f.icon = seedF.icon;
+  });
+}
+
 /**
  * Merge index fields from cloud into local store.
  * Called on startup and during poll when index _ts changes.
@@ -3562,6 +3571,8 @@ function _mergeIndexIntoLocal(cloudIndex) {
     // Keep local-only folders (created offline), accept all cloud folders
     cloudById.forEach((f, id) => localById.set(id, f));
     store.folders = [...localById.values()];
+    // Always restore logo icons from SEED so cloud never overwrites the img tags
+    _fixFolderIcons();
   }
 
   // Contacts: merge by ID with tombstone respect
@@ -4063,12 +4074,8 @@ async function _initStore() {
   store.folders.forEach(f => { if (f.parentId === undefined) f.parentId = null; });
   store.contacts.forEach(c => { if (!c.project) c.project = 'Office'; });
 
-  // Refresh branded SVG folder icons to use current CSS vars
-  ['fld_ast','fld_ami','fld_acd','fld_acs','fld_adh','fld_acm'].forEach(id => {
-    const f     = store.folders.find(folder => folder.id === id);
-    const seedF = SEED.folders.find(sf => sf.id === id);
-    if (f && seedF) f.icon = seedF.icon;
-  });
+  // Restore logo icons from SEED (cloud data must never overwrite them)
+  _fixFolderIcons();
 
   // One-time: add ACM folder if missing
   if (!store.folders.find(f => f.id === 'fld_acm')) {
@@ -4156,7 +4163,8 @@ async function _initStore() {
         await _saveCloudTs();
         console.log(`[ADH] Loaded ${fetched}/${projectIds.length} projects from cloud`);
 
-        // Patch folder card counts in-place so counts appear without a full-page flicker
+        // Re-render current view so folder/project views opened before cloud load are fresh
+        render();
         _patchFolderCardCounts();
       }
     } catch(e) {
