@@ -51,7 +51,33 @@ function proxyInnergy(req, res, innergyPath) {
     },
   };
 
+  let responded = false;
+  function fail(status, msg) {
+    if (responded) return;
+    responded = true;
+    try {
+      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: msg }));
+    } catch(e) {}
+  }
+
+  // 10-second hard timeout so the modal never hangs forever
+  const timer = setTimeout(() => {
+    proxyReq.destroy();
+    fail(504, 'Innergy request timed out after 10s');
+  }, 10000);
+
   const proxyReq = https.request(options, (proxyRes) => {
+    clearTimeout(timer);
+    if (responded) return;
+    responded = true;
+    // If Innergy redirected (e.g. auth failure), return a clear 401
+    if (proxyRes.statusCode >= 300 && proxyRes.statusCode < 400) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Innergy auth redirect — check api-key', location: proxyRes.headers.location }));
+      proxyRes.resume();
+      return;
+    }
     res.writeHead(proxyRes.statusCode, {
       'Content-Type': proxyRes.headers['content-type'] || 'application/json',
       'Access-Control-Allow-Origin': '*',
@@ -60,9 +86,9 @@ function proxyInnergy(req, res, innergyPath) {
   });
 
   proxyReq.on('error', (err) => {
+    clearTimeout(timer);
     console.error('[Innergy proxy] Error:', err.message);
-    res.writeHead(502, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Innergy proxy error', detail: err.message }));
+    fail(502, 'Innergy proxy error: ' + err.message);
   });
 
   if (req.method === 'POST') {
