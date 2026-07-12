@@ -13189,40 +13189,55 @@ async function _innergyFetch(path) {
   return res.json();
 }
 
-/** Derive a short status label from Innergy project status codes */
+/** Derive a short status label — Innergy uses PascalCase field names */
 function _innergyStatus(proj) {
-  const s = (proj.status || proj.projectStatus || '').toLowerCase();
+  const s = (proj.Status || proj.status || '').toLowerCase();
   if (s.includes('complet')) return 'Completed';
   if (s.includes('close'))   return 'Closed';
   if (s.includes('hold'))    return 'On Hold';
   if (s.includes('cancel'))  return 'Cancelled';
-  return proj.status || proj.projectStatus || '—';
+  if (s.includes('open'))    return 'Open';
+  return proj.Status || proj.status || '—';
 }
 
-/** Extract customer/client name from various Innergy project shapes */
+/** Extract customer/client name — Innergy shape: { Customer: { Name: "..." } } */
 function _innergyClient(proj) {
-  return proj.customerName
+  return proj.Customer?.Name
+    || proj.customerName
     || proj.customer?.name
     || proj.clientName
-    || proj.client
-    || (proj.customerInformation && proj.customerInformation.name)
+    || (proj.CustomerInformation && proj.CustomerInformation.Name)
     || '—';
 }
 
-/** Extract project number (SI #) */
+/** Extract project number — Innergy field is "Number" (PascalCase) */
 function _innergyNumber(proj) {
-  return proj.number || proj.projectNumber || proj.sequenceNumber || proj.id || '—';
+  return proj.Number || proj.number || proj.ExternalId || proj.Id || proj.id || '—';
 }
 
-/** Total labor hours from budget groups response */
+/** Extract project name — Innergy field is "Name" (PascalCase) */
+function _innergyName(proj) {
+  return proj.Name || proj.name || '—';
+}
+
+/** Extract address string from Innergy Address object */
+function _innergyAddr(proj) {
+  const a = proj.Address || proj.address || {};
+  return [a.Address1 || a.address1, a.City || a.city, a.State || a.state]
+    .filter(Boolean).join(', ') || '—';
+}
+
+/** Total labor hours from budget groups response — handles Items or plain array */
 function _innergyTotalHours(budgetGroups) {
   if (!Array.isArray(budgetGroups)) return 0;
   let total = 0;
   budgetGroups.forEach(bg => {
-    if (typeof bg.totalLaborHours === 'number') { total += bg.totalLaborHours; return; }
-    if (Array.isArray(bg.laborItems)) {
-      bg.laborItems.forEach(li => { total += (li.hours || li.totalHours || li.estimatedHours || 0); });
-    }
+    const h = bg.TotalLaborHours ?? bg.totalLaborHours;
+    if (typeof h === 'number') { total += h; return; }
+    const items = bg.LaborItems || bg.laborItems || [];
+    items.forEach(li => {
+      total += (li.Hours ?? li.hours ?? li.TotalHours ?? li.totalHours ?? li.EstimatedHours ?? li.estimatedHours ?? 0);
+    });
   });
   return Math.round(total * 10) / 10;
 }
@@ -13239,7 +13254,6 @@ async function showInnergyImport(fid) {
   _innergySelected = null;
   _innergyBudgetGroups = [];
 
-  // Step 1 — show loading modal
   makeModal('⚡ Import from Innergy',
     `<div style="text-align:center;padding:24px 0;color:var(--text2)">Loading projects from Innergy…</div>`,
     null, true
@@ -13247,15 +13261,14 @@ async function showInnergyImport(fid) {
 
   try {
     const data = await _innergyFetch('/api/projects');
-    // API returns either an array directly or {items:[...]} or {data:{items:[...]}}
+    // Innergy wraps results in { Items: [...] } (capital I)
     _innergyAllProjects = Array.isArray(data) ? data
+      : Array.isArray(data.Items) ? data.Items
       : Array.isArray(data.items) ? data.items
-      : Array.isArray(data.data) ? data.data
-      : Array.isArray(data.data?.items) ? data.data.items
       : [];
 
     if (!_innergyAllProjects.length) {
-      _innergyShowError('No projects found in Innergy, or the API key may not have Project View permission.');
+      _innergyShowError('No projects found in Innergy. Check that your API key has Project → View permission.');
       return;
     }
     _innergyRenderPicker();
@@ -13273,16 +13286,17 @@ function _innergyRenderPicker(filter) {
   const q = (filter || '').toLowerCase();
   const projs = q
     ? _innergyAllProjects.filter(p =>
-        (_innergyNumber(p) + ' ' + (p.name||'') + ' ' + _innergyClient(p)).toLowerCase().includes(q))
+        (_innergyNumber(p) + ' ' + _innergyName(p) + ' ' + _innergyClient(p)).toLowerCase().includes(q))
     : _innergyAllProjects;
 
   const rows = projs.slice(0, 150).map(p => {
     const num    = _htmlEsc(_innergyNumber(p));
-    const name   = _htmlEsc(p.name || '—');
+    const name   = _htmlEsc(_innergyName(p));
     const client = _htmlEsc(_innergyClient(p));
     const status = _htmlEsc(_innergyStatus(p));
-    const sel    = _innergySelected && _innergySelected.id === p.id ? 'selected' : '';
-    return `<div class="innergy-job-row ${sel}" onclick="_innergySelectJob('${p.id}')">
+    const pid    = p.Id || p.id || '';
+    const sel    = _innergySelected && (_innergySelected.Id || _innergySelected.id) === pid ? 'selected' : '';
+    return `<div class="innergy-job-row ${sel}" onclick="_innergySelectJob('${pid}')">
       <span class="innergy-job-num">${num}</span>
       <span class="innergy-job-name">${name}</span>
       <span class="innergy-job-client">${client}</span>
@@ -13300,17 +13314,15 @@ function _innergyRenderPicker(filter) {
   const bodyEl = document.querySelector('#modal-body');
   if (bodyEl) {
     bodyEl.innerHTML = body;
-    // Re-focus search if there was a filter value
     const si = document.getElementById('innergy-search');
     if (si && filter) { si.focus(); const v=si.value; si.value=''; si.value=v; }
   }
 }
 
 async function _innergySelectJob(projectId) {
-  _innergySelected = _innergyAllProjects.find(p => p.id === projectId) || null;
+  _innergySelected = _innergyAllProjects.find(p => (p.Id || p.id) === projectId) || null;
   if (!_innergySelected) return;
 
-  // Highlight the selected row
   document.querySelectorAll('.innergy-job-row').forEach(r => r.classList.remove('selected'));
   const row = [...document.querySelectorAll('.innergy-job-row')]
     .find(r => r.getAttribute('onclick') === `_innergySelectJob('${projectId}')`);
@@ -13320,10 +13332,12 @@ async function _innergySelectJob(projectId) {
   if (detailEl) detailEl.innerHTML = `<div style="text-align:center;padding:12px;color:var(--text2);font-size:12px">Loading details…</div>`;
 
   try {
-    _innergyBudgetGroups = await _innergyFetch(`/api/projects/${projectId}/budgetGroups`);
-    if (!Array.isArray(_innergyBudgetGroups)) {
-      _innergyBudgetGroups = _innergyBudgetGroups?.items || _innergyBudgetGroups?.data || [];
-    }
+    const bgData = await _innergyFetch(`/api/projects/${projectId}/budgetGroups`);
+    // Innergy may return { Items:[...] } or a plain array
+    _innergyBudgetGroups = Array.isArray(bgData) ? bgData
+      : Array.isArray(bgData?.Items) ? bgData.Items
+      : Array.isArray(bgData?.items) ? bgData.items
+      : [];
   } catch(e) {
     _innergyBudgetGroups = [];
   }
@@ -13332,12 +13346,14 @@ async function _innergySelectJob(projectId) {
   const num    = _innergyNumber(p);
   const client = _innergyClient(p);
   const totalH = _innergyTotalHours(_innergyBudgetGroups);
-  const addr   = [p.address, p.city, p.state].filter(Boolean).join(', ') || '—';
+  const addr   = _innergyAddr(p);
 
   const laborRows = _innergyBudgetGroups.slice(0, 20).map(bg => {
-    const hrs = typeof bg.totalLaborHours === 'number' ? bg.totalLaborHours
-      : (bg.laborItems || []).reduce((s, li) => s + (li.hours || li.totalHours || 0), 0);
-    return `<div class="innergy-labor-row"><span>${_htmlEsc(bg.name || bg.budgetGroupName || '—')}</span><span>${Math.round(hrs*10)/10} hrs</span></div>`;
+    const hrs = bg.TotalLaborHours ?? bg.totalLaborHours
+      ?? (bg.LaborItems || bg.laborItems || [])
+           .reduce((s, li) => s + (li.Hours ?? li.hours ?? li.TotalHours ?? li.totalHours ?? 0), 0);
+    const bgName = bg.Name || bg.name || bg.BudgetGroupName || bg.budgetGroupName || '—';
+    return `<div class="innergy-labor-row"><span>${_htmlEsc(bgName)}</span><span>${Math.round((hrs||0)*10)/10} hrs</span></div>`;
   }).join('');
 
   if (detailEl) detailEl.innerHTML = `
@@ -13347,7 +13363,7 @@ async function _innergySelectJob(projectId) {
       <div class="innergy-detail-field"><div class="innergy-detail-label">Client</div><div class="innergy-detail-value">${_htmlEsc(client)}</div></div>
       <div class="innergy-detail-field"><div class="innergy-detail-label">Status</div><div class="innergy-detail-value">${_htmlEsc(_innergyStatus(p))}</div></div>
       <div class="innergy-detail-field"><div class="innergy-detail-label">Address</div><div class="innergy-detail-value">${_htmlEsc(addr)}</div></div>
-      <div class="innergy-detail-field"><div class="innergy-detail-label">Total Labor Hrs</div><div class="innergy-detail-value" style="color:#a78bfa;font-weight:700">${totalH > 0 ? totalH + ' hrs' : '—'}</div></div>
+      ${totalH > 0 ? `<div class="innergy-detail-field"><div class="innergy-detail-label">Total Labor Hrs</div><div class="innergy-detail-value" style="color:#a78bfa;font-weight:700">${totalH} hrs</div></div>` : ''}
     </div>
     ${_innergyBudgetGroups.length ? `<div class="innergy-section-title">Labor by Budget Group</div><div>${laborRows}</div>` : ''}
     <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
@@ -13375,7 +13391,7 @@ function _innergyCreateProject() {
       <span style="font-size:16px">⚡</span>
       <span style="font-size:12px;color:#a78bfa">Pre-filled from Innergy project <strong>${_htmlEsc(num)}</strong></span>
     </div>
-    <div class="field-group"><div class="field-label">Project Name</div><input class="field-input" id="m-name" value="${_htmlEsc(p.name || '')}" /></div>
+    <div class="field-group"><div class="field-label">Project Name</div><input class="field-input" id="m-name" value="${_htmlEsc(_innergyName(p))}" /></div>
     <div class="field-row">
       <div class="field-group"><div class="field-label">Project # (SI)</div><input class="field-input" id="m-projnum" value="${_htmlEsc(num)}" /></div>
       <div class="field-group"><div class="field-label">Client</div><input class="field-input" id="m-client" value="${_htmlEsc(client)}" /></div>
@@ -13410,7 +13426,7 @@ function _innergyCreateProject() {
       date: document.getElementById('m-date')?.value || new Date().toLocaleDateString(),
       projectType: document.getElementById('m-type')?.value || '',
       projectNumber: projNum || '',
-      innergyId: p.id || '',
+      innergyId: p.Id || p.id || '',
       laborSettings: hours > 0
         ? { show: true, workers: 4, hoursPerDay: 8, workDays: 5, estimatedHours: hours }
         : { show: false, workers: 4, hoursPerDay: 8, workDays: 5 },

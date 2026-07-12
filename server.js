@@ -44,9 +44,10 @@ function proxyInnergy(req, res, innergyPath) {
     path: targetUrl.pathname + targetUrl.search,
     method: req.method,
     headers: {
-      'X-API-Key': INNERGY_API_KEY,
+      'api-key': INNERGY_API_KEY,
       'Accept': 'application/json',
       'Content-Type': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     },
   };
 
