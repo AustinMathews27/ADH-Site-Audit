@@ -56,7 +56,7 @@ function proxyInnergy(req, res, innergyPath) {
     if (responded) return;
     responded = true;
     try {
-      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ error: msg }));
     } catch(e) {}
   }
@@ -98,11 +98,29 @@ function proxyInnergy(req, res, innergyPath) {
   }
 }
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Accept',
+};
+
 const server = http.createServer((req, res) => {
   let urlPath = req.url.split('?')[0];
 
   // ── Innergy proxy ──────────────────────────────────────────────────────────
   if (urlPath.startsWith('/innergy/')) {
+    // Handle CORS preflight
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, CORS_HEADERS);
+      res.end();
+      return;
+    }
+    // Health check — fast response, no Innergy call
+    if (urlPath === '/innergy/health') {
+      res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, key: !!INNERGY_API_KEY }));
+      return;
+    }
     const innergyPath = urlPath.replace(/^\/innergy/, '');
     proxyInnergy(req, res, innergyPath);
     return;

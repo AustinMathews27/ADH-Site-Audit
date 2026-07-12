@@ -13182,19 +13182,40 @@ window._flagRequiredFields = function(pid, sid){
 // INNERGY IMPORT
 // ══════════════════════════════════════════════════════════════════════════════
 
-/** Fetch from the local Innergy proxy route on server.js */
+/** Return the base URL for the Innergy proxy (no trailing slash).
+ *  On Replit dev / any host running server.js this is '/innergy'.
+ *  On Azure Static Web Apps (which can't run server.js) the user
+ *  pastes their Replit-deployed URL and we store it in localStorage. */
+function _innergyProxyBase() {
+  return (localStorage.getItem('adhInnergyProxy') || '').replace(/\/+$/, '') || '/innergy';
+}
+
+/** Quick health check — returns true if the proxy is reachable and returns JSON */
+async function _innergyProxyOk(base) {
+  try {
+    const r = await fetch(base + '/health', { headers: { Accept: 'application/json' } });
+    const text = await r.text();
+    const json = JSON.parse(text);   // throws if HTML returned
+    return json.ok === true;
+  } catch(e) {
+    return false;
+  }
+}
+
+/** Fetch from the Innergy proxy. Throws a descriptive Error on any failure. */
 async function _innergyFetch(path) {
+  const base = _innergyProxyBase();
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 15000);
   let res;
   try {
-    res = await fetch('/innergy' + path, {
-      headers: { 'Accept': 'application/json' },
+    res = await fetch(base + path, {
+      headers: { Accept: 'application/json' },
       signal: ctrl.signal,
     });
   } catch(e) {
     clearTimeout(timer);
-    throw new Error(e.name === 'AbortError' ? 'Request timed out (15s) — check network' : e.message);
+    throw new Error(e.name === 'AbortError' ? 'Request timed out (15s)' : e.message);
   }
   clearTimeout(timer);
   if (!res.ok) {
@@ -13204,7 +13225,64 @@ async function _innergyFetch(path) {
   }
   const text = await res.text();
   try { return JSON.parse(text); }
-  catch(e) { throw new Error('Innergy returned non-JSON response — proxy may be misconfigured'); }
+  catch(e) { throw new Error('Proxy returned HTML instead of JSON — proxy URL may be wrong'); }
+}
+
+/** Show the one-time proxy-URL setup screen inside the already-open modal */
+function _innergyShowProxySetup(savedUrl) {
+  const bodyEl = document.querySelector('#modal-overlay .modal-body');
+  if (!bodyEl) return;
+  const current = savedUrl || localStorage.getItem('adhInnergyProxy') || '';
+  bodyEl.innerHTML = `
+    <div style="padding:8px 0 16px">
+      <p style="margin:0 0 10px;font-size:13px;color:var(--text1);line-height:1.5">
+        This app is hosted on Azure Static Web Apps, which can't run a server-side proxy.
+        The Innergy integration needs a small proxy server running separately.
+      </p>
+      <p style="margin:0 0 14px;font-size:13px;color:var(--text2);line-height:1.5">
+        <strong style="color:var(--text1)">Step 1:</strong> Publish the project on Replit (click the Publish button in Replit).<br>
+        <strong style="color:var(--text1)">Step 2:</strong> Copy the <code style="background:rgba(139,92,246,0.15);padding:1px 5px;border-radius:3px">*.replit.app</code> URL you get.<br>
+        <strong style="color:var(--text1)">Step 3:</strong> Paste it below and click Save.
+      </p>
+      <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:6px">Replit proxy URL</label>
+      <input id="innergy-proxy-url" type="url"
+        placeholder="https://your-project.username.replit.app"
+        value="${_htmlEsc(current)}"
+        style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text1);font-size:13px;outline:none">
+      <div id="innergy-proxy-status" style="margin-top:8px;font-size:12px;min-height:18px"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
+      ${current ? `<button class="btn-nav" onclick="localStorage.removeItem('adhInnergyProxy');showInnergyImport(_innergyFid)" style="font-size:12px">Reset</button>` : ''}
+      <button class="btn-save" id="innergy-proxy-save" onclick="_innergySaveProxy()" style="font-size:13px;padding:9px 20px">Test &amp; Save</button>
+    </div>`;
+}
+
+async function _innergySaveProxy() {
+  const inp = document.getElementById('innergy-proxy-url');
+  const statusEl = document.getElementById('innergy-proxy-status');
+  const btn = document.getElementById('innergy-proxy-save');
+  if (!inp || !statusEl) return;
+
+  let url = inp.value.trim().replace(/\/+$/, '');
+  if (!url) { statusEl.textContent = 'Please enter a URL.'; statusEl.style.color = 'var(--red)'; return; }
+  if (!url.startsWith('http')) { statusEl.textContent = 'URL must start with https://'; statusEl.style.color = 'var(--red)'; return; }
+
+  statusEl.textContent = 'Testing connection…';
+  statusEl.style.color = 'var(--text2)';
+  if (btn) btn.disabled = true;
+
+  const ok = await _innergyProxyOk(url + '/innergy');
+  if (btn) btn.disabled = false;
+
+  if (ok) {
+    localStorage.setItem('adhInnergyProxy', url + '/innergy');
+    statusEl.textContent = '✓ Connected! Loading projects…';
+    statusEl.style.color = '#4ade80';
+    setTimeout(() => showInnergyImport(_innergyFid), 800);
+  } else {
+    statusEl.textContent = '✗ Could not reach the proxy at that URL. Make sure Replit is published and running.';
+    statusEl.style.color = 'var(--red)';
+  }
 }
 
 /** Derive a short status label — Innergy uses PascalCase field names */
@@ -13273,9 +13351,20 @@ async function showInnergyImport(fid) {
   _innergyBudgetGroups = [];
 
   makeModal('⚡ Import from Innergy',
-    `<div style="text-align:center;padding:24px 0;color:var(--text2)">Loading projects from Innergy…</div>`,
+    `<div style="text-align:center;padding:24px 0;color:var(--text2)">Checking proxy connection…</div>`,
     null, true
   );
+
+  // First verify the proxy is reachable and returns JSON (not Azure's HTML fallback)
+  const proxyBase = _innergyProxyBase();
+  const proxyOk = await _innergyProxyOk(proxyBase);
+  if (!proxyOk) {
+    _innergyShowProxySetup();
+    return;
+  }
+
+  const bodyEl = document.querySelector('#modal-overlay .modal-body');
+  if (bodyEl) bodyEl.innerHTML = `<div style="text-align:center;padding:24px 0;color:var(--text2)">Loading projects from Innergy…</div>`;
 
   try {
     const data = await _innergyFetch('/api/projects');
