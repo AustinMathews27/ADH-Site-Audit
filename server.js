@@ -124,6 +124,14 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ── Unknown /api/* routes → 404 so client cloud-sync gracefully skips ────
+  // (Azure Functions handle these in production; locally we only proxy /api/innergy/*)
+  if (urlPath.startsWith('/api/')) {
+    res.writeHead(404, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Not available in local dev' }));
+    return;
+  }
+
   // ── Static file serving ────────────────────────────────────────────────────
   if (urlPath === '/') urlPath = '/index.html';
 
