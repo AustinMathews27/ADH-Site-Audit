@@ -3104,7 +3104,7 @@ window.clearBulkSelection = function() {
 // ══════════════════════════════════════════
 window.reorderSI = function(pid, sectionId, siId, dir) {
   const proj = getProject(pid); if(!proj) return;
-  const sectionItems = proj.items.filter(i => i.sectionId === sectionId);
+  const sectionItems = proj.items.filter(i => !i._deleted && i.sectionId === sectionId);
   const globalIdx = proj.items.findIndex(i => i.id === siId);
   const sectionIdx = sectionItems.findIndex(i => i.id === siId);
   const targetSectionIdx = sectionIdx + dir;
@@ -4292,6 +4292,10 @@ function resetToSeed() {
 const getFolder  = id => store.folders.find(f=>f.id===id);
 const getProject = id => store.projects.find(p=>p.id===id);
 const getSI      = (pid,sid) => getProject(pid)?.items.find(i=>i.id===sid);
+// Scope items that aren't tombstoned. Deleted SIs stay in proj.items (with
+// _deleted=true) so the deletion syncs to other devices, but every render,
+// count, export, and navigation path must exclude them — use this helper.
+const activeItems = proj => (proj && proj.items ? proj.items.filter(i => !i._deleted) : []);
 
 // Helper function to parse mixed photo formats from IndexedDB
 function getPhotoSrcForDisplay(p) {
@@ -4356,13 +4360,18 @@ function showUserMenu() {
 
 function showLoginModal() {
   if (isAdmin) {
-    if(confirm('Log out of Admin?')) {
+    makeModal('Log Out', `
+      <div style="text-align:center;padding:8px 0 16px">
+        <div style="font-size:32px;margin-bottom:10px">🔓</div>
+        <div style="font-size:13px;color:var(--text2)">Log out of Admin?</div>
+      </div>`, () => {
       isAdmin = false;
       store.settings.isAdmin = false;
       markStoreDirty(); save();
       render();
+      closeModal();
       showToast('Logged out');
-    }
+    });
     return;
   }
   makeModal('Admin Login', `
@@ -4700,14 +4709,14 @@ function renderLeft(r) {
         (p.client || '').toLowerCase().includes(q) ||
         (p.date || '').toLowerCase().includes(q);
 
-      const matchingSIs = p.items.filter(i =>
+      const matchingSIs = p.items.filter(i => !i._deleted && (
         i.title.toLowerCase().includes(q) ||
         i.num.toLowerCase().includes(q) ||
         (i.notes || '').toLowerCase().includes(q) ||
         (i.fieldCheck || '').toLowerCase().includes(q) ||
         (i._updatedBy || '').toLowerCase().includes(q) ||
         (Array.isArray(i.conditions) ? i.conditions.join(' ').toLowerCase().includes(q) : false)
-      );
+      ));
 
       if (!projNameMatch && !matchingSIs.length) return;
 
@@ -4722,14 +4731,15 @@ function renderLeft(r) {
 
       if (!siCount) {
         // Only project name/meta matched — show a project row
-        const ready = p.items.filter(i => i.status === 'completed').length;
+        const _act = activeItems(p);
+        const ready = _act.filter(i => i.status === 'completed').length;
         html += `<div class="si-row" onclick="navToProject('${p.id}','${fid}')">
           <div class="si-thumb" style="font-size:16px">🏗</div>
           <div class="si-info">
             <div class="si-num">${_htmlEsc(p.date)} · ${_htmlEsc(p.client)}</div>
             <div class="si-title">${_htmlEsc(p.name)}</div>
           </div>
-          <div style="font-family:var(--mono);font-size:9px;color:var(--text3);text-align:right;flex-shrink:0">${ready}/${p.items.length}<br>ready</div>
+          <div style="font-family:var(--mono);font-size:9px;color:var(--text3);text-align:right;flex-shrink:0">${ready}/${_act.length}<br>ready</div>
         </div>`;
       } else {
         // Show matching SI rows
@@ -4810,7 +4820,7 @@ function renderLeft(r) {
     if (!proj) { scroll.innerHTML = emptyMsg('Project not found'); return; }
     let html='';
     proj.sections.forEach(sec=>{
-      const items=proj.items.filter(i=>i.sectionId===sec.id&&(!q||
+      const items=proj.items.filter(i=>!i._deleted&&i.sectionId===sec.id&&(!q||
         i.title.toLowerCase().includes(q)||
         i.num.toLowerCase().includes(q)||
         (i.notes||'').toLowerCase().includes(q)||
@@ -4893,14 +4903,15 @@ function renderLeft(r) {
       title.textContent = 'PROJECTS';
       const projs = (folder.projects || []).map(id => getProject(id)).filter(p => p && !p._deleted && (!q || p.name.toLowerCase().includes(q)));
       scroll.innerHTML = projs.map(p => {
-        const ready = p.items.filter(i => i.status === 'completed').length;
+        const _act = activeItems(p);
+        const ready = _act.filter(i => i.status === 'completed').length;
         return `<div class="si-row ${r.projectId === p.id ? 'active' : ''}" onclick="navToProject('${p.id}','${r.folderId}')">
           <div class="si-thumb" style="font-size:16px">🏗</div>
           <div class="si-info">
             <div class="si-num">${p.date} · ${p.client}</div>
             <div class="si-title">${p.name}</div>
           </div>
-          <div style="font-family:var(--mono);font-size:9px;color:var(--text3);text-align:right;flex-shrink:0">${ready}/${p.items.length}<br>ready</div>
+          <div style="font-family:var(--mono);font-size:9px;color:var(--text3);text-align:right;flex-shrink:0">${ready}/${_act.length}<br>ready</div>
         </div>`;
       }).join('') || (q ? emptySearch(q) : emptyMsg('No projects'));
     }
@@ -5689,18 +5700,25 @@ function showNewContactModal() {
 }
 
 window.deleteContact = function(id) {
-  if(!confirm('Delete this contact?')) return;
-  window.selectedContacts.delete(id);
-  // Tombstone instead of hard filter so deletion survives offline merges
-  const _delContact = store.contacts.find(c => c.id === id);
-  if (_delContact) {
-    _delContact._deleted   = true;
-    _delContact._deletedAt = Date.now();
-    _delContact._fieldTs   = _delContact._fieldTs || {};
-    _delContact._fieldTs._deleted = _delContact._deletedAt;
-  }
-  markStoreDirty(); save(); buildContactBookView(); renderLeft(route());
-  showToast('Contact deleted');
+  const _c = store.contacts.find(c => c.id === id);
+  makeModal('Delete Contact', `
+    <div style="text-align:center;padding:8px 0 16px">
+      <div style="font-size:32px;margin-bottom:10px">🗑</div>
+      ${_c && _c.name ? `<div style="font-size:14px;font-weight:600;margin-bottom:6px">${_htmlEsc(_c.name)}</div>` : ''}
+      <div style="font-size:12px;color:var(--text2)">Delete this contact? This cannot be undone.</div>
+    </div>`, () => {
+    window.selectedContacts.delete(id);
+    // Tombstone instead of hard filter so deletion survives offline merges
+    const _delContact = store.contacts.find(c => c.id === id);
+    if (_delContact) {
+      _delContact._deleted   = true;
+      _delContact._deletedAt = Date.now();
+      _delContact._fieldTs   = _delContact._fieldTs || {};
+      _delContact._fieldTs._deleted = _delContact._deletedAt;
+    }
+    markStoreDirty(); save(); closeModal(); buildContactBookView(); renderLeft(route());
+    showToast('Contact deleted');
+  });
 };
 
 function showContactDetailModal(id) {
@@ -6185,11 +6203,12 @@ function buildFolderView(fid) {
 }
 
 function projCardHTML(p,fid) {
-  const completed    =p.items.filter(i=>i.status==='completed').length;
-  const punchOngoing =p.items.filter(i=>i.status==='punch-ongoing').length;
-  const notReady     =p.items.filter(i=>i.status==='not-ready').length;
-  const inProgress   =p.items.filter(i=>i.status==='in-progress').length;
-  const changed      =p.items.filter(i=>i.status==='on-hold').length;
+  const _act         =activeItems(p);
+  const completed    =_act.filter(i=>i.status==='completed').length;
+  const punchOngoing =_act.filter(i=>i.status==='punch-ongoing').length;
+  const notReady     =_act.filter(i=>i.status==='not-ready').length;
+  const inProgress   =_act.filter(i=>i.status==='in-progress').length;
+  const changed      =_act.filter(i=>i.status==='on-hold').length;
   const hasActivity  = completed||punchOngoing||notReady||inProgress||changed;
   return `<div class="proj-card" style="position:relative" onclick="navToProject('${p.id}','${fid}')">
     <div class="pc-photo">${p.coverPhoto ? `<img src="${p.coverPhoto}" alt="" loading="lazy">` : '<span class="pc-placeholder">🏗</span>'}</div>
@@ -6205,7 +6224,7 @@ function projCardHTML(p,fid) {
         ${notReady?`<span class="stat-pill red">${notReady} not ready</span>`:''}
         ${inProgress?`<span class="stat-pill yellow">${inProgress} in progress</span>`:''}
         ${changed?`<span class="stat-pill orange">${changed} on hold</span>`:''}
-        ${!hasActivity?`<span class="stat-pill">${p.items.length} pending</span>`:''}
+        ${!hasActivity?`<span class="stat-pill">${_act.length} pending</span>`:''}
       </div>
     </div>
   </div>`;
@@ -6214,14 +6233,15 @@ function projCardHTML(p,fid) {
 // PROJECT SUMMARY
 function buildProjectView(pid) {
   const proj=getProject(pid); if(!proj) return;
-  const total      =proj.items.length;
-  const completed  =proj.items.filter(i=>i.status==='completed').length;
-  const notReady   =proj.items.filter(i=>i.status==='not-ready').length;
-  const inProgress =proj.items.filter(i=>i.status==='in-progress').length;
-  const changed    =proj.items.filter(i=>i.status==='on-hold').length;
-  const pending    =proj.items.filter(i=>i.status==='pending').length;
+  const _act       =activeItems(proj);
+  const total      =_act.length;
+  const completed  =_act.filter(i=>i.status==='completed').length;
+  const notReady   =_act.filter(i=>i.status==='not-ready').length;
+  const inProgress =_act.filter(i=>i.status==='in-progress').length;
+  const changed    =_act.filter(i=>i.status==='on-hold').length;
+  const pending    =_act.filter(i=>i.status==='pending').length;
   const r=route();
-  const hasSIs     = proj.items && proj.items.length > 0;
+  const hasSIs     = _act.length > 0;
   document.getElementById('v-project').innerHTML=`<div class="summary-wrap">
     <div class="proj-summary-card">
       <div class="proj-summary-photo">
@@ -6321,8 +6341,9 @@ function buildProjectView(pid) {
 
 function openFirstSI(pid) {
   const proj=getProject(pid);
-  if(!proj||!proj.items.length) return showToast('No items yet — add one first');
-  navToSI(pid,proj.items[0].id);
+  const act = activeItems(proj);
+  if(!proj||!act.length) return showToast('No items yet — add one first');
+  navToSI(pid,act[0].id);
 }
 
 function navToEnv(pid) {
@@ -6354,7 +6375,7 @@ function buildSIEditor(pid,sid) {
   const fid = route().folderId || '';   // needed for "Back to Project" button
   const sec=proj.sections.find(s=>s.id===item.sectionId);
 
-  const sectionItems = proj.items.filter(i => i.sectionId === item.sectionId);
+  const sectionItems = proj.items.filter(i => !i._deleted && i.sectionId === item.sectionId);
   const completedCount = sectionItems.filter(i => i.status === 'completed' || i.status === 'punch-ongoing').length;
   const totalCount = sectionItems.length;
   const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
@@ -6549,6 +6570,14 @@ function buildSIEditor(pid,sid) {
     <div class="si-mobile-back-bar" id="si-mobile-back">
       <button class="btn-nav" style="border-color:var(--accent);color:var(--accent)"
         onclick="navToProject('${pid}','${fid}')">← Back to Project</button>
+    </div>
+    <div style="margin-top:28px;padding-top:16px;border-top:1px solid var(--border);text-align:center">
+      <button onclick="confirmDeleteSI('${pid}','${sid}')"
+        style="background:none;border:1px solid var(--red-dim);color:var(--red);
+        padding:8px 16px;border-radius:8px;font-family:var(--mono);font-size:11px;
+        font-weight:600;cursor:pointer;transition:all 0.15s"
+        onmouseover="this.style.background='var(--red-dim)'"
+        onmouseout="this.style.background='none'">🗑 Delete Scope Item</button>
     </div>`;
 }
 
@@ -6858,7 +6887,7 @@ function buildScheduleView(pid) {
 
   const weekCols = _buildWeekCols(weekKeys);
   const monthGroups = _groupByMonth(weekCols);
-  const items = proj.items;
+  const items = activeItems(proj);
   const el = document.getElementById('v-schedule');
 
   // ── Per-week labor totals ─────────────
@@ -7338,7 +7367,7 @@ async function exportSchedulePDF(pid, fromKey, toKey, inclLabor) {
   let y = startY + 8;
   const BORDER = '#cbd5e1';
 
-  proj.items.forEach((item, ri) => {
+  activeItems(proj).forEach((item, ri) => {
     if(y + rowH > PH - 12) {
       doc.addPage();
       y = 14;
@@ -7406,7 +7435,7 @@ async function exportSchedulePDF(pid, fromKey, toKey, inclLabor) {
 
     exportWeeks.forEach((w, i) => {
       const x = 14 + siColW + i*weekColW;
-      const scheduled = proj.items.reduce((sum,item)=>{
+      const scheduled = activeItems(proj).reduce((sum,item)=>{
         const hasCell=!!(proj.schedule?.[`${item.id}_${w}`]||'').trim();
         return sum+(hasCell&&item.laborHours?item.laborHours:0);
       },0);
@@ -8092,7 +8121,7 @@ window.showBatchApplyModal = function(pid, sectionId) {
   const codes = ['FC', 'UFC', 'NFC', 'HT'];
   const body = `
     <div style="font-size:12px; color:var(--text2); margin-bottom:16px; line-height:1.5;">
-      Select a status code to apply to all <b>${proj.items.filter(i => i.sectionId === sectionId).length}</b> items 
+      Select a status code to apply to all <b>${proj.items.filter(i => !i._deleted && i.sectionId === sectionId).length}</b> items
       within the <b>"${section.name}"</b> section. 
     </div>
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
@@ -8110,7 +8139,7 @@ window.batchApplyFieldCheck = function(pid, sectionId, code) {
   if (!proj) return;
   const r = route();
   if (r.view === 'si') syncEditorToStore(r.projectId, r.siId);
-  proj.items.filter(it => it.sectionId === sectionId).forEach(it => { it.statusCode = code; markAsDirty(it.id); });
+  proj.items.filter(it => !it._deleted && it.sectionId === sectionId).forEach(it => { it.statusCode = code; markAsDirty(it.id); });
   save();
   render();
   showToast(`✓ Applied ${code} to section`, 'green');
@@ -8277,7 +8306,7 @@ function confirmRename(pid, sid) {
 function navSI(pid,sid,dir) {
   _doSave(pid,sid,false);
   const proj=getProject(pid); if(!proj) return;
-  const items=proj.items;
+  const items=activeItems(proj);
   const idx=items.findIndex(i=>i.id===sid);
   const next=items[idx+dir];
   if(next) navToSI(pid,next.id);
@@ -8799,9 +8828,15 @@ function _annUndo() {
 
 function _annClear() {
   if (!_ann || !_ann.actions.length) return;
-  if (!confirm('Clear all annotations on this photo?')) return;
-  _ann.actions = [];
-  _annRedraw();
+  makeModal('Clear Annotations', `
+    <div style="text-align:center;padding:8px 0 16px">
+      <div style="font-size:32px;margin-bottom:10px">🧹</div>
+      <div style="font-size:13px;color:var(--text2)">Clear all annotations on this photo?</div>
+    </div>`, () => {
+    _ann.actions = [];
+    _annRedraw();
+    closeModal();
+  });
 }
 
 function _annClose() {
@@ -9175,9 +9210,10 @@ function showShareModal() {
     return;
   }
 
-  const completed  = proj.items.filter(i=>i.status==='completed').length;
-  const inProgress = proj.items.filter(i=>i.status==='in-progress'||i.status==='punch-ongoing').length;
-  const totalItems = proj.items.length;
+  const _act       = activeItems(proj);
+  const completed  = _act.filter(i=>i.status==='completed').length;
+  const inProgress = _act.filter(i=>i.status==='in-progress'||i.status==='punch-ongoing').length;
+  const totalItems = _act.length;
   const completePct= totalItems > 0 ? Math.round((completed/totalItems)*100) : 0;
 
   // ── Report Generator State ─────────────────────────────────────────────────
@@ -9883,8 +9919,8 @@ window.estimateFileSize = function(pid) {
   const includeEnv = document.getElementById('chk-env')?.classList.contains('checked');
 
   // Base overhead for PDF structure, cover page, and internal fonts
-  let bytes = 25000; 
-  proj.items.forEach(item=>{
+  let bytes = 25000;
+  activeItems(proj).forEach(item=>{
     bytes += 1500; // estimated text data per item
     if(includePhotos) {
       item.photos.forEach(p=>{
@@ -9936,7 +9972,7 @@ function exportCSV(pid) {
   const rows = [];
   // Header
   rows.push(['item_id','si_number','title','status','assigned_to','due_date','tags','notes'].join(','));
-  proj.items.forEach(it => {
+  activeItems(proj).forEach(it => {
     const safe = v => '"' + String((v===undefined||v===null)?'':v).replace(/"/g,'""') + '"';
     const tags = (it.tags||[]).join(';');
     rows.push([
@@ -10107,6 +10143,34 @@ function duplicateProject(pid,fid,opts) {
   else buildRootView();
   showToast('✓ Project duplicated','green');
 }
+
+// ── DELETE SCOPE ITEM ─────────────────────
+// Tombstone a single scope item (mirrors project/contact deletion). The item
+// stays in proj.items with _deleted=true so the removal propagates to other
+// devices even if they were offline; every render path filters it out via
+// activeItems(). Kept intentionally off the happy path in the SI editor.
+window.confirmDeleteSI = function(pid, sid) {
+  const proj = getProject(pid); if(!proj) return;
+  const item = getSI(pid, sid); if(!item) return;
+  const label = `${item.num}${item.title ? ' — ' + item.title : ''}`;
+  makeModal('Delete Scope Item', `
+    <div style="text-align:center;padding:8px 0 16px">
+      <div style="font-size:32px;margin-bottom:10px">🗑</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:6px">${_htmlEsc(label)}</div>
+      <div style="font-size:12px;color:var(--text2)">Photos go with it. This cannot be undone.</div>
+    </div>`, () => {
+    item._deleted   = true;
+    item._deletedAt = Date.now();
+    item._fieldTs   = item._fieldTs || {};
+    item._fieldTs._deleted = item._deletedAt;
+    item._dirty     = true;             // guard our tombstone against a stale cloud merge
+    markProjectDirty(pid);
+    closeModal();
+    // We were inside this SI's editor — drop back to the project view.
+    navToProject(pid, route().folderId || '');
+    showToast('Scope item deleted');
+  });
+};
 
 // ── DELETE PROJECT ────────────────────────
 function confirmDeleteProject(pid,fid) {
@@ -11019,6 +11083,7 @@ function openGlobalSearch() {
       const folder = store.folders.find(f => (f.projects||[]).includes(p.id));
       const fid = folder ? folder.id : '';
       p.items.forEach(i => {
+        if (i._deleted) return;
         if (
           i.title.toLowerCase().includes(q) ||
           i.num.toLowerCase().includes(q) ||
@@ -11843,15 +11908,17 @@ function buildManpowerView(pid) {
   // Ensure all items have laborEntries
   (proj.items || []).forEach(i => _mpEnsure(i));
 
+  const _act = activeItems(proj);
+
   // ── Project-wide totals ───────────────
-  const totalEst    = proj.items.reduce((s, i) => s + (i.laborHours || 0), 0);
-  const totalLogged = proj.items.reduce((s, i) => s + _mpTotalLogged(i), 0);
+  const totalEst    = _act.reduce((s, i) => s + (i.laborHours || 0), 0);
+  const totalLogged = _act.reduce((s, i) => s + _mpTotalLogged(i), 0);
   const totalRem    = Math.max(0, totalEst - totalLogged);
   const projPct     = totalEst > 0 ? Math.round((totalLogged / totalEst) * 100) : 0;
   const projColor   = _mpColor(projPct);
 
   // ── Items sorted by most recently logged ──
-  const items = [...proj.items].sort((a, b) => {
+  const items = [..._act].sort((a, b) => {
     const lastA = a.laborEntries?.slice().sort((x,y) => y.date.localeCompare(x.date))[0]?.date || '';
     const lastB = b.laborEntries?.slice().sort((x,y) => y.date.localeCompare(x.date))[0]?.date || '';
     return lastB.localeCompare(lastA);
@@ -11859,7 +11926,7 @@ function buildManpowerView(pid) {
 
   // ── All entries across project (for activity feed) ──
   const allEntries = [];
-  proj.items.forEach(item => {
+  _act.forEach(item => {
     (item.laborEntries || []).forEach(e => {
       allEntries.push({ ...e, itemNum: item.num, itemTitle: item.title, itemId: item.id });
     });
@@ -11944,7 +12011,7 @@ function buildManpowerView(pid) {
       </div>`;
   }).join('');
 
-  const noEstItems = proj.items.filter(i => i.laborHours == null).length;
+  const noEstItems = _act.filter(i => i.laborHours == null).length;
 
   // ── Recent activity feed ──────────────
   const activityHTML = recentEntries.length === 0
@@ -12015,7 +12082,7 @@ function buildManpowerView(pid) {
 window.showQuickLogModal = function(pid, preselectedSid) {
   const proj = getProject(pid); if(!proj) return;
 
-  const siOptions = proj.items.map(i =>
+  const siOptions = activeItems(proj).map(i =>
     `<option value="${i.id}" ${i.id===preselectedSid?'selected':''}>${i.num.replace(/^SI\s+/,'SI ')} — ${i.title}</option>`
   ).join('');
 
@@ -12673,6 +12740,18 @@ function navToActivity(pid){
 const _actTypeLabel={status:'Status Change',note:'Note Saved',photo:'Photo Added',attach:'File Attached'};
 const _actTypeIcon ={status:'🔄',note:'📝',photo:'📷',attach:'📎'};
 const _actTypeDot  ={status:'status',note:'note',photo:'photo',attach:'attach'};
+window.confirmClearActivityLog = function(pid){
+  const proj = getProject(pid); if(!proj) return;
+  makeModal('Clear Activity Log', `
+    <div style="text-align:center;padding:8px 0 16px">
+      <div style="font-size:32px;margin-bottom:10px">🧹</div>
+      <div style="font-size:13px;color:var(--text2)">Clear the entire activity log for this project? This cannot be undone.</div>
+    </div>`, () => {
+    proj.activityLog = [];
+    markProjectDirty(pid); save(); closeModal();
+    buildActivityView(pid);
+  });
+};
 function buildActivityView(pid){
   const proj=getProject(pid); if(!proj) return;
   const el=document.getElementById('v-activity'); if(!el) return;
@@ -12707,7 +12786,7 @@ function buildActivityView(pid){
     <div style="flex:1;overflow-y:auto">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0">
         <div style="font-size:14px;font-weight:600">📋 Activity Feed <span style="font-size:11px;color:var(--text3);font-weight:400">${proj.name}</span></div>
-        ${log.length?`<button onclick="if(confirm('Clear activity log?')){getProject('${pid}').activityLog=[];markProjectDirty('${pid}');save();buildActivityView('${pid}')}" style="font-size:10px;font-family:var(--mono);padding:4px 10px;border:1px solid var(--border);background:var(--surface2);border-radius:6px;cursor:pointer;color:var(--text3)">Clear</button>`:''}
+        ${log.length?`<button onclick="confirmClearActivityLog('${pid}')" style="font-size:10px;font-family:var(--mono);padding:4px 10px;border:1px solid var(--border);background:var(--surface2);border-radius:6px;cursor:pointer;color:var(--text3)">Clear</button>`:''}
       </div>
       ${log.length?`<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;margin:14px;overflow:hidden">${rowsHTML}</div>`
         :`<div style="text-align:center;padding:60px 24px;color:var(--text3)"><div style="font-size:40px;opacity:0.2;margin-bottom:12px">📋</div><div style="font-size:14px;font-weight:600;color:var(--text2)">No activity yet</div><div style="font-size:12px;margin-top:6px">Status changes, notes, and photos will appear here</div></div>`}
@@ -12814,7 +12893,7 @@ function buildFloorPlanView(pid){
         <span>SELECT SI TO PIN</span>
         <span style="cursor:pointer" onclick="document.getElementById('fp-si-picker').style.display='none'">✕</span>
       </div>
-      ${proj.items.map(item=>`
+      ${activeItems(proj).map(item=>`
         <div style="padding:9px 14px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:center"
           onclick="_fpSelectSI('${pid}','${item.id}')"
           onmouseover="this.style.background='var(--accent-dim)'"
@@ -12897,21 +12976,36 @@ window._fpPinClick=function(e,pid,pinId){
   e.stopPropagation();
   const proj=getProject(pid); if(!proj) return;
   const pin=proj.floorPlan?.pins?.find(p=>p.id===pinId); if(!pin) return;
-  const choice=confirm(`${pin.siNum}: "${pin.siTitle}"\n\nOK = Remove pin    Cancel = Open SI`);
-  if(choice){
-    proj.floorPlan.pins=proj.floorPlan.pins.filter(p=>p.id!==pinId);
-    markProjectDirty(pid); save(); buildFloorPlanView(pid);
-  } else {
-    navToSI(pid,pin.siId);
-  }
+  makeModal('Pin', `
+    <div style="text-align:center;padding:8px 0 16px">
+      <div style="font-size:11px;font-family:var(--mono);color:var(--accent);font-weight:700;margin-bottom:4px">${_htmlEsc(pin.siNum||'')}</div>
+      <div style="font-size:14px;font-weight:600">${_htmlEsc(pin.siTitle||'')}</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn-nav" style="border-color:var(--accent);color:var(--accent)"
+        onclick="closeModal();navToSI('${pid}','${pin.siId}')">Open SI</button>
+      <button class="btn-nav" style="border-color:var(--red-dim);color:var(--red)"
+        onclick="_fpRemovePin('${pid}','${pinId}')">🗑 Remove Pin</button>
+    </div>`, null, true);
+};
+
+window._fpRemovePin=function(pid,pinId){
+  const proj=getProject(pid); if(!proj||!proj.floorPlan) return;
+  proj.floorPlan.pins=proj.floorPlan.pins.filter(p=>p.id!==pinId);
+  markProjectDirty(pid); save(); closeModal(); buildFloorPlanView(pid);
 };
 
 window._fpClearPins=function(pid){
   const proj=getProject(pid); if(!proj||!proj.floorPlan) return;
-  if(!confirm('Remove all pins from this floor plan?')) return;
-  proj.floorPlan.pins=[];
-  markProjectDirty(pid); save(); buildFloorPlanView(pid);
-  showToast('Pins cleared');
+  makeModal('Clear Pins', `
+    <div style="text-align:center;padding:8px 0 16px">
+      <div style="font-size:32px;margin-bottom:10px">📍</div>
+      <div style="font-size:13px;color:var(--text2)">Remove all pins from this floor plan?</div>
+    </div>`, () => {
+    proj.floorPlan.pins=[];
+    markProjectDirty(pid); save(); closeModal(); buildFloorPlanView(pid);
+    showToast('Pins cleared');
+  });
 };
 // ══════════════════════════════════════════════════════════════════
 // PATCH: renderLeft — show archived section + updated-by badge
