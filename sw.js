@@ -12,6 +12,8 @@ const PRECACHE = [
   '/favicon.ico',
   '/vendor/jspdf.umd.min.js',
   '/vendor/xlsx.full.min.js',
+  '/logo.png',
+  '/logo-white.png',
 ];
 
 // CDN origins to cache at runtime

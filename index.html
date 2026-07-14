@@ -1706,17 +1706,6 @@ body.theme-dark .sched-current-week {
   border-radius: 4px;
 }
 
-.btn-ai {
-  display: flex; align-items: center; gap: 5px;
-  padding: 4px 10px; border-radius: 6px;
-  background: linear-gradient(135deg, #4f46e5, #3db8f5);
-  color: white; border: none; font-family: var(--mono);
-  font-size: 10px; font-weight: 600; cursor: pointer;
-  transition: opacity 0.2s; margin-bottom: 5px;
-}
-.btn-ai:hover { opacity: 0.9; }
-.btn-ai:disabled { opacity: 0.5; cursor: not-allowed; }
-
 /* ── FILE ATTACHMENTS ── */
 .attach-row { display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:5px; }
 .attach-icon { font-size:16px;flex-shrink:0; }
@@ -3343,14 +3332,6 @@ function _userName() {
 // SYNC ENGINE v5 — Per-Project Document Architecture
 // ══════════════════════════════════════════════════════════════════════════════
 //
-// HOW TO INSTALL:
-//   In index.html, find the block that starts with:
-//     "// ══════ SYNC ENGINE v4 — Item-level patching"
-//   and ends just before:
-//     "// ══════════════════════════════════════════"
-//     "// 6-WEEK LOOK AHEAD SCHEDULE"
-//   Replace that entire block with this file's contents.
-//
 // ARCHITECTURE:
 //   CLOUD:  adh-index-v1      → folders, contacts, settings, projectIds[]
 //           adh-proj-{id}     → one independent document per project
@@ -4824,7 +4805,7 @@ function renderLeft(r) {
   // ── IMPORTANT: check projectId BEFORE folderId so navigating from root
   // (folderId='') directly to a project still shows the SI list, not folders.
   if (r.projectId) {
-    title.textContent='SITE ITEMS';
+    title.textContent='SCOPE ITEMS';
     const proj = getProject(r.projectId);
     if (!proj) { scroll.innerHTML = emptyMsg('Project not found'); return; }
     let html='';
@@ -6273,9 +6254,9 @@ function buildProjectView(pid) {
         <div class="empty-project-box">
           <div class="empty-project-icon">📋</div>
           <h4>No items yet</h4>
-          <p>This project has no Site Items (SIs) assigned to it yet. Get started by clicking below.</p>
+          <p>This project has no Scope Items (SIs) assigned to it yet. Get started by clicking below.</p>
           <button class="btn-project-cta" onclick="showNewSIModal('${pid}')">
-            ＋ Add First Site Item (SI)
+            ＋ Add First Scope Item (SI)
           </button>
         </div>
       ` : ''}
@@ -6314,6 +6295,11 @@ function buildProjectView(pid) {
         <div class="action-body"><div class="action-title">Environmental Conditions</div><div class="action-desc">Temperature & humidity charts from sensor data</div></div>
         <div class="action-arrow">›</div>
       </div>
+      <div class="action-row" onclick="navToActivity('${pid}')">
+        <div class="action-icon" style="background:rgba(96,165,250,0.1)">📋</div>
+        <div class="action-body"><div class="action-title">Activity Feed</div><div class="action-desc">Status, photo & note history for this project</div></div>
+        <div class="action-arrow">›</div>
+      </div>
       <div class="action-row" onclick="showShareModal()">
         <div class="action-icon" style="background:var(--green-dim)">📤</div>
         <div class="action-body"><div class="action-title">Share Audit Report</div><div class="action-desc">Export & send to team</div></div>
@@ -6321,7 +6307,7 @@ function buildProjectView(pid) {
       </div>
       <div class="action-row" onclick="showManageSectionsModal('${pid}')">
         <div class="action-icon" style="background:var(--folder-dim)">🗂️</div>
-        <div class="action-body"><div class="action-title">Manage Sections</div><div class="action-desc">Add, rename, reorder or remove sections</div></div>
+        <div class="action-body"><div class="action-title">Manage Sections</div><div class="action-desc">Add, reorder or remove sections</div></div>
         <div class="action-arrow">›</div>
       </div>
       <div class="action-row" onclick="showEditProjectModal('${pid}')">
@@ -6447,10 +6433,6 @@ function buildSIEditor(pid,sid) {
       </div>
     </div>
     <div class="edit-body" id="edit-body">
-      <div style="display:flex;gap:8px;margin-bottom:8px">
-        <button class="btn-ai" id="ai-assist-btn" onclick="runAIAssistant('${pid}','${sid}')">✨ AI Professionalize Notes</button>
-        <button class="btn-ai" onclick="showTemplatesPanel('${pid}','${sid}')" style="background:linear-gradient(135deg,#7c3aed,#a855f7)">📋 Templates</button>
-      </div>
       <div class="field-group">
         <div class="field-label">Field Photos (${item.photos.length})</div>
         <div class="photo-actions">
@@ -6926,7 +6908,7 @@ function buildScheduleView(pid) {
 
   // ── Month header row ──────────────────
   const monthHeaderHTML = `
-    <div class="sched-cell sched-si-col" style="background:var(--surface);border-bottom:1px solid var(--border);padding:6px 10px;font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:1px;color:var(--text3);text-transform:uppercase">SITE ITEM</div>
+    <div class="sched-cell sched-si-col" style="background:var(--surface);border-bottom:1px solid var(--border);padding:6px 10px;font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:1px;color:var(--text3);text-transform:uppercase">SCOPE ITEM</div>
     ${monthGroups.map(g => `
       <div style="grid-column:span ${g.count};background:var(--surface);border-bottom:1px solid var(--border);border-left:1px solid var(--border2);padding:5px 10px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:0.8px;color:var(--text3);text-transform:uppercase;display:flex;align-items:center">
         ${g.month.toUpperCase()}
@@ -7083,7 +7065,7 @@ function buildScheduleView(pid) {
       ${items.length === 0 ? `
         <div style="text-align:center;padding:60px;color:var(--text3)">
           <div style="font-size:40px;opacity:0.18;margin-bottom:12px">📅</div>
-          <div style="font-size:14px;font-weight:600;color:var(--text2);margin-bottom:6px">No site items yet</div>
+          <div style="font-size:14px;font-weight:600;color:var(--text2);margin-bottom:6px">No scope items yet</div>
           <div style="font-size:12px">Add SI items to the project first.</div>
         </div>
       ` : `
@@ -7338,7 +7320,7 @@ async function exportSchedulePDF(pid, fromKey, toKey, inclLabor) {
   // ── Week column headers ───────────────
   doc.setFillColor(...h2r(BG)); doc.rect(14, startY, siColW, 8, 'F');
   doc.setFontSize(6); doc.setFont('helvetica','bold'); doc.setTextColor(...h2r(FG));
-  doc.text('SITE ITEM', 16, startY + 5.5);
+  doc.text('SCOPE ITEM', 16, startY + 5.5);
 
   exportWeeks.forEach((w, i) => {
     const x = 14 + siColW + i * weekColW;
@@ -7363,7 +7345,7 @@ async function exportSchedulePDF(pid, fromKey, toKey, inclLabor) {
       // Re-draw compact header on continuation pages
       doc.setFillColor(...h2r(BG)); doc.rect(14, y, siColW + exportWeeks.length*weekColW, 6, 'F');
       doc.setFontSize(6); doc.setFont('helvetica','bold'); doc.setTextColor(...h2r(FG));
-      doc.text('SITE ITEM', 16, y+4.5);
+      doc.text('SCOPE ITEM', 16, y+4.5);
       exportWeeks.forEach((w,i) => {
         const x = 14 + siColW + i*weekColW;
         const mon = isoWeekMonday(w);
@@ -8134,59 +8116,10 @@ window.batchApplyFieldCheck = function(pid, sectionId, code) {
   showToast(`✓ Applied ${code} to section`, 'green');
 };
 
-// AI INTEGRATION (GEMINI EXAMPLE)
-async function runAIAssistant(pid, sid) {
-  const item = getSI(pid, sid);
-  const notesInput = document.getElementById('notes-input');
-  if (!item || !notesInput || !notesInput.value.trim()) {
-    return showToast('Please enter some notes first');
-  }
-
-  const btn = document.getElementById('ai-assist-btn');
-  const originalText = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = '✨ Processing...';
-
-  // WARNING: In a real app, do not hardcode your API key in the frontend.
-  const API_KEY = 'AIzaSyAjVhyKaiZnrUawAgrXHOG9uE-xEpJIybo'; 
-  const API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
-
-  const prompt = `You are a professional construction auditor. Rewrite the following field notes to be more professional, concise, and technical for a formal audit report. Original notes: "${notesInput.value}"`;
-
-  try {
-    const response = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }]
-      })
-    });
-
-    const data = await response.json();
-
-    if (data.error) {
-      throw new Error(data.error.message || 'Unknown API Error');
-    }
-
-    if (!data.candidates || !data.candidates[0]) {
-      throw new Error('No response generated. The prompt may have been blocked by safety filters.');
-    }
-
-    const aiResult = data.candidates[0].content.parts[0].text.trim();
-
-    if (confirm("AI Suggestion:\n\n" + aiResult + "\n\nApply this change?")) {
-      notesInput.value = aiResult;
-      item.notes = aiResult;
-      scheduleAutoSave(pid, sid);
-    }
-  } catch (err) {
-    console.error(err);
-    showToast(`AI Error: ${err.message}`, 'red');
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = originalText;
-  }
-}
+// AI note-polishing was removed (it shipped a hard-coded Gemini API key in the
+// client and targeted a retired model). When AI assist returns, route it through
+// a server-side proxy — same pattern as /api/innergy — with the key held in
+// Azure app settings (candidate providers: Claude API or Microsoft Copilot).
 
 function toggleTag(pid,sid,tag) {
   const item=getSI(pid,sid); if(!item) return;
@@ -9179,7 +9112,7 @@ function showNewProjectModal(fid) {
 function showNewSIModal(pid) {
   const proj=getProject(pid); if(!proj) return;
   const sectOpts=proj.sections.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
-  makeModal('Add Site Item',`
+  makeModal('Add Scope Item',`
     <div class="field-group"><div class="field-label">Section</div>
       <select class="field-input" id="m-sec">${sectOpts}</select>
     </div>
@@ -11020,7 +10953,7 @@ function openGlobalSearch() {
 
   const input = document.createElement('input');
   input.type = 'text';
-  input.placeholder = 'Search folders, projects, site items…';
+  input.placeholder = 'Search folders, projects, scope items…';
   input.autocomplete = 'off';
   inputWrap.appendChild(input);
 
@@ -11099,7 +11032,7 @@ function openGlobalSearch() {
       });
     });
     if (matchSIs.length) {
-      rows.push({ type: 'label', text: 'Site Items' });
+      rows.push({ type: 'label', text: 'Scope Items' });
       matchSIs.slice(0, 40).forEach(({ item, proj }) => {
         const sub = 'SI# ' + item.num.replace(/^SI\s+/, '') + ' · ' + proj.name;
         rows.push({ icon: '📋', title: item.title, sub, badge: item.status || '—',
@@ -11400,7 +11333,17 @@ function _initMobileQoL() {
     }
     // Synchronous fallback: write to localStorage as a safety net
     // (IDB writes are async and may not complete before the page is killed)
-    try { localStorage.setItem('fap_v3_exit', JSON.stringify(store)); } catch(e) {}
+    // Blobs don't survive JSON (they serialize to {}) and giant base64 strings
+    // blow the ~5MB localStorage quota, so strip binary payloads: photos keep
+    // their cloud url/caption/timestamp, and oversized inline data is dropped.
+    try {
+      const snapshot = JSON.stringify(store, (key, value) => {
+        if (value instanceof Blob) return undefined;
+        if (typeof value === 'string' && value.length > 100000 && value.startsWith('data:')) return undefined;
+        return value;
+      });
+      if (snapshot.length < 4000000) localStorage.setItem('fap_v3_exit', snapshot);
+    } catch(e) {}
     // Also kick off the async IDB write — may or may not finish in time
     _idbSet('fap_v3', store).catch(() => {});
   }
@@ -12078,7 +12021,7 @@ window.showQuickLogModal = function(pid, preselectedSid) {
 
   makeModal('Log Labor Hours', `
     <div class="field-group">
-      <div class="field-label">Site Item</div>
+      <div class="field-label">Scope Item</div>
       <select class="field-input" id="ql-si" onchange="updateQLEstimate('${pid}')">
         ${preselectedSid ? '' : `<option value="">— Select SI —</option>`}
         ${siOptions}
@@ -12113,7 +12056,7 @@ window.showQuickLogModal = function(pid, preselectedSid) {
     const hours  = parseFloat(document.getElementById('ql-hours')?.value);
     const note   = document.getElementById('ql-note')?.value.trim() || '';
 
-    if (!siId)              return showToast('Select a site item', 'red');
+    if (!siId)              return showToast('Select a scope item', 'red');
     if (!date)              return showToast('Select a date', 'red');
     if (!workers || workers < 1) return showToast('Enter number of workers', 'red');
     if (!hours || hours <= 0)    return showToast('Enter hours per worker', 'red');
@@ -12557,45 +12500,6 @@ function _postChangeLog(pid, details) {
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify(payload)
   }).catch(() => {/* offline — silently ignore */});
-}
-
-// ══════════════════════════════════════════════════════════════════
-// FEATURE: Server-side PDF download
-// Hits /api/generatePdf and triggers a browser download
-// ══════════════════════════════════════════════════════════════════
-async function downloadServerPDF(pid) {
-  const proj = (typeof getProject === 'function') ? getProject(pid) : null;
-  if (typeof window.checkRequiredBeforeExport === 'function' && proj) {
-    const missing = window.checkRequiredBeforeExport(proj);
-    if (missing.length > 0) {
-      if (typeof window.showExportValidationModal === 'function') {
-        window.showExportValidationModal(pid, missing);
-      }
-      return;
-    }
-  }
-  document.getElementById('rg-overlay')?.remove();
-  showToast('⏳ Generating PDF…');
-  try {
-    const res = await fetch(`/api/generatePdf?projectId=${encodeURIComponent(pid)}`);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      showToast('PDF error: ' + (err.error || res.statusText));
-      return;
-    }
-    const blob  = await res.blob();
-    const url   = URL.createObjectURL(blob);
-    const proj  = getProject(pid);
-    const name  = (proj?.name || pid).replace(/[^a-z0-9_\- ]/gi,'_').trim();
-    const a     = document.createElement('a');
-    a.href      = url;
-    a.download  = name + '.pdf';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-    showToast('✓ PDF Downloaded', 'green');
-  } catch(e) {
-    showToast('PDF generation failed — check connection');
-  }
 }
 
 // ══════════════════════════════════════════════════════════════════
