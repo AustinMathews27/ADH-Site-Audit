@@ -9883,12 +9883,10 @@ function showShareModal() {
           <div class="rg-topbar-title">Report Generator</div>
           <div class="rg-topbar-actions">
             <button class="rg-btn-outline"
-              onclick="exportPDF('${proj.id}')">PDF</button>
+              onclick="exportPDF('${proj.id}')">⬇ PDF</button>
             <button class="rg-btn-outline"
-              onclick="exportCSV('${proj.id}')">CSV</button>
+              onclick="exportCSV('${proj.id}')">⬇CSV</button>
             <button class="rg-btn-primary"
-              onclick="downloadServerPDF('${proj.id}')">⬇ Download Report</button>
-            <button class="rg-btn-close"
               onclick="document.getElementById('rg-overlay')?.remove()">✕</button>
           </div>
         </div>
