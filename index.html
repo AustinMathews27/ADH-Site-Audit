@@ -19,9 +19,9 @@
 
 <!-- Fonts & Libraries -->
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
+<script src="vendor/jspdf.umd.min.js" defer></script> <!-- self-hosted (v4.2.1) so PDF export works offline from first launch -->
 <script src="pdf-export.js" defer></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+<script src="vendor/xlsx.full.min.js" defer></script> <!-- self-hosted SheetJS (v0.20.3) - to upgrade, drop a newer xlsx.full.min.js from cdn.sheetjs.com into /vendor -->
 <style>
 :root {
   --bg: #f1f5f9;              /* app background (Daylight) */
@@ -4319,6 +4319,9 @@ function showUserMenu() {
   const email = _currentUser?.userDetails || 'Unknown';
   const name  = _userName() || email;
   const isLocal = _currentUser?.userId === 'dev-local';
+  // Auth is deactivated (shared workspace, see _getAuthUser) — "/.auth/logout"
+  // does nothing meaningful, so hide Sign out until Entra login returns.
+  const isSharedWorkspace = !!_currentUser && _currentUser.userId === '25a348bbf3bb4e9087aefec8b88424b6';
 
   makeModal('Account', `
     <div style="text-align:center;padding:8px 0 16px">
@@ -4334,7 +4337,7 @@ function showUserMenu() {
           placeholder="Your name" />
       </div>
     </div>
-    ${!isLocal ? `
+    ${!isLocal && !isSharedWorkspace ? `
     <button onclick="localStorage.removeItem('adh_auth_token'); localStorage.removeItem('adh_user_id'); window.location.href='/.auth/logout?post_logout_redirect_uri=/'"
       style="width:100%;margin-top:16px;padding:10px;background:var(--red-dim);color:var(--red);
       border:1px solid var(--red-dim);border-radius:9px;font-family:var(--mono);font-size:12px;
@@ -7144,6 +7147,10 @@ window.showScheduleExportModal = function(pid) {
   const proj = getProject(pid); if(!proj) return;
   const cur = currentWeekKey();
   const { earliest, latest } = _getProjectWeekExtent(proj);
+  // BUGFIX: `ls` was referenced in the template below but never defined in this
+  // scope (only inside buildScheduleView), so tapping "Export PDF" threw
+  // `ReferenceError: ls is not defined` and the modal never opened.
+  const ls = proj.laborSettings || { show: false, workers: 4, hoursPerDay: 8, workDays: 5 };
 
   // Presets
   const presets = [
@@ -11235,6 +11242,17 @@ function _initMobileQoL() {
     _reloading = true;
     window.location.reload();
   });
+
+  // Ask the browser to protect our storage from eviction. Without this,
+  // iOS Safari can silently wipe IndexedDB (photos, unsynced edits) after
+  // ~7 days of non-use for non-installed web apps. Installed PWAs and
+  // persisted origins are exempt. Fire-and-forget — denial is harmless.
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persisted().then(already => {
+      if (!already) navigator.storage.persist().then(granted =>
+        console.log('[ADH Audit] storage.persist:', granted ? 'granted' : 'denied'));
+    }).catch(() => {});
+  }
 
   navigator.serviceWorker.register('/sw.js', { scope: '/' })
     .then(reg => {
