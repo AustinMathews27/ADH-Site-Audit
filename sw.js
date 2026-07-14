@@ -1,6 +1,6 @@
 // ADH Field Audit Tool — Service Worker
 // Cache version — bump this string to force update
-const CACHE_VERSION = 'adh-audit-v8.23';
+const CACHE_VERSION = 'adh-audit-v8.25';
 
 // Resources to pre-cache on install
 const PRECACHE = [
@@ -12,6 +12,8 @@ const PRECACHE = [
   '/favicon.ico',
   '/logo.png',
   '/logo-white.png',
+  '/vendor/jspdf.umd.min.js',
+  '/vendor/xlsx.full.min.js',
 ];
 
 // CDN origins to cache at runtime
