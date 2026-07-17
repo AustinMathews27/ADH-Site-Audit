@@ -2872,6 +2872,100 @@ textarea.field-input { min-height: 88px !important; line-height: 1.6 !important;
 
 </style>
 
+
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style id="corporate-steel">
+/* ===== Corporate Steel reskin (Allegheny brand) ===== */
+:root{
+  --bg:#eceef1;
+  --surface:#ffffff;
+  --surface2:#f4f6f8;
+  --surface3:#e4e8ec;
+  --border:#ccd2da;
+  --border2:#b7bec7;
+  --accent:#9c1f2e;              /* Allegheny red */
+  --accent-dim:rgba(156,31,46,0.10);
+  --amber:#c8892a;              /* hi-vis primary */
+  --sans:'Archivo','IBM Plex Sans',sans-serif;
+}
+body{ font-family:var(--sans); }
+
+/* Blueprint grid on the main work canvases */
+.grid-wrap,.summary-wrap,.env-wrap{
+  background-color:var(--bg);
+  background-image:linear-gradient(#e0e4e9 1px,transparent 1px),linear-gradient(90deg,#e0e4e9 1px,transparent 1px);
+  background-size:28px 28px;
+}
+
+/* Compact charcoal corporate header + red/amber safety stripe */
+.nav-bar{
+  background:#1c2027 !important;
+  height:74px !important;
+  border-bottom:none !important;
+  backdrop-filter:none !important; -webkit-backdrop-filter:none !important;
+  box-shadow:0 2px 8px rgba(0,0,0,0.18) !important;
+  position:relative;
+}
+.nav-bar::after{
+  content:''; position:absolute; left:0; right:0; bottom:0; height:3px; z-index:2;
+  background:linear-gradient(90deg,#9c1f2e 0 62%,#c8892a 62% 100%);
+}
+.nav-logo{ height:46px !important; }
+html.is-phone .nav-bar{ height:60px !important; }
+.nav-bar .nav-back-btn,.nav-bar .btn-icon{
+  background:#252b34 !important; border-color:#363c46 !important; color:#9aa4b0 !important;
+}
+.nav-bar .nav-back-btn:hover,.nav-bar .btn-icon:hover{
+  border-color:var(--amber) !important; color:var(--amber) !important; background:#2d343e !important;
+}
+.nav-bar .crumb{ color:#c3cad3 !important; }
+.nav-bar .crumb:hover{ color:#fff !important; background:rgba(255,255,255,0.08) !important; }
+.nav-bar .crumb.active{ color:#fff !important; }
+.nav-bar .crumb-sep{ color:#6b7482 !important; }
+
+/* Structured folder / project cards */
+.folder-card,.proj-card{
+  border-top:3px solid var(--accent);
+  box-shadow:0 2px 10px rgba(20,28,40,0.06);
+}
+.folder-card:hover,.proj-card:hover{
+  border-color:var(--border2); border-top-color:var(--accent);
+  transform:translateY(-2px); box-shadow:0 10px 26px rgba(20,28,40,0.16);
+}
+.folder-card.new-card,.proj-card.new-card{ border-top:1px dashed var(--border); box-shadow:none; }
+
+/* Folder count as a legible pill */
+.fc-count{
+  display:inline-block; font-family:var(--mono); font-size:10px; font-weight:600;
+  color:var(--text2); background:var(--surface2); border:1px solid var(--border);
+  padding:3px 8px; border-radius:5px;
+}
+
+/* Section headers -> grotesk + red tick */
+.section-divider,.panel-title,.section-group{
+  font-family:var(--sans); color:var(--text2);
+  position:relative; padding-left:11px; letter-spacing:0.6px;
+}
+.section-divider::before,.panel-title::before,.section-group::before{
+  content:''; position:absolute; left:0; top:50%; transform:translateY(-50%);
+  width:3px; height:12px; background:var(--accent); border-radius:1px;
+}
+
+/* Clean up leftover cyan accents from the old blue theme */
+.btn-add{ border-color:rgba(156,31,46,0.25); }
+.cond-tag.selected{ border-color:rgba(156,31,46,0.30); }
+
+/* Hi-vis amber for the big primary CTA */
+.btn-project-cta{ background:var(--amber); color:#1c2027; box-shadow:0 4px 12px rgba(200,137,42,0.25); }
+
+/* Fix logo tiles: only use the dark backing plate in dark theme,
+   so light-ink logos (ACD, ACM, ADH) read on white cards in light theme */
+.folder-logo-img.logo-dark-bg{ background:transparent !important; padding:0 !important; }
+html.dark .folder-logo-img.logo-dark-bg{ background:#1c1c1e !important; padding:7px !important; }
+
+/* Cleaner status indicators (drop the neon glow) */
+.si-status{ box-shadow:none !important; width:8px !important; height:8px !important; }
+</style>
 </head>
 <body>
 
@@ -2888,7 +2982,7 @@ textarea.field-input { min-height: 88px !important; line-height: 1.6 !important;
 <div class="nav-bar">
   <div class="nav-back-btn disabled" id="back-btn" onclick="goBack()">‹</div>
   <div class="breadcrumb" id="breadcrumb">
-    <span class="crumb active" onclick="navToRoot()"><img src="logo.png" alt="ADH Audit" class="nav-logo" id="main-logo"></span>
+    <span class="crumb active" onclick="navToRoot()"><img src="logo-white.png" alt="ADH Audit" class="nav-logo" id="main-logo"></span>
   </div>
   <div class="nav-actions">
     <div class="btn-icon" onclick="openGlobalSearch()" title="Global Search (⌘K)">⌕</div>
@@ -4463,7 +4557,7 @@ function renderNavBar(r) {
   }
   
   const bc = document.getElementById('breadcrumb');
-  const logoSrc = store.settings.theme === 'dark' ? 'logo-white.png' : 'logo.png';
+  const logoSrc = 'logo-white.png';
   let crumbs = [`<span class="crumb ${stack.length===0?'active':''}" onclick="navToRoot()"><img src="${logoSrc}" alt="ADH Audit" class="nav-logo"></span>`];
   
   if (r.folderId) {
