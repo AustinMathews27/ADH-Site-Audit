@@ -1,10 +1,15 @@
 // api/saveIndex/index.js
 // POST /api/saveIndex
-// Body: { userId, folders, contacts, settings, projectIds, _savedAt }
+// Body: { userId, folders, contacts, settings, projectIds, projectTombstones, _savedAt }
 //
 // Saves the per-user index document — adh-index-{userId}.
 // ETag-based optimistic concurrency with up to 5 retries.
 // Two users can never conflict because they write to separate documents.
+//
+// projectTombstones: { projectId: deletedAtEpochMs }
+// Deletion is tracked with tombstones so projectIds can be merged as a union
+// without deleted (or orphaned) IDs re-entering the index forever. Tombstones
+// are GC'd after TOMBSTONE_TTL_MS — by then every device has synced them.
 
 const { CosmosClient } = require("@azure/cosmos");
 
@@ -12,6 +17,10 @@ const client      = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
 const database    = client.database("Auditdata");
 const container   = database.container("Audits");
 const MAX_RETRIES = 5;
+
+// Project/contact tombstones older than this are garbage-collected.
+// 90 days is far beyond any realistic device-offline window.
+const TOMBSTONE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 
 module.exports = async function (context, req) {
   context.res = { headers: { "Content-Type": "application/json" } };
@@ -61,26 +70,47 @@ module.exports = async function (context, req) {
         }
       });
 
-      // ── 4. Merge projectIds (union of both sides) ─────────────────────────
+      // ── 4. Merge project tombstones (newest timestamp wins), then GC ──────
+      const tombstones = Object.assign({}, current.projectTombstones || {});
+      Object.entries(incoming.projectTombstones || {}).forEach(([id, ts]) => {
+        if (!tombstones[id] || ts > tombstones[id]) tombstones[id] = ts;
+      });
+      const tombstoneCutoff = Date.now() - TOMBSTONE_TTL_MS;
+      Object.keys(tombstones).forEach(id => {
+        if (tombstones[id] < tombstoneCutoff) delete tombstones[id];
+      });
+
+      // ── 5. Merge projectIds (union of both sides, minus tombstoned) ───────
+      // The union means an ID can never drop out through a stale save from an
+      // out-of-date device; the tombstone filter is the only removal path.
       const allProjectIds = new Set([
         ...(current.projectIds  || []),
         ...(incoming.projectIds || [])
       ]);
+      Object.keys(tombstones).forEach(id => allProjectIds.delete(id));
 
-      // ── 5. Settings: incoming wins ────────────────────────────────────────
+      // ── 6. GC old contact tombstones (same TTL as project tombstones) ─────
+      const liveContacts = [...contactMap.values()].filter(c => {
+        if (!c._deleted) return true;
+        const ts = (c._fieldTs && c._fieldTs._deleted) || c._deletedAt || 0;
+        return ts > tombstoneCutoff;
+      });
+
+      // ── 7. Settings: incoming wins ────────────────────────────────────────
       const mergedSettings = Object.assign({}, current.settings || {}, incoming.settings || {});
 
       const updated = {
-        id:         INDEX_ID,
-        userId:     userId,
-        folders:    [...folderMap.values()],
-        contacts:   [...contactMap.values()],
-        settings:   mergedSettings,
-        projectIds: [...allProjectIds],
-        _savedAt:   incoming._savedAt || Date.now()
+        id:                INDEX_ID,
+        userId:            userId,
+        folders:           [...folderMap.values()],
+        contacts:          liveContacts,
+        settings:          mergedSettings,
+        projectIds:        [...allProjectIds],
+        projectTombstones: tombstones,
+        _savedAt:          incoming._savedAt || Date.now()
       };
 
-      // ── 6. Write with ETag guard ──────────────────────────────────────────
+      // ── 8. Write with ETag guard ──────────────────────────────────────────
       const upsertOptions = etag
         ? { accessCondition: { type: "IfMatch", condition: etag } }
         : {};

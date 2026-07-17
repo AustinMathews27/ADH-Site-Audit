@@ -1,6 +1,6 @@
 // ADH Field Audit Tool — Service Worker
 // Cache version — bump this string to force update
-const CACHE_VERSION = 'adh-audit-v8.25';
+const CACHE_VERSION = 'adh-audit-v8.26';
 
 // Resources to pre-cache on install
 const PRECACHE = [
@@ -20,16 +20,12 @@ const PRECACHE = [
 const CDN_ORIGINS = [
   'https://fonts.googleapis.com',
   'https://fonts.gstatic.com',
-  'https://cdnjs.cloudflare.com',
 ];
 
-// ── MESSAGE (allow page to trigger skipWaiting or manual flush) ──
+// ── MESSAGE (allow page to trigger skipWaiting) ──
 self.addEventListener('message', event => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
-  }
-  if (event.data && event.data.type === 'FLUSH_OPS') {
-    event.waitUntil(flushPendingOps());
   }
 });
 
@@ -111,97 +107,3 @@ self.addEventListener('fetch', event => {
   }
 });
 
-// ══════════════════════════════════════════════════════════════════
-// BACKGROUND SYNC — flush pendingOps queue when connectivity returns
-// ══════════════════════════════════════════════════════════════════
-// Fired by the browser when network comes back, even if the app is closed.
-// Reads the pending_ops_v1 queue from the same IndexedDB the page uses,
-// POSTs each patch to /api/patchAudit, removes successful ones.
-// Idempotent — the page sync flow may run concurrently; the server's
-// deep-merge + ETag concurrency makes double-POST safe.
-
-self.addEventListener('sync', event => {
-  if (event.tag === 'adh-flush-ops') {
-    event.waitUntil(flushPendingOps());
-  }
-});
-
-// Periodic Sync (only on Chrome with permission; falls back gracefully)
-self.addEventListener('periodicsync', event => {
-  if (event.tag === 'adh-flush-ops') {
-    event.waitUntil(flushPendingOps());
-  }
-});
-
-// ── Opens the same IndexedDB the page uses ──────────────────────
-function _swOpenDb() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open('adh_audit_db', 1);
-    req.onsuccess = e => resolve(e.target.result);
-    req.onerror   = e => reject(e.target.error);
-    // No onupgradeneeded — the page creates the store; SW only reads/writes
-  });
-}
-
-function _swIdbGet(db, key) {
-  return new Promise((resolve, reject) => {
-    const tx  = db.transaction('kv', 'readonly');
-    const req = tx.objectStore('kv').get(key);
-    req.onsuccess = () => resolve(req.result ?? null);
-    req.onerror   = e => reject(e.target.error);
-  });
-}
-
-function _swIdbSet(db, key, value) {
-  return new Promise((resolve, reject) => {
-    const tx  = db.transaction('kv', 'readwrite');
-    const req = tx.objectStore('kv').put(value, key);
-    req.onsuccess = () => resolve();
-    req.onerror   = e => reject(e.target.error);
-  });
-}
-
-async function flushPendingOps() {
-  try {
-    const db = await _swOpenDb();
-    const ops = (await _swIdbGet(db, 'pending_ops_v1')) || [];
-    if (!ops.length) return;
-
-    const remaining = [];
-    for (const op of ops) {
-      try {
-        const res = await fetch('/api/patchAudit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ patch: op.patch })
-        });
-        if (!res.ok) {
-          // Server rejected — keep op and stop (will retry next sync event)
-          remaining.push(op);
-          break;
-        }
-        // Success — drop this op
-      } catch (err) {
-        // Network error — keep op and stop
-        remaining.push(op);
-        break;
-      }
-    }
-
-    // If any ops were skipped due to early break, keep the rest of the queue too
-    if (remaining.length > 0 && remaining.length < ops.length) {
-      const failedIdx = ops.indexOf(remaining[0]);
-      remaining.push(...ops.slice(failedIdx + 1));
-    }
-
-    await _swIdbSet(db, 'pending_ops_v1', remaining);
-
-    // Notify any open clients that ops were flushed so they can refresh
-    if (remaining.length < ops.length) {
-      const clients = await self.clients.matchAll({ includeUncontrolled: true });
-      clients.forEach(c => c.postMessage({ type: 'OPS_FLUSHED', flushed: ops.length - remaining.length }));
-    }
-  } catch (err) {
-    console.warn('[SW] flushPendingOps failed:', err.message);
-  }
-}

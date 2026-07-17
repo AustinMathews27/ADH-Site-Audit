@@ -14,6 +14,9 @@
 <meta name="description" content="ADH Field Audit Tool — field conditions audit for construction and installation teams">
 <meta name="mobile-web-app-capable" content="yes">
 
+<!-- PWA manifest (installability: name, icons, screenshots, shortcuts) -->
+<link rel="manifest" href="manifest.json">
+
 <!-- Inline SVG icon for Add to Home Screen -->
 <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
 
@@ -1204,9 +1207,6 @@ input[type="radio"] {
   .folder-grid { grid-template-columns:repeat(2,1fr); gap:8px; }
   .proj-grid { grid-template-columns:1fr; gap:8px; }
   .stats-row { grid-template-columns:repeat(3,1fr); font-size:11px; }
-  .share-layout { grid-template-columns:1fr; }
-  .share-preview-col { display:none; }
-  .tpl-grid { grid-template-columns:repeat(3,1fr); }
   .env-threshold-bar { flex-wrap:wrap; gap:8px; }
   .env-threshold-inputs { flex-wrap:wrap; }
   .field-row { flex-direction:column; gap:0; }
@@ -1227,7 +1227,6 @@ input[type="radio"] {
 @media (min-width:641px) and (max-width:1024px) {
   .left-panel { width:240px; }
   .proj-grid { grid-template-columns:repeat(2,1fr); }
-  .share-layout { grid-template-columns:1fr 180px; }
   .folder-grid { grid-template-columns:repeat(3,1fr); }
   .stats-row { grid-template-columns:repeat(5,1fr); }
 }
@@ -1626,7 +1625,6 @@ body.theme-dark .week-cell.labor-row { background:var(--accent); color:#000; }
 .xls-import-progress .spin { font-size:28px; animation:spin 1s linear infinite; display:block; margin-bottom:10px; }
 @keyframes spin { to { transform:rotate(360deg); } }
 
-/* AI Assistant Styles */
 /* ── MANPOWER TRACKING v1.0 ── */
 
 /* Labor log panel inside SI editor */
@@ -2132,21 +2130,6 @@ html.is-phone .nav-back-btn { min-width: 40px; min-height: 40px; }
   padding:10px 0; border-bottom:1px solid var(--border);
 }
 .export-opt-label { font-size:12px; color:var(--text2); }
-
-/* ── FILESIZE INDICATOR ── */
-.filesize-val { font-family:var(--mono); font-size:12px; color:var(--text2); }
-.filesize-val.warn { color:var(--red); }
-.filesize-fill { height:100%; background:var(--accent); border-radius:3px; transition:width 0.3s; }
-.filesize-fill.warn { background:var(--red); }
-.filesize-warning {
-  display:none; font-size:10px; color:var(--red); font-family:var(--mono); margin-top:4px;
-}
-.filesize-warning.show { display:block; }
-
-/* ── SHARE / TEMPLATE LAYOUT ── */
-.share-layout { display:grid; grid-template-columns:1fr 220px; gap:16px; }
-.share-preview-col { display:flex; flex-direction:column; gap:10px; }
-.tpl-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
 
 /* ════════════════════════════════════════════════════════════════
    MODERNISED UI v2 — full visual overhaul
@@ -3099,24 +3082,6 @@ window.clearBulkSelection = function() {
   renderLeft(route());
 };
 
-  // ══════════════════════════════════════════
-//Re-order SI
-// ══════════════════════════════════════════
-window.reorderSI = function(pid, sectionId, siId, dir) {
-  const proj = getProject(pid); if(!proj) return;
-  const sectionItems = proj.items.filter(i => !i._deleted && i.sectionId === sectionId);
-  const globalIdx = proj.items.findIndex(i => i.id === siId);
-  const sectionIdx = sectionItems.findIndex(i => i.id === siId);
-  const targetSectionIdx = sectionIdx + dir;
-  if(targetSectionIdx < 0 || targetSectionIdx >= sectionItems.length) return;
-  const targetItem = sectionItems[targetSectionIdx];
-  const targetGlobalIdx = proj.items.findIndex(i => i.id === targetItem.id);
-  // Swap in the main array
-  [proj.items[globalIdx], proj.items[targetGlobalIdx]] = [proj.items[targetGlobalIdx], proj.items[globalIdx]];
-  markProjectDirty(pid); save();
-  renderLeft(route());
-};
-
 // ══════════════════════════════════════════
 // DATA
 // ══════════════════════════════════════════
@@ -3175,101 +3140,6 @@ function _idbSet(key, value) {
   }));
 }
 
-// ══════════════════════════════════════════════════════════════════
-// DURABLE OPS QUEUE — pendingOps survives reload/crash/tab-close
-// ══════════════════════════════════════════════════════════════════
-// Every patch is appended here BEFORE being sent. On confirmed save,
-// the matching op is removed. On startup and on online events, any
-// remaining ops are flushed. The Service Worker can also flush this
-// queue in the background via the Background Sync API.
-//
-// Format: [{ patch: {...}, ts: epochMs, attempts: int }, ...]
-
-const OPS_KEY = 'pending_ops_v1';
-let _opsFlushing = false;
-
-async function _opsGet() {
-  return (await _idbGet(OPS_KEY)) || [];
-}
-async function _opsAppend(patch) {
-  const ops = await _opsGet();
-  ops.push({ patch, ts: Date.now(), attempts: 0 });
-  // Cap to last 500 ops to prevent unbounded growth in pathological cases
-  if (ops.length > 500) ops.splice(0, ops.length - 500);
-  await _idbSet(OPS_KEY, ops);
-}
-async function _opsRemoveByTs(ts) {
-  const ops = await _opsGet();
-  await _idbSet(OPS_KEY, ops.filter(op => op.ts !== ts));
-}
-async function _opsClear() {
-  await _idbSet(OPS_KEY, []);
-}
-
-/**
- * Flush all queued ops to /api/patchAudit. Idempotent — safe to call
- * concurrently with the SW's flush; the server's deep-merge + ETag
- * concurrency make duplicate POSTs harmless.
- */
-async function _opsFlush() {
-  if (_opsFlushing || !navigator.onLine) return;
-  _opsFlushing = true;
-  try {
-    let ops = await _opsGet();
-    let progressed = false;
-    while (ops.length > 0 && navigator.onLine) {
-      const op = ops[0];
-      try {
-        const res = await fetch('/api/patchAudit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ patch: op.patch })
-        });
-        if (!res.ok) {
-          // Bump attempts; if a single op fails 5+ times, drop it (avoid poison pill)
-          op.attempts = (op.attempts || 0) + 1;
-          if (op.attempts >= 5) {
-            console.warn('[ADH][ops] Dropping op after 5 failed attempts:', op);
-            await _opsRemoveByTs(op.ts);
-          } else {
-            // Persist incremented attempt count and stop
-            const all = await _opsGet();
-            const target = all.find(x => x.ts === op.ts);
-            if (target) target.attempts = op.attempts;
-            await _idbSet(OPS_KEY, all);
-            break;
-          }
-        } else {
-          await _opsRemoveByTs(op.ts);
-          progressed = true;
-        }
-      } catch (err) {
-        // Network failure — stop and retry on next flush
-        break;
-      }
-      ops = await _opsGet();
-    }
-    if (progressed) {
-      console.log('[ADH][ops] Flushed pending operations queue');
-    }
-  } finally {
-    _opsFlushing = false;
-  }
-}
-
-/**
- * Ask the browser to wake us up when connectivity returns so the queue
- * gets flushed even if the app/tab is closed. Falls back silently on
- * browsers without Background Sync (Safari/Firefox).
- */
-function _registerBgSync() {
-  if (!('serviceWorker' in navigator)) return;
-  if (!('SyncManager' in window)) return;
-  navigator.serviceWorker.ready
-    .then(reg => reg.sync.register('adh-flush-ops'))
-    .catch(() => {/* permission denied or no SW; ignore */});
-}
-
 // ── In-memory store (populated during async init) ──
 let store = JSON.parse(JSON.stringify(SEED));
 
@@ -3305,20 +3175,7 @@ async function _getAuthUser() {
 
   const user = { userId: ADH_USER_ID, userDetails, userRoles: ['authenticated'] };
   try { await _idbSet('adh_user', user); } catch (e) {}
-  localStorage.setItem('adh_auth_token', 'valid_user_session');
-  localStorage.setItem('adh_user_id', ADH_USER_ID);
   return user;
-}
-
-// When the app starts up (even in airplane mode):
-function verifyLoginTokenLocally() {
-  const token = localStorage.getItem('adh_auth_token');
-  return token !== null; // Instantly returns true without needing the internet
-}
-
-/** Cosmos index document ID scoped to the current user */
-function _userIndexId() {
-  return _currentUser ? `adh-index-${_currentUser.userId}` : 'adh-index-v1';
 }
 
 /** Display-friendly name from the Entra principal */
@@ -3379,12 +3236,6 @@ async function _persistDirtyState() {
       projects: [..._dirtyProjectIds]
     });
   } catch(e) {}
-}
-
-async function _clearDirtyState() {
-  _dirtyIndex = false;
-  _dirtyProjectIds.clear();
-  try { await _idbSet(DIRTY_IDB_KEY, { index: false, projects: [] }); } catch(e) {}
 }
 
 // ── Cloud timestamp cache ─────────────────────────────────────────────────────
@@ -3507,6 +3358,9 @@ function _buildIndexPayload() {
     projectIds: store.projects
       .filter(p => !p._deleted && (!p.ownedBy || p.ownedBy === userId))
       .map(p => p.id),
+    // Deleted project IDs — the server unions projectIds from both sides, so
+    // tombstones are the only way an ID ever leaves the cloud index.
+    projectTombstones: store.projectTombstones || {},
     _savedAt:   Date.now()
   };
 }
@@ -3547,6 +3401,85 @@ async function _apiSaveProject(proj) {
   });
   if (!res.ok) throw new Error(`saveProject HTTP ${res.status} (${proj.id})`);
   return res.json();
+}
+
+/** Best-effort server-side cleanup of Azure photo blobs (fire and forget). */
+function _deleteBlobUrls(urls) {
+  urls.filter(u => u && /^https?:/.test(u)).forEach(u => {
+    fetch('/api/deleteBlob', {
+      method : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body   : JSON.stringify({ blobUrl: u })
+    }).catch(() => {});
+  });
+}
+
+// ── Orphan index entries ──────────────────────────────────────────────────────
+// The cloud index can list a project ID whose document doesn't exist (the doc
+// push failed or never happened after the index registered the ID) — every
+// startup then 404s on it forever. A definitive 404 is recorded here; if the
+// doc is STILL missing ORPHAN_CONFIRM_MS later, the ID is tombstoned so
+// saveIndex prunes it from the cloud index for good. The delay protects a
+// just-created project whose doc push is still in flight, and timeouts/network
+// errors are never counted — only real 404s.
+const ORPHAN_IDB_KEY    = 'adh_orphan_v1';
+const ORPHAN_CONFIRM_MS = 10 * 60 * 1000;
+let _orphan404 = {};   // { projectId: firstSeen404EpochMs }
+
+async function _loadOrphan404() {
+  try { const s = await _idbGet(ORPHAN_IDB_KEY); if (s) _orphan404 = s; } catch(e) {}
+}
+function _saveOrphan404() { _idbSet(ORPHAN_IDB_KEY, _orphan404).catch(() => {}); }
+
+/** Record a fetch outcome for pid. Returns true if pid was pruned as orphan. */
+function _noteProjectFetch(pid, missing) {
+  if (!missing) {
+    if (_orphan404[pid]) { delete _orphan404[pid]; _saveOrphan404(); }
+    return false;
+  }
+  const local = store.projects.find(p => p.id === pid);
+  if (local && !local._deleted) return false; // live local copy — doc push may be pending
+  const now = Date.now();
+  if (!_orphan404[pid]) { _orphan404[pid] = now; _saveOrphan404(); return false; }
+  if (now - _orphan404[pid] < ORPHAN_CONFIRM_MS) return false;
+  // Confirmed orphan — tombstone it so the next index push prunes it everywhere
+  store.projectTombstones = store.projectTombstones || {};
+  store.projectTombstones[pid] = now;
+  delete _orphan404[pid]; _saveOrphan404();
+  delete _cloudTs.projects[pid];
+  _dirtyIndex = true;
+  console.log(`[ADH] Pruned orphan index entry ${pid} (project doc missing from cloud)`);
+  return true;
+}
+
+/**
+ * Fetch a set of project docs in parallel and merge them into the local store.
+ * Skips tombstoned IDs and feeds definitive 404s to the orphan tracker.
+ * Used by startup load and Pull All.
+ */
+async function _fetchAndMergeProjects(projectIds, timeoutMs) {
+  const timeout = ms => new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms));
+  const livePids = projectIds.filter(pid => !(store.projectTombstones || {})[pid]);
+
+  const results = await Promise.all(livePids.map(pid =>
+    Promise.race([_apiGetProject(pid), timeout(timeoutMs)])
+      .then(cp => ({ pid, cp, missing: cp === null }))
+      .catch(() => ({ pid, cp: null, missing: false })) // timeout/network ≠ orphan
+  ));
+
+  let fetched = 0, pruned = 0;
+  results.forEach(({ pid, cp, missing }) => {
+    if (_noteProjectFetch(pid, missing)) pruned++;
+    if (!cp) return;
+    _mergeProjectIntoLocal(cp);
+    _cloudTs.projects[pid] = cp._ts || 0;
+    fetched++;
+  });
+  if (pruned) {
+    _persistDirtyState();
+    scheduleDirtySync(); // push the pruned index promptly
+  }
+  return { fetched, total: livePids.length };
 }
 
 // ── Merge helpers ─────────────────────────────────────────────────────────────
@@ -3599,6 +3532,34 @@ function _mergeIndexIntoLocal(cloudIndex) {
   if (cloudIndex.settings && !_dirtyIndex) {
     store.settings = cloudIndex.settings;
   }
+
+  // Project tombstones: merge (newest wins), then apply to local copies so a
+  // deletion made on another device removes the project here too.
+  if (cloudIndex.projectTombstones) {
+    store.projectTombstones = store.projectTombstones || {};
+    Object.entries(cloudIndex.projectTombstones).forEach(([id, ts]) => {
+      if (!store.projectTombstones[id] || ts > store.projectTombstones[id]) {
+        store.projectTombstones[id] = ts;
+      }
+    });
+    store.projects.forEach(p => {
+      const ts = store.projectTombstones[p.id];
+      if (ts && !p._deleted) {
+        p._deleted   = true;
+        p._deletedAt = ts;
+        p._fieldTs   = p._fieldTs || {};
+        p._fieldTs._deleted = ts;
+        // The deleting device already pushed the doc tombstone — drop any
+        // pending push of ours so we don't send data for a dead project.
+        _dirtyProjectIds.delete(p.id);
+      }
+    });
+    // Drop dead IDs from folder listings (covers local-only folder entries
+    // that the cloud folder merge above didn't overwrite).
+    store.folders.forEach(f => {
+      if (f.projects) f.projects = f.projects.filter(id => !store.projectTombstones[id]);
+    });
+  }
 }
 
 /**
@@ -3641,6 +3602,9 @@ function _mergeProjectIntoLocal(cloudProj) {
   }
 
   if (!localProj) {
+    // Never (re-)add a project that is deleted — either the cloud doc itself
+    // is a tombstone, or we already hold a tombstone for that ID.
+    if (cloudProj._deleted || (store.projectTombstones || {})[localPid]) return;
     // New project from another device — add it
     const newProj = Object.assign({}, cloudProj, {
       id:        localPid,
@@ -3740,16 +3704,9 @@ async function syncChanges(isAuto = false) {
     const nothingDirty = !_dirtyIndex && _dirtyProjectIds.size === 0;
     if (nothingDirty) return;
 
-    if (_dirtyIndex) {
-      try {
-        const result = await _apiSaveIndex(_buildIndexPayload());
-        if (result.ok) {
-          _dirtyIndex = false;
-          if (result._ts) _cloudTs.index = result._ts;
-        }
-      } catch(err) { console.warn('[Sync] Index push failed:', err.message); }
-    }
-
+    // Projects are pushed BEFORE the index so a new project's document exists
+    // by the time its ID is registered in the cloud index — otherwise another
+    // device could see the ID, 404 on the doc, and flag it as an orphan.
     const userId = _currentUser?.userId || '';
     const projectsToPush = [..._dirtyProjectIds]
       .map(pid => store.projects.find(p => p.id === pid))
@@ -3758,7 +3715,7 @@ async function syncChanges(isAuto = false) {
 
     for (const proj of projectsToPush) {
       try {
-        await _flushPendingPhotos(proj);
+        if (!proj._deleted) await _flushPendingPhotos(proj); // no uploads for tombstones
         const result = await _apiSaveProject(_buildProjectPayload(proj));
         if (result.ok) {
           _dirtyProjectIds.delete(proj.id);
@@ -3766,6 +3723,16 @@ async function syncChanges(isAuto = false) {
           (proj.items || []).forEach(i => { i._dirty = false; });
         }
       } catch(err) { console.warn(`[Sync] Project ${proj.id} failed:`, err.message); }
+    }
+
+    if (_dirtyIndex) {
+      try {
+        const result = await _apiSaveIndex(_buildIndexPayload());
+        if (result.ok) {
+          _dirtyIndex = false;
+          if (result._ts) _cloudTs.index = result._ts;
+        }
+      } catch(err) { console.warn('[Sync] Index push failed:', err.message); }
     }
 
     await _saveCloudTs();
@@ -3803,7 +3770,7 @@ async function _syncSingleProject(pid) {
   // ── Push (only if we own it and it's dirty) ────────────────────────────
   if (isOwned && _dirtyProjectIds.has(pid)) {
     try {
-      await _flushPendingPhotos(proj);
+      if (!proj._deleted) await _flushPendingPhotos(proj);
       const result = await _apiSaveProject(_buildProjectPayload(proj));
       if (result.ok) {
         _dirtyProjectIds.delete(pid);
@@ -3869,19 +3836,7 @@ async function _pullAll() {
       _mergeIndexIntoLocal(cloudIndex);
       _cloudTs.index = cloudIndex._ts || 0;
 
-      const projectIds = cloudIndex.projectIds || [];
-      const fetches = projectIds.map(pid =>
-        Promise.race([_apiGetProject(pid), timeout(6000)]).catch(() => null)
-      );
-      const cloudProjects = await Promise.all(fetches);
-
-      let fetched = 0;
-      cloudProjects.forEach((cp, i) => {
-        if (!cp) return;
-        _mergeProjectIntoLocal(cp);
-        _cloudTs.projects[projectIds[i]] = cp._ts || 0;
-        fetched++;
-      });
+      const { fetched } = await _fetchAndMergeProjects(cloudIndex.projectIds || [], 6000);
 
       await _idbSet('fap_v3', store);
       await _saveCloudTs();
@@ -3986,7 +3941,8 @@ async function _pollForRemoteChanges() {
 
       // ── 2. Check for project IDs that we don't have locally ──────────────
       const localIds = new Set(store.projects.map(p => p.id));
-      const newIds   = (cloudIndex.projectIds || []).filter(id => !localIds.has(id));
+      const newIds   = (cloudIndex.projectIds || [])
+        .filter(id => !localIds.has(id) && !(store.projectTombstones || {})[id]);
       for (const newId of newIds) {
         try {
           const cp = await _apiGetProject(newId);
@@ -4071,9 +4027,27 @@ async function _initStore() {
   if (!store.folders)  store.folders  = [];
   if (!store.projects) store.projects = [];
   if (!store.contacts) store.contacts = [];
-  if (!store.pendingSync) store.pendingSync = [];
+  if (!store.projectTombstones) store.projectTombstones = {};
   store.folders.forEach(f => { if (f.parentId === undefined) f.parentId = null; });
   store.contacts.forEach(c => { if (!c.project) c.project = 'Office'; });
+
+  // ── GC old tombstones ──────────────────────────────────────────────────
+  // Deleted projects/items/contacts ride along as tombstones so deletions
+  // sync to every device; past these windows everyone has synced them, so
+  // drop them to keep local data from growing forever. (The server GCs its
+  // copies too — saveProject/saveIndex.)
+  const _gcNow = Date.now();
+  const _gcTombTTL = 60 * 24 * 60 * 60 * 1000; // 60 days
+  const _gcMapTTL  = 90 * 24 * 60 * 60 * 1000; // 90 days (matches server)
+  const _tombTs = o => o._deletedAt || (o._fieldTs && o._fieldTs._deleted) || 0;
+  store.projects = store.projects.filter(p => !p._deleted || (_gcNow - _tombTs(p)) < _gcTombTTL);
+  store.projects.forEach(p => {
+    if (p.items) p.items = p.items.filter(i => !i._deleted || (_gcNow - _tombTs(i)) < _gcTombTTL);
+  });
+  store.contacts = store.contacts.filter(c => !c._deleted || (_gcNow - _tombTs(c)) < _gcTombTTL);
+  Object.keys(store.projectTombstones).forEach(id => {
+    if ((_gcNow - store.projectTombstones[id]) > _gcMapTTL) delete store.projectTombstones[id];
+  });
 
   // Restore logo icons from SEED (cloud data must never overwrite them)
   _fixFolderIcons();
@@ -4129,9 +4103,14 @@ async function _initStore() {
     store.settings.displayName = _userName();
   }
 
-  // Restore dirty state and timestamp cache from IDB
+  // Restore dirty state, timestamp cache, and orphan tracker from IDB
   await _loadDirtyState();
   await _loadCloudTs();
+  await _loadOrphan404();
+  // Hygiene: drop timestamp cache entries for tombstoned projects
+  Object.keys(_cloudTs.projects).forEach(id => {
+    if (store.projectTombstones[id]) delete _cloudTs.projects[id];
+  });
 
   // ── 3. Merge from cloud if online ─────────────────────────────────────────
   if (navigator.onLine) {
@@ -4145,24 +4124,12 @@ async function _initStore() {
         _mergeIndexIntoLocal(cloudIndex);
         _cloudTs.index = cloudIndex._ts || 0;
 
-        // Fetch all projects in parallel (4s timeout each)
-        const projectIds = cloudIndex.projectIds || [];
-        const fetches = projectIds.map(pid =>
-          Promise.race([_apiGetProject(pid), timeout(4000)]).catch(() => null)
-        );
-        const cloudProjects = await Promise.all(fetches);
-
-        let fetched = 0;
-        cloudProjects.forEach((cp, i) => {
-          if (!cp) return;
-          _mergeProjectIntoLocal(cp);
-          _cloudTs.projects[projectIds[i]] = cp._ts || 0;
-          fetched++;
-        });
+        // Fetch all live projects in parallel (4s timeout each)
+        const { fetched, total } = await _fetchAndMergeProjects(cloudIndex.projectIds || [], 4000);
 
         await _idbSet('fap_v3', store);
         await _saveCloudTs();
-        console.log(`[ADH] Loaded ${fetched}/${projectIds.length} projects from cloud`);
+        console.log(`[ADH] Loaded ${fetched}/${total} projects from cloud`);
 
         // Re-render current view so folder/project views opened before cloud load are fresh
         render();
@@ -4212,82 +4179,10 @@ async function _initStore() {
 
 // isAdmin declared here so _initStore can set it before render()
 let isAdmin = false;
-
-// ── Compatibility shims (functions the rest of the app calls) ─────────────────
-// These kept the same signature so no other code in index.html needs changing.
-
-async function saveAuditToDatabase(data) {
-  // Legacy shim — routes to new per-project API
-  const proj = data.projects && data.projects[0];
-  if (!proj) return false;
-  try {
-    const result = await _apiSaveProject(_buildProjectPayload(proj));
-    return result.ok;
-  } catch(e) { return false; }
-}
-
-async function loadFromDatabase() {
-  // Legacy shim — returns index (used by old code that checks _ts)
-  try { return await _apiGetIndex(); } catch(e) { return null; }
-}
-
-async function patchAuditToDatabase(patch) {
-  // Legacy shim — if called with itemsById or projectsById, route correctly
-  if (patch.projectsById) {
-    let ok = true;
-    for (const [pid, proj] of Object.entries(patch.projectsById)) {
-      try {
-        const result = await _apiSaveProject(_buildProjectPayload(proj));
-        if (!result.ok) ok = false;
-      } catch(e) { ok = false; }
-    }
-    return { ok };
-  }
-  // itemsById or full store — push the affected projects
-  if (patch.itemsById) {
-    const affectedPids = new Set(
-      Object.values(patch.itemsById).map(v => v.projectId).filter(Boolean)
-    );
-    let ok = true;
-    for (const pid of affectedPids) {
-      const proj = store.projects.find(p => p.id === pid);
-      if (!proj) continue;
-      try {
-        const result = await _apiSaveProject(_buildProjectPayload(proj));
-        if (!result.ok) ok = false;
-      } catch(e) { ok = false; }
-    }
-    return { ok };
-  }
-  // Full store fallback
-  try {
-    const ir = await _apiSaveIndex(_buildIndexPayload());
-    if (!ir.ok) return { ok: false };
-    for (const proj of store.projects.filter(p => !p._deleted)) {
-      await _apiSaveProject(_buildProjectPayload(proj));
-    }
-    return { ok: true };
-  } catch(e) { return { ok: false, error: e.message }; }
-}
 // ══════════════════════════════════════════════════════════════════════════════
 // END SYNC ENGINE v5
 // ══════════════════════════════════════════════════════════════════════════════
 
-
-function resetToSeed() {
-  makeModal('Reset All Data', `
-    <p style="color:var(--text2);font-size:13px;line-height:1.6">
-      This will <strong style="color:var(--red)">permanently delete all audit data</strong> and reset to the default template.<br><br>
-      This action cannot be undone.
-    </p>
-  `, () => {
-    store = JSON.parse(JSON.stringify(SEED));
-    save();
-    closeModal();
-    navToRoot();
-    showToast('Data Reset Successful');
-  });
-}
 
 const getFolder  = id => store.folders.find(f=>f.id===id);
 const getProject = id => store.projects.find(p=>p.id===id);
@@ -6339,13 +6234,6 @@ function buildProjectView(pid) {
   </div>`;
 }
 
-function openFirstSI(pid) {
-  const proj=getProject(pid);
-  const act = activeItems(proj);
-  if(!proj||!act.length) return showToast('No items yet — add one first');
-  navToSI(pid,act[0].id);
-}
-
 function navToEnv(pid) {
   const cur=route();
   // Remove duplicate views but keep project in stack so goBack() lands on project
@@ -6622,38 +6510,6 @@ function confirmRenameNum(pid, sid) {
   showToast('✓ SI# Updated', 'green');
 }
 
-function showRenameSINumModal(pid, sid) {
-  const item = getSI(pid, sid);
-  if (!item) return;
-  const currentNum = item.num.replace(/^SI\s+/, '');
-
-  makeModal(
-    `Rename SI# ${currentNum}`,
-    `<div class="field-group">
-      <div class="field-label">New SI Number</div>
-      <input id="rename-si-modal-input" class="field-input" value="${currentNum.replace(/"/g,'&quot;')}" />
-    </div>`,
-    () => {
-      const newNum = document.getElementById('rename-si-modal-input')?.value.trim();
-      if (!newNum) {
-        showToast('Number cannot be empty');
-        return;
-      }
-      item.num = 'SI ' + newNum;
-      save();
-      closeModal();
-      // If the SI editor is open for this item, refresh it
-      const currentRoute = route();
-      if (currentRoute.view === 'si' && currentRoute.projectId === pid && currentRoute.siId === sid) {
-        buildSIEditor(pid, sid);
-      }
-      renderLeft(route()); // Always refresh the left panel
-      showToast('✓ SI# Updated', 'green');
-    }
-  );
-  document.getElementById('rename-si-modal-input')?.focus();
-  document.getElementById('rename-si-modal-input')?.select();
-}
 // ══════════════════════════════════════════
 // 6-WEEK LOOK AHEAD SCHEDULE  v2.0
 // — Absolute ISO week keys (YYYY-Www)
@@ -8113,38 +7969,6 @@ window.updateSIField = function(pid, sid, field, value) {
   scheduleAutoSave(pid, sid);
 };
 
-window.showBatchApplyModal = function(pid, sectionId) {
-  const proj = getProject(pid);
-  const section = proj?.sections.find(s => s.id === sectionId);
-  if (!section) return;
-
-  const codes = ['FC', 'UFC', 'NFC', 'HT'];
-  const body = `
-    <div style="font-size:12px; color:var(--text2); margin-bottom:16px; line-height:1.5;">
-      Select a status code to apply to all <b>${proj.items.filter(i => !i._deleted && i.sectionId === sectionId).length}</b> items
-      within the <b>"${section.name}"</b> section. 
-    </div>
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
-      ${codes.map(c => `
-        <button class="btn-nav" style="padding:12px; font-weight:700; color:var(--accent); border-color:var(--accent-dim);" 
-                onclick="batchApplyFieldCheck('${pid}','${sectionId}','${c}'); closeModal();">
-          Apply ${c}
-        </button>`).join('')}
-    </div>`;
-  makeModal('Batch Field Check', body, null, true);
-};
-
-window.batchApplyFieldCheck = function(pid, sectionId, code) {
-  const proj = getProject(pid);
-  if (!proj) return;
-  const r = route();
-  if (r.view === 'si') syncEditorToStore(r.projectId, r.siId);
-  proj.items.filter(it => !it._deleted && it.sectionId === sectionId).forEach(it => { it.statusCode = code; markAsDirty(it.id); });
-  save();
-  render();
-  showToast(`✓ Applied ${code} to section`, 'green');
-};
-
 // AI note-polishing was removed (it shipped a hard-coded Gemini API key in the
 // client and targeted a retired model). When AI assist returns, route it through
 // a server-side proxy — same pattern as /api/innergy — with the key held in
@@ -8237,8 +8061,6 @@ function _doSave(pid,sid,toast=true) {
   renderLeft(route());
   if(toast) showToast('✓ Saved','green');
 }
-
-function saveSI(pid,sid) { _doSave(pid,sid,true); }
 
 let _autoSaveTimer = null;
 
@@ -9139,7 +8961,11 @@ function showNewProjectModal(fid) {
     };
     store.projects.push(proj);
     if(fid){ const f=getFolder(fid); if(f&&!f.projects.includes(proj.id)) f.projects.push(proj.id); }
+    // Mark BOTH dirty: the doc must reach Cosmos, not just the index entry —
+    // an index ID without a doc is an orphan that 404s on every device.
+    markProjectDirty(proj.id);
     markStoreDirty(); save(); closeModal();
+    scheduleDirtySync();
     setTimeout(()=>navToProject(proj.id,fid), 50);
   });
 }
@@ -9284,73 +9110,6 @@ function showShareModal() {
     s==='not-ready'?'#ef4444':s==='in-progress'?'#fbbf24':
     s==='on-hold'?'#f97316':'#6b7280';
   const statusLabel = s => s.replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
-
-  // ── Cover SVG ──────────────────────────────────────────────────────────────
-  function _buildCoverSVG(h) {
-    const tc = {
-      photographic:{ s1:'#87CEEB', s2:'#FDB97D', s3:'#C4886B' },
-      bright:      { s1:'#06b6d4', s2:'#3b82f6', s3:'#1e40af' },
-      corporate:   { s1:'#1e3a5f', s2:'#2563eb', s3:'#1e293b' },
-      modern:      { s1:'#0f172a', s2:'#1e293b', s3:'#0f172a' },
-      financial:   { s1:'#14532d', s2:'#166534', s3:'#052e16' },
-      minimal:     { s1:'#e2e8f0', s2:'#cbd5e1', s3:'#94a3b8' },
-      classic:     { s1:'#1e3a5f', s2:'#1e3a5f', s3:'#1e293b' },
-    }[_rgTheme] || { s1:'#87CEEB', s2:'#FDB97D', s3:'#C4886B' };
-    const photo = _rgTheme==='photographic'||_rgTheme==='bright';
-    const uid   = _rgTheme + h;
-    return `<svg viewBox="0 0 560 ${h}" xmlns="http://www.w3.org/2000/svg"
-        preserveAspectRatio="xMidYMid slice" style="display:block;width:100%;height:${h}px">
-      <defs>
-        <linearGradient id="cs${uid}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="${tc.s1}"/>
-          <stop offset="45%" stop-color="${tc.s2}"/>
-          <stop offset="100%" stop-color="${tc.s3}"/>
-        </linearGradient>
-        <linearGradient id="co${uid}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stop-color="rgba(0,0,0,0.06)"/>
-          <stop offset="50%"  stop-color="rgba(0,0,0,0.44)"/>
-          <stop offset="100%" stop-color="rgba(0,0,0,0.76)"/>
-        </linearGradient>
-      </defs>
-      <rect width="560" height="${h}" fill="url(#cs${uid})"/>
-      ${photo ? `
-        <circle cx="280" cy="88" r="30" fill="rgba(255,220,120,0.6)"/>
-        <circle cx="280" cy="88" r="18" fill="rgba(255,240,180,0.85)"/>
-        <rect x="28"  y="118" width="82"  height="${h-118}" rx="2" fill="rgba(50,40,35,0.82)"/>
-        <rect x="122" y="82"  width="102" height="${h-82}"  rx="2" fill="rgba(44,36,30,0.88)"/>
-        <rect x="238" y="92"  width="118" height="${h-92}"  rx="2" fill="rgba(40,33,28,0.85)"/>
-        <rect x="368" y="102" width="92"  height="${h-102}" rx="2" fill="rgba(48,40,33,0.80)"/>
-        <rect x="466" y="115" width="85"  height="${h-115}" rx="2" fill="rgba(44,37,30,0.75)"/>
-        <rect x="0"   y="${h-48}" width="560" height="48"   fill="rgba(32,60,105,0.52)"/>
-        <line x1="88" y1="${h-44}" x2="88" y2="${h-82}" stroke="rgba(22,18,12,0.8)" stroke-width="3"/>
-        <ellipse cx="88" cy="${h-82}" rx="21" ry="8" fill="rgba(22,52,12,0.62)" transform="rotate(-8 88 ${h-82})"/>
-        <ellipse cx="88" cy="${h-82}" rx="17" ry="6" fill="rgba(22,52,12,0.52)" transform="rotate(14 88 ${h-82})"/>
-        <line x1="448" y1="${h-42}" x2="448" y2="${h-74}" stroke="rgba(22,18,12,0.7)" stroke-width="2.5"/>
-        <ellipse cx="448" cy="${h-74}" rx="17" ry="6" fill="rgba(22,52,12,0.52)" transform="rotate(-13 448 ${h-74})"/>
-      ` : `
-        <rect x="18"  y="${h*.40}" width="58"  height="${h*.60}" rx="2" fill="rgba(255,255,255,0.055)"/>
-        <rect x="96"  y="${h*.32}" width="78"  height="${h*.68}" rx="2" fill="rgba(255,255,255,0.055)"/>
-        <rect x="196" y="${h*.36}" width="98"  height="${h*.64}" rx="2" fill="rgba(255,255,255,0.055)"/>
-        <rect x="316" y="${h*.38}" width="78"  height="${h*.62}" rx="2" fill="rgba(255,255,255,0.055)"/>
-        <rect x="416" y="${h*.40}" width="128" height="${h*.60}" rx="2" fill="rgba(255,255,255,0.055)"/>
-      `}
-      <rect width="560" height="${h}" fill="url(#co${uid})"/>
-    </svg>`;
-  }
-
-  // ── Logo strip (cover page header) ────────────────────────────────────────
-  function _buildLogoStrip() {
-    const co = window.getActiveCompany?.() || { name:'Allegheny Millwork', abbr:'AMI', color:'#8B1A1A' };
-    const logo = window._pdfBranding?.logo;
-    if (logo && !_rgWhiteLabel) {
-      return `<img src="${logo}" style="height:38px;max-width:180px;object-fit:contain;display:block;">`;
-    }
-    if (_rgWhiteLabel) return '';
-    return `<div style="font-weight:900;font-size:13px;color:${co.color};letter-spacing:0.5px;line-height:1.15">
-      ${co.name.split('(')[0].trim().toUpperCase()}<br>
-      <span style="font-size:10px;letter-spacing:2px;opacity:0.7">${co.abbr}</span>
-    </div>`;
-  }
 
   // ── Iframe live preview (mirrors actual PDF layout) ─────────────────────────
   function _buildIframePreview() {
@@ -9825,11 +9584,6 @@ function showShareModal() {
     if (wrap) wrap.style.display = 'none';
     _rebuildSidebar(); _rebuildPreview();
   };
-  window._rgRefreshLogoStrip = () => {
-    const strip = document.getElementById('rg-logo-strip');
-    if (strip) strip.innerHTML = _buildLogoStrip();
-  };
-
   window._rgToggle = key => {
     const acts = {
       notes_cover: () => _rgCoverNotes = !_rgCoverNotes,
@@ -9883,87 +9637,11 @@ function showShareModal() {
 
 
 // ── UI HELPERS ─────────────────────────
-let _selectedTpl = 'classic';
-window.selectTpl = function(tpl) {
-  _selectedTpl = tpl;
-  ['classic','dark','minimal'].forEach(t=>{
-    document.getElementById('tpl-'+t)?.classList.toggle('selected', t===tpl);
-  });
-  refreshPreview();
-};
-
-window.refreshPreview = function() {
-  const wrap = document.getElementById('live-preview-wrap');
-  if(!wrap || !window._buildPreview) return;
-  const showTS = document.getElementById('chk-timestamp')?.classList.contains('checked') ?? true;
-  wrap.innerHTML = window._buildPreview(_selectedTpl, showTS);
-};
-
 window.toggleCheck = function(id) {
   const el=document.getElementById(id);
   if(!el) return;
   const on = el.classList.toggle('checked');
   el.textContent = on ? '✓' : '';
-};
-
-window.updateQualityLabel = function() {
-  const q=document.getElementById('img-quality')?.value;
-  if(q) document.getElementById('quality-label').textContent = q+'%';
-};
-
-const MAX_MB = 25.5;
-window.estimateFileSize = function(pid) {
-  const proj=getProject(pid); if(!proj) return;
-  const quality = parseInt(document.getElementById('img-quality')?.value||72)/100;
-  const includePhotos = document.getElementById('chk-photos')?.classList.contains('checked');
-  const includeEnv = document.getElementById('chk-env')?.classList.contains('checked');
-
-  // Base overhead for PDF structure, cover page, and internal fonts
-  let bytes = 25000;
-  activeItems(proj).forEach(item=>{
-    bytes += 1500; // estimated text data per item
-    if(includePhotos) {
-      item.photos.forEach(p=>{
-        // For legacy base64 photos, derive size from the data string.
-        // For Azure Blob URL photos, use a 150KB estimate (900px JPEG at 0.7 quality).
-        const origBytes = p.data ? (p.data.length * 0.75) : 153600;
-        // The export resizes photos to a max-width of 900px.
-        // A 900px JPEG at ~70% quality is typically 120KB - 180KB.
-        const scaledBase = Math.min(origBytes, 160000); 
-        bytes += scaledBase * quality;
-      });
-    }
-  });
-
-  if(includeEnv && proj.envData) {
-    // Each sensor chart is rendered as a separate high-res JPEG
-    (proj.envData.sensors || []).forEach(s => {
-      if(s.temperature?.length) bytes += 250000; // Approx 250KB per chart
-      if(s.humidity?.length) bytes += 250000;
-    });
-    // Environmental screenshots are typically PNGs and are embedded at full size
-    (proj.envData.screenshots || []).forEach(s => {
-      bytes += (s.data || '').length * 0.75;
-    });
-  }
-
-  const mb = bytes / (1024*1024);
-  const pct = Math.min(100, (mb/MAX_MB)*100);
-  const over = mb > MAX_MB;
-
-  const valEl=document.getElementById('filesize-val');
-  const fillEl=document.getElementById('filesize-fill');
-  const warnEl=document.getElementById('filesize-warning');
-
-  if(valEl) {
-    valEl.textContent = mb < 0.1 ? (bytes/1024).toFixed(0)+' KB' : mb.toFixed(2)+' MB';
-    valEl.className = 'filesize-val'+(over?' warn':'');
-  }
-  if(fillEl) {
-    fillEl.style.width = pct+'%';
-    fillEl.className = 'filesize-fill'+(over?' warn':'');
-  }
-  if(warnEl) warnEl.className = 'filesize-warning'+(over?' show':'');
 };
 
 // ── EXPORT CSV ────────────────────────
@@ -10133,10 +9811,17 @@ function duplicateProject(pid,fid,opts) {
     if(!opts.keepNotes){ nitem.notes=''; nitem.tags=[]; nitem.assignedTo=''; nitem.dueDate=''; }
     return nitem;
   });
+  // A duplicate belongs to whoever made it (the source may be foreign-owned,
+  // and foreign-owned projects are never pushed or indexed for this user).
+  newProj.ownedBy = _currentUser?.userId || '';
+  // Don't copy tombstoned (deleted) scope items into the fresh copy
+  newProj.items = newProj.items.filter(i => !i._deleted);
   store.projects.push(newProj);
   // Add to same folder
   if(fid){ const f=getFolder(fid); if(f) f.projects.push(newProj.id); }
+  markProjectDirty(newProj.id);  // push the doc, not just the index entry
   markStoreDirty(); save(); closeModal();
+  scheduleDirtySync();
   // Rebuild current view
   const r=route();
   if(r.view==='folder') buildFolderView(fid);
@@ -10164,6 +9849,8 @@ window.confirmDeleteSI = function(pid, sid) {
     item._fieldTs   = item._fieldTs || {};
     item._fieldTs._deleted = item._deletedAt;
     item._dirty     = true;             // guard our tombstone against a stale cloud merge
+    // Best-effort: the modal says "Photos go with it" — delete its Azure blobs
+    _deleteBlobUrls((item.photos || []).map(p => p.url));
     markProjectDirty(pid);
     closeModal();
     // We were inside this SI's editor — drop back to the project view.
@@ -10187,13 +9874,25 @@ function confirmDeleteProject(pid,fid) {
     // deletion propagates to other devices even if they were offline.
     // Render paths filter out _deleted projects. Garbage-collected later.
     const _delProj = store.projects.find(p=>p.id===pid);
+    const _delTs   = Date.now();
     if (_delProj) {
       _delProj._deleted   = true;
-      _delProj._deletedAt = Date.now();
+      _delProj._deletedAt = _delTs;
       _delProj._fieldTs   = _delProj._fieldTs || {};
-      _delProj._fieldTs._deleted = _delProj._deletedAt;
+      _delProj._fieldTs._deleted = _delTs;
+      // Best-effort: remove this project's photo blobs from Azure Storage
+      // so deleted projects don't leave orphaned blobs behind.
+      _deleteBlobUrls((_delProj.items || []).flatMap(i => (i.photos || []).map(p => p.url)));
     }
+    // Register the tombstone so saveIndex removes the ID from the cloud
+    // index (projectIds is merged as a union — this is the only way out).
+    store.projectTombstones = store.projectTombstones || {};
+    store.projectTombstones[pid] = _delTs;
+    delete _cloudTs.projects[pid];
+    // Push both the doc tombstone and the index promptly.
+    markProjectDirty(pid);
     markStoreDirty(); save(); closeModal();
+    scheduleDirtySync();
     _patchFolderCardCounts();
     // If we were inside this project, go back
     if(route().projectId===pid) fid?navToFolder(fid):navToRoot();
@@ -10433,36 +10132,8 @@ function applyDeliveryRules(si) {
 }
 
 /* =========================================
-   V2-C/D — RE-IMPORT DIFF ENGINE
+   XLS IMPORT — SHEET PARSING
    ========================================= */
-function diffSI(existing, incoming) {
-  const map = new Map(existing.map(s => [s.num, s]));
-  const diffs = [];
-
-  incoming.forEach(n => {
-    const old = map.get('SI ' + n.si);
-    if (!old) {
-      diffs.push({ type: 'new', next: n });
-      return;
-    }
-
-    const changes = {};
-    if (old.title !== n.title) changes.title = [old.title, n.title];
-    if (JSON.stringify(old.delivery) !== JSON.stringify(n.delivery))
-      changes.delivery = [old.delivery, n.delivery];
-
-    if (Object.keys(changes).length)
-      diffs.push({ type: 'modified', si: old, changes, next: n });
-  });
-
-  existing.forEach(o => {
-    if (!incoming.find(n => 'SI ' + n.si === o.num))
-      diffs.push({ type: 'removed', si: o });
-  });
-
-  return diffs;
-}
-
 function extractSIFromSheet(sheet) {
   const rows = XLSX.utils.sheet_to_json(sheet, {
     header: 1,
@@ -10510,36 +10181,8 @@ function extractSIFromSheet(sheet) {
 }
 
 /* =========================================
-   RE-IMPORT DIFF — LOGIC & WARNINGS
+   IMPORT HISTORY
    ========================================= */
-
-function assessDeliveryImpact(si, newDelivery) {
-  if (!si.dueDate || !newDelivery?.deliveryDate) return null;
-  const install = new Date(si.dueDate);
-  const delivery = new Date(newDelivery.deliveryDate);
-  if (delivery > install) {
-    return { status: 'not-ready', note: 'Delivery scheduled after install window.' };
-  }
-  return null;
-}
-
-function detectConflicts(diffs) {
-  diffs.forEach(d => {
-    if (d.type !== 'modified') return;
-    const si = d.si;
-    const hasFieldData = (si.photos && si.photos.length) || (si.notes && si.notes.trim()) || (si.tags && si.tags.length);
-    const criticalChange = d.changes.delivery || d.changes.title;
-    if (hasFieldData && criticalChange) {
-      d.type = 'conflict';
-      d.apply = false;
-    }
-  });
-}
-
-function logImport(project, summary) {
-  if (!project.importLog) project.importLog = [];
-  project.importLog.push({ date: new Date().toISOString(), summary });
-}
 
 function showImportLog(project) {
   const html = `
@@ -10557,62 +10200,6 @@ function showImportLog(project) {
         </div>`).join('')}
     </div>`;
   makeModal('Import History', html, null, true);
-}
-
-/* =========================================
-   RE-IMPORT DIFF — CLASSIFICATION
-   ========================================= */
-
-function classifyDiffs(projectItems, incomingItems) {
-  const existingMap = new Map(
-    projectItems.map(i => [i.num.replace(/\D/g, ''), i])
-  );
-
-  const diffs = [];
-
-  incomingItems.forEach(n => {
-    const old = existingMap.get(n.si);
-
-    if (!old) {
-      diffs.push({ type: 'new', next: n, apply: true });
-      return;
-    }
-
-    const changes = {};
-    let impact = null;
-
-    if (old.title !== n.title) {
-      changes.title = { before: old.title, after: n.title };
-    }
-
-    if (JSON.stringify(old.delivery) !== JSON.stringify(n.delivery)) {
-      changes.delivery = { before: old.delivery, after: n.delivery };
-      impact = assessDeliveryImpact(old, n.delivery);
-    }
-
-    if (Object.keys(changes).length) {
-      diffs.push({
-        type: 'modified',
-        si: old,
-        changes,
-        impact,
-        apply: true
-      });
-    }
-
-    existingMap.delete(n.si);
-  });
-
-  // Remaining SIs were removed from new file
-  existingMap.forEach(si => {
-    diffs.push({
-      type: 'removed',
-      si,
-      apply: false   // safe default
-    });
-  });
-
-  return diffs;
 }
 
 function buildImportWarnings(parsed) {
@@ -10741,122 +10328,8 @@ function showXLSPreviewModal(fileName, data, onConfirm) {
   };
 }
 
-function showReimportDiffModal(project, diffs, onApply) {
-  const renderUI = () => {
-    let html = `
-      <div class="xls-preview-wrap">
-        <div class="xls-preview-meta">
-          <strong>Re‑Import Review</strong>
-          <div style="font-size:11px;color:var(--text3)">
-            ${diffs.length} detected changes
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;margin-bottom:12px">
-          <button class="xls-select-all" onclick="window._reimportBulk('safe')">✅ Accept Safe</button>
-          <button class="xls-select-all" onclick="window._reimportBulk('skip')">🚫 Skip Removals</button>
-          <button class="xls-select-all" onclick="window._reimportBulk('clear')">❌ Clear All</button>
-        </div>
-    `;
-
-    diffs.forEach((d, idx) => {
-      const isApp = d.apply;
-      if (d.type === 'new') {
-        html += `
-          <div class="xls-si-row">
-            <div class="xls-row-check ${isApp?'on':''}" data-i="${idx}">${isApp?'✓':''}</div>
-            <div class="xls-si-num">🟢 SI ${d.next.si}</div>
-            <div class="xls-si-desc">${d.next.title}</div>
-          </div>`;
-      }
-      if (d.type === 'modified') {
-        html += `
-          <div class="xls-si-row">
-            <div class="xls-row-check ${isApp?'on':''}" data-i="${idx}">${isApp?'✓':''}</div>
-            <div class="xls-si-num">🔄 ${d.si.num}</div>
-            <div class="xls-si-desc">
-              ${Object.keys(d.changes).map(k => `
-                <div style="font-size:11px">
-                  <strong>${k}</strong><br>
-                  <span style="color:var(--text3)">
-                    ${d.changes[k].before} →
-                    <span style="color:var(--accent)">
-                      ${JSON.stringify(d.changes[k].after)}
-                    </span>
-                  </span>
-                </div>`).join('')}
-              ${d.impact ? `<div style="margin-top:6px;color:var(--red);font-size:10px">⚠ Install Impact: SI will become <strong>Not Ready</strong></div>` : ''}
-            </div>
-          </div>`;
-      }
-      if (d.type === 'conflict') {
-        html += `
-          <div class="xls-si-row" style="border-left:4px solid #f97316">
-            <div class="xls-row-check ${isApp?'on':''}" data-i="${idx}">${isApp?'✓':''}</div>
-            <div class="xls-si-num">⚠️ ${d.si.num}</div>
-            <div class="xls-si-desc">
-              <strong>Conflict detected</strong><br>
-              This SI has field data. Changes attempted: ${Object.keys(d.changes).join(', ')}
-              ${d.impact ? `<div style="margin-top:6px;color:var(--red);font-size:10px">⚠ Install Impact: Not Ready</div>` : ''}
-            </div>
-          </div>`;
-      }
-      if (d.type === 'removed') {
-        html += `
-          <div class="xls-si-row" style="opacity:0.7">
-            <div class="xls-row-check ${isApp?'on':''}" data-i="${idx}">${isApp?'✓':''}</div>
-            <div class="xls-si-num">🔴 ${d.si.num}</div>
-            <div class="xls-si-desc">Removed from file — keep as Out of Scope</div>
-          </div>`;
-      }
-    });
-
-    html += `
-      <div class="xls-footer">
-        <span class="xls-count-badge">
-          Applying <span id="reimport-count">${diffs.filter(d => d.apply).length}</span> changes
-        </span>
-      </div></div>`;
-    return html;
-  };
-
-  window._reimportBulk = (action) => {
-    if(action==='safe') diffs.forEach(d => d.apply = d.type !== 'conflict' && d.type !== 'removed');
-    if(action==='skip') diffs.forEach(d => { if(d.type==='removed') d.apply = false; });
-    if(action==='clear') diffs.forEach(d => d.apply = false);
-    const body = document.querySelector('#modal-overlay .modal-body');
-    if(body) { body.innerHTML = renderUI(); attachToggles(); }
-  };
-
-  const attachToggles = () => {
-    document.querySelectorAll('.xls-row-check').forEach(el => {
-      el.onclick = () => {
-        const i = +el.dataset.i;
-        diffs[i].apply = !diffs[i].apply;
-        el.classList.toggle('on');
-        el.textContent = diffs[i].apply ? '✓' : '';
-        document.getElementById('reimport-count').textContent = diffs.filter(d => d.apply).length;
-      };
-    });
-  };
-
-  makeModal('Re‑Import Delivery Sequence', renderUI(), () => {
-    onApply(diffs.filter(d => d.apply));
-  });
-  attachToggles();
-}
-
-let _reimportTargetPid = null;
-function triggerReimportXLS(pid) {
-  _reimportTargetPid = pid;
-  _xlsTargetFid = null;
-  const inp = document.getElementById('xls-file-input');
-  inp.value = '';
-  inp.click();
-}
-
 function handleXLSImport(e) {
   const folderId = _xlsTargetFid;
-  const reimportPid = _reimportTargetPid;
   const file = e.target.files[0];
   if (!file) return;
 
@@ -10872,27 +10345,11 @@ function handleXLSImport(e) {
       return;
     }
 
-    if (reimportPid) {
-      const project = getProject(reimportPid);
-      if (!project) return showToast('Project not found', 'red');
-      
-      const diffs = classifyDiffs(project.items, parsed.items);
-      detectConflicts(diffs);
-      showReimportDiffModal(project, diffs, selectedDiffs => {
-        applyReimportDiff(project, selectedDiffs, diffs);
-        markProjectDirty(reimportPid);
-        closeModal();
-        render();
-        showToast(`Applied ${selectedDiffs.length} changes`, 'green');
-      });
-    } else {
-      showXLSPreviewModal(file.name, parsed, selectedSI => {
-        createProjectFromImport(selectedSI, folderId);
-        closeModal();
-        showToast(`Imported ${selectedSI.length} SI`, 'green');
-      });
-    }
-    _reimportTargetPid = null;
+    showXLSPreviewModal(file.name, parsed, selectedSI => {
+      createProjectFromImport(selectedSI, folderId);
+      closeModal();
+      showToast(`Imported ${selectedSI.length} SI`, 'green');
+    });
   };
 
   reader.readAsBinaryString(file);
@@ -10944,52 +10401,12 @@ function createProjectFromImport(items, folderId) {
     if (f && !f.projects.includes(pid)) f.projects.push(pid);
   }
 
+  // Both the doc and the index entry must sync (doc first — see syncChanges)
+  markProjectDirty(pid);
+  markStoreDirty();
   save();
+  scheduleDirtySync();
   navToProject(pid, folderId);
-}
-
-function applyReimportDiff(project, appliedDiffs, allDiffs) {
-  appliedDiffs.forEach(d => {
-    if (d.type === 'new') {
-      project.items.push({
-        id: 'si_' + d.next.si,
-        num: 'SI ' + d.next.si,
-        title: d.next.title,
-        sectionId: project.sections.find(s => s.name === d.next.section)?.id || project.sections[0].id,
-        status: 'pending',
-        notes: '',
-        tags: [],
-        delivery: d.next.delivery,
-        photos: []
-      });
-    }
-
-    if (d.type === 'modified') {
-      if (d.changes.title) {
-        d.si.title = d.changes.title.after;
-      }
-      if (d.changes.delivery) {
-        d.si.delivery = d.changes.delivery.after;
-      }
-    }
-
-    if (d.type === 'removed') {
-      d.si.status = 'out-of-scope';
-    }
-    
-    // Re-check logistics rules after update
-    const updatedItem = d.type === 'new' ? project.items[project.items.length - 1] : d.si;
-    applyDeliveryRules(updatedItem);
-  });
-
-  logImport(project, {
-    added: allDiffs.filter(d => d.type === 'new').length,
-    modified: allDiffs.filter(d => d.type === 'modified').length,
-    removed: allDiffs.filter(d => d.type === 'removed').length,
-    conflicts: allDiffs.filter(d => d.type === 'conflict').length
-  });
-
-  save();
 }
 
 function closeModal() {
@@ -11874,19 +11291,6 @@ window.deleteLaborEntry = function(pid, sid, entryId) {
 };
 
 /** Live preview of hours total as user types */
-window.updateMPPreview = function(sid) {
-  const workers = parseFloat(document.getElementById(`mp-workers-${sid}`)?.value) || 0;
-  const hours   = parseFloat(document.getElementById(`mp-hours-${sid}`)?.value)   || 0;
-  const el      = document.getElementById(`mp-preview-${sid}`);
-  if(!el) return;
-  if(workers && hours) {
-    el.textContent = `= ${workers * hours}h total will be logged`;
-    el.style.color = 'var(--accent)';
-  } else {
-    el.textContent = '';
-  }
-};
-
 // ══════════════════════════════════════════
 // OPTION C — MANPOWER DASHBOARD VIEW
 // ══════════════════════════════════════════
@@ -12453,7 +11857,11 @@ function createProjectFromWorkOrders(items, projectName, folderId) {
   store.projects.push(project);
   if (folderId) { const f = getFolder(folderId); if (f && !f.projects.includes(pid)) f.projects.push(pid); }
   project.importLog.push({ date: new Date().toISOString(), summary: { added: siItems.length, modified: 0, removed: 0, conflicts: 0, scheduled: populated }, source: 'work-orders-xlsx' });
+  // Both the doc and the index entry must sync (doc first — see syncChanges)
+  markProjectDirty(pid);
+  markStoreDirty();
   save();
+  scheduleDirtySync();
   return { pid, added: siItems.length, scheduled: populated };
 }
 
@@ -12738,7 +12146,6 @@ function navToActivity(pid){
   render();
 }
 const _actTypeLabel={status:'Status Change',note:'Note Saved',photo:'Photo Added',attach:'File Attached'};
-const _actTypeIcon ={status:'🔄',note:'📝',photo:'📷',attach:'📎'};
 const _actTypeDot  ={status:'status',note:'note',photo:'photo',attach:'attach'};
 window.confirmClearActivityLog = function(pid){
   const proj = getProject(pid); if(!proj) return;
@@ -12803,7 +12210,6 @@ function navToFloorPlan(pid){
   stack.push({view:'floorplan',folderId:cur.folderId||'',projectId:pid});
   render();
 }
-let _fpDraggingPin=null;
 function handleFloorPlanUpload(e){
   const pid=route().projectId; if(!pid) return;
   const proj=getProject(pid); if(!proj) return;
@@ -13307,20 +12713,6 @@ function _innergyAddr(proj) {
 }
 
 /** Total labor hours from budget groups response — handles Items or plain array */
-function _innergyTotalHours(budgetGroups) {
-  if (!Array.isArray(budgetGroups)) return 0;
-  let total = 0;
-  budgetGroups.forEach(bg => {
-    const h = bg.TotalLaborHours ?? bg.totalLaborHours;
-    if (typeof h === 'number') { total += h; return; }
-    const items = bg.LaborItems || bg.laborItems || [];
-    items.forEach(li => {
-      total += (li.Hours ?? li.hours ?? li.TotalHours ?? li.totalHours ?? li.EstimatedHours ?? li.estimatedHours ?? 0);
-    });
-  });
-  return Math.round(total * 10) / 10;
-}
-
 // State for the two-step Innergy modal
 let _innergyFid = '';
 let _innergyAllProjects = [];
@@ -13619,7 +13011,9 @@ function _innergyCreateProject() {
     _woPopulateSchedule(proj, items.filter(i => i.plannedStart));
     store.projects.push(proj);
     if (fid) { const f = getFolder(fid); if (f && !f.projects.includes(proj.id)) f.projects.push(proj.id); }
+    markProjectDirty(proj.id);  // push the doc, not just the index entry
     markStoreDirty(); save(); closeModal();
+    scheduleDirtySync();
     showToast(`✓ ${items.length} scope items imported from Innergy`, 'green');
     setTimeout(() => navToProject(proj.id, fid), 50);
   });

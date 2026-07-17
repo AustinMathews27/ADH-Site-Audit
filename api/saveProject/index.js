@@ -28,6 +28,10 @@ const database  = client.database("Auditdata");
 const container = database.container("Audits");
 const MAX_RETRIES = 5;
 
+// Tombstoned scope items are garbage-collected from project docs after this.
+// 60 days is far beyond any realistic device-offline window.
+const ITEM_TOMBSTONE_TTL_MS = 60 * 24 * 60 * 60 * 1000;
+
 // ── Per-field timestamp merge ─────────────────────────────────────────────────
 // If both sides have a _fieldTs for a key, the newer timestamp wins.
 // Falls back to "incoming wins" when timestamps are absent.
@@ -151,7 +155,40 @@ module.exports = async function (context, req) {
       // ── 2. Build the document to write ─────────────────────────────────────
       let docToWrite;
 
-      if (!current) {
+      // Deletion is monotonic: once a project doc is tombstoned it can never
+      // be resurrected by a stale push from a device that missed the delete.
+      // Return ok so the pusher clears its dirty flag and moves on.
+      if (current && current._deleted) {
+        context.log(`[saveProject] ${incoming.id} is tombstoned — ignoring push`);
+        context.res.status = 200;
+        context.res.body   = { ok: true, _ts: current._ts, _savedAt: current._savedAt, tombstone: true };
+        return;
+      }
+
+      // Incoming deletion — replace the doc with a minimal tombstone.
+      // Items/schedule/photos are dropped: every device that polls or pulls
+      // sees _deleted and tombstones its local copy; the index tombstone
+      // (saveIndex) removes the ID from projectIds so it is never fetched
+      // on startup again.
+      if (incoming._deleted) {
+        if (current && current.ownedBy && incoming.ownedBy && current.ownedBy !== incoming.ownedBy) {
+          context.log.warn(`[saveProject] Delete rejected on ${incoming.id}: owner=${current.ownedBy} requester=${incoming.ownedBy}`);
+          context.res.status = 403;
+          context.res.body   = { ok: false, error: "Forbidden — you do not own this project." };
+          return;
+        }
+        const deletedAt = incoming._deletedAt || Date.now();
+        docToWrite = {
+          id:         docId,
+          projectId:  incoming.id,
+          ownedBy:    (current && current.ownedBy) || incoming.ownedBy || '',
+          name:       incoming.name || (current && current.name) || '',
+          _deleted:   true,
+          _deletedAt: deletedAt,
+          _fieldTs:   { _deleted: deletedAt },
+          _savedAt:   incoming._savedAt || Date.now()
+        };
+      } else if (!current) {
         // Brand new project — write it directly (strip photos from items)
         docToWrite = Object.assign({}, incoming, {
           id:        docId,        // Cosmos document ID
@@ -189,6 +226,19 @@ module.exports = async function (context, req) {
             ? Object.assign({}, incoming.floorPlan, { imageData: null })
             : (current.floorPlan || undefined),
           _savedAt: incoming._savedAt || Date.now()
+        });
+      }
+
+      // ── 2b. GC scope-item tombstones ────────────────────────────────────────
+      // Deleted items ride along as {_deleted:true} so removal syncs to other
+      // devices. After the TTL every device has seen the tombstone — drop it
+      // so project docs don't grow forever.
+      if (!docToWrite._deleted && Array.isArray(docToWrite.items)) {
+        const itemCutoff = Date.now() - ITEM_TOMBSTONE_TTL_MS;
+        docToWrite.items = docToWrite.items.filter(i => {
+          if (!i._deleted) return true;
+          const ts = i._deletedAt || (i._fieldTs && i._fieldTs._deleted) || 0;
+          return ts > itemCutoff;
         });
       }
 

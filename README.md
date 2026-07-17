@@ -4,8 +4,8 @@ A field-conditions audit PWA for Allegheny Diversified Holdings superintendents.
 
 ## How it works
 
-- **Single-page PWA** — the entire client lives in `index.html` (no build step). `sw.js` is the service worker (offline cache + background sync). `pdf-export.js` renders the audit report client-side with jsPDF.
-- **Offline-first storage** — app state lives in IndexedDB (`adh_audit_db`); edits queue while offline and flush on reconnect (page + Background Sync).
+- **Single-page PWA** — the entire client lives in `index.html` (no build step). `sw.js` is the service worker (offline cache). `pdf-export.js` renders the audit report client-side with jsPDF.
+- **Offline-first storage** — app state lives in IndexedDB (`adh_audit_db`); dirty flags persist across reloads and changes push on reconnect.
 - **Cloud sync** — Azure Functions in `api/` back the sync engine: per-user index doc + one Cosmos DB document per project, item-level deep merges with per-field timestamps, ETag retries, and tombstoned deletes. Photos upload to Azure Blob Storage via short-lived SAS tokens.
 - **Innergy integration** — `/api/innergy/*` proxies `app.innergy.com` server-side; the `INNERGY_API_KEY` lives in Azure app settings, never in the browser.
 - **Data hierarchy** — Folders (company brands) → Projects (jobs) → Sections → Scope Items (SIs).
@@ -18,7 +18,7 @@ A field-conditions audit PWA for Allegheny Diversified Holdings superintendents.
 | `sw.js` | Service worker — bump `CACHE_VERSION` to push an update to all devices |
 | `pdf-export.js` | Client-side audit report renderer (jsPDF) |
 | `manifest.json` | PWA manifest (install metadata, icons) |
-| `api/` | Azure Functions: save/get index & projects, patchAudit, blob SAS, change log, Innergy proxy |
+| `api/` | Azure Functions: save/get index & projects, blob SAS, change log, Innergy proxy |
 | `resources/` | Field library served in-app: forms, QC plans, safety programs, 52 toolbox talks |
 | `logos/` | Brand logos for folder icons and report branding |
 | `server.js` | Local dev server (static files + Innergy proxy); `node server.js`, port 5000 |
@@ -38,4 +38,4 @@ Pushes to `main` deploy via the GitHub Action (Azure Static Web Apps, `app_locat
 
 ## Versioning
 
-The app version is the service-worker cache string (`adh-audit-v8.xx`). Current: **v8.23**.
+The app version is the service-worker cache string (`adh-audit-v8.xx`). Current: **v8.26**.

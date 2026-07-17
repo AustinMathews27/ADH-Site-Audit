@@ -6,7 +6,13 @@
       "Bash(npm --version)",
       "PowerShell(node --version)",
       "PowerShell(npm --version)",
-      "PowerShell($paths = @\\(\"$env:ProgramFiles\\\\nodejs\\\\node.exe\", \"$env:ProgramFiles\\(x86\\)\\\\nodejs\\\\node.exe\", \"$env:LOCALAPPDATA\\\\Programs\\\\nodejs\\\\node.exe\", \"$env:APPDATA\\\\npm\\\\node.exe\"\\); foreach \\($p in $paths\\) { if \\(Test-Path $p\\) { Write-Output \"FOUND: $p\" } }; Get-Command node -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source)"
+      "PowerShell($paths = @\\(\"$env:ProgramFiles\\\\nodejs\\\\node.exe\", \"$env:ProgramFiles\\(x86\\)\\\\nodejs\\\\node.exe\", \"$env:LOCALAPPDATA\\\\Programs\\\\nodejs\\\\node.exe\", \"$env:APPDATA\\\\npm\\\\node.exe\"\\); foreach \\($p in $paths\\) { if \\(Test-Path $p\\) { Write-Output \"FOUND: $p\" } }; Get-Command node -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git fetch *)",
+      "Bash(git push *)",
+      "Bash(git ls-tree *)"
     ]
   }
 }
