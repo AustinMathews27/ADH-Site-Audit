@@ -2115,6 +2115,47 @@ html.is-phone .nav-back-btn { min-width: 40px; min-height: 40px; }
 }
 .export-check.checked { background:var(--accent); border-color:var(--accent); color:#000; }
 
+/* ── CONTACT TABLE (Excel-style rows) ── */
+.contact-table-wrap { overflow-x:auto; border:1px solid var(--border); border-radius:10px; background:var(--surface); }
+.contact-table { min-width:820px; }
+.contact-thead, .contact-row {
+  display:grid;
+  grid-template-columns:34px 1.3fr 1fr 1fr 100px 120px 110px 1.3fr 40px;
+  align-items:center;
+}
+.contact-thead {
+  padding:0 10px; height:34px;
+  background:var(--surface2); border-bottom:1px solid var(--border);
+  font-size:10px; font-family:var(--mono); font-weight:700; letter-spacing:0.4px;
+  text-transform:uppercase; color:var(--text3);
+  position:sticky; top:0; z-index:2;
+}
+.contact-row {
+  padding:0 10px; min-height:44px;
+  border-bottom:1px solid var(--border); cursor:pointer;
+  transition:background 0.1s;
+}
+.contact-row:hover { background:var(--surface2); }
+.contact-row:nth-child(even) { background:rgba(255,255,255,0.02); }
+.contact-row:last-child { border-bottom:none; }
+.contact-row.highlighted { background:var(--accent-dim); }
+.ct-c {
+  font-size:12px; color:var(--text); padding:8px 6px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.ct-name { font-weight:600; }
+.ct-muted { color:var(--text2); }
+.ct-link { color:var(--accent); text-decoration:none; }
+.ct-link:hover { text-decoration:underline; }
+.ct-del {
+  width:26px; height:26px; border-radius:6px; border:none; background:none;
+  color:var(--text3); cursor:pointer; font-size:12px; opacity:0.6;
+  display:flex; align-items:center; justify-content:center;
+}
+.ct-del:hover { opacity:1; color:var(--red); background:var(--red-dim); }
+.contact-row.add-row { color:var(--text3); }
+.contact-row.add-row:hover { background:var(--surface2); }
+
 /* ── PDF PROGRESS OVERLAY ── */
 .pdf-progress-overlay {
   position:fixed; inset:0; z-index:800;
@@ -5271,6 +5312,11 @@ function loadDocManifest() {
 function _docHref(file) {
   return 'resources/' + String(file).split('/').map(encodeURIComponent).join('/');
 }
+const _DL_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>';
+function _docDlBtn(file) {
+  const base = String(file).split('/').pop();
+  return `<a class="doc-dl-btn" href="${_docHref(file)}" download="${_esc(base)}" onclick="event.stopPropagation()" title="Download">${_DL_ICON}</a>`;
+}
 function _esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g,
     c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -5284,11 +5330,14 @@ function _ensureDocStyles() {
   .doc-sub{font-size:12px;color:var(--text3);margin:4px 2px 14px;line-height:1.55}
   .doc-search{width:100%;padding:11px 13px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font:inherit;font-size:14px;margin-bottom:12px;outline:none}
   .doc-search:focus{border-color:var(--accent)}
-  .doc-row{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:11px;margin-bottom:8px;text-decoration:none;color:var(--text)}
+  .doc-row{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:11px;margin-bottom:8px;text-decoration:none;color:var(--text);cursor:pointer}
   .doc-row:active{border-color:var(--accent)}
   .tb-wk{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--red);background:var(--red-dim);padding:4px 8px;border-radius:6px;flex:0 0 auto;letter-spacing:.5px}
   .tb-ttl{font-size:14px;font-weight:500;line-height:1.3;flex:1;min-width:0}
   .doc-open{font-size:12px;font-weight:600;color:var(--accent);flex:0 0 auto;white-space:nowrap}
+  .doc-dl-btn{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;flex:0 0 auto;color:var(--text2);background:var(--surface2);border:1px solid var(--border);text-decoration:none;transition:all .15s}
+  .doc-dl-btn:hover{color:var(--accent);border-color:var(--accent);background:var(--accent-dim)}
+  .doc-dl-btn:active{transform:scale(0.94)}
   .doc-cat{font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text2);margin:18px 2px 8px}
   .doc-grp{background:var(--surface);border:1px solid var(--border);border-radius:11px;margin-bottom:8px;overflow:hidden}
   .doc-ghead{display:flex;align-items:center;gap:9px;padding:12px 14px;font-size:13.5px;font-weight:600;color:var(--text);cursor:pointer}
@@ -5297,7 +5346,7 @@ function _ensureDocStyles() {
   .doc-gcount{margin-left:auto;font-size:11px;color:var(--text3);background:var(--surface2);padding:2px 9px;border-radius:20px}
   .doc-glist{display:none;padding:0 8px 6px}
   .doc-grp.open .doc-glist{display:block}
-  .doc-item{display:flex;align-items:center;gap:10px;padding:10px 8px;border-top:1px solid var(--border);text-decoration:none;color:var(--text)}
+  .doc-item{display:flex;align-items:center;gap:10px;padding:10px 8px;border-top:1px solid var(--border);text-decoration:none;color:var(--text);cursor:pointer}
   .doc-ic{width:32px;height:32px;border-radius:7px;flex:0 0 auto;display:grid;place-items:center;font-size:9px;font-weight:800;color:#fff;background:var(--red)}
   .doc-ic.docx{background:var(--accent)}
   .doc-itt{flex:1;min-width:0;font-size:13px;font-weight:500;line-height:1.3}
@@ -5344,11 +5393,12 @@ function buildToolboxView() {
 function _tbRows(talks, q) {
   q = (q || '').toLowerCase();
   const f = talks.filter(t => !q || t.title.toLowerCase().includes(q) || ('week ' + t.week).includes(q) || String(t.week) === q);
-  return f.map(t => `<a class="doc-row" href="${_docHref(t.file)}" target="_blank" rel="noopener">
+  return f.map(t => `<div class="doc-row" onclick="window.open('${_docHref(t.file)}','_blank','noopener')">
     <span class="tb-wk">WK ${String(t.week).padStart(2,'0')}</span>
     <span class="tb-ttl">${_esc(t.title)}</span>
     <span class="doc-open">Open ↗</span>
-  </a>`).join('') || emptyMsg('No matches');
+    ${_docDlBtn(t.file)}
+  </div>`).join('') || emptyMsg('No matches');
 }
 function _tbFilter(q) {
   _tbSearch = q;
@@ -5384,9 +5434,10 @@ function _resBody(cats, q) {
       const items = (g.items || []).filter(it => !q ||
         it.title.toLowerCase().includes(q) || (g.name || '').toLowerCase().includes(q) || label.toLowerCase().includes(q));
       if (!items.length) return; any = true;
-      const rows = items.map(it => `<a class="doc-item" href="${_docHref(it.file)}" target="_blank" rel="noopener">
+      const rows = items.map(it => `<div class="doc-item" onclick="window.open('${_docHref(it.file)}','_blank','noopener')">
         <span class="doc-ic ${it.type === 'docx' ? 'docx' : ''}">${(it.type || 'pdf').toUpperCase()}</span>
-        <span class="doc-itt">${_esc(it.title)}</span><span class="doc-open">↗</span></a>`).join('');
+        <span class="doc-itt">${_esc(it.title)}</span>
+        ${_docDlBtn(it.file)}</div>`).join('');
       if (!g.name) {
         cathtml += `<div class="doc-grp open">${rows}</div>`;
       } else {
@@ -5593,40 +5644,41 @@ function buildContactBookView(highlightId = null) {
         </div>
       </div>
 
-      <div class="proj-grid">
-        ${contacts.map(c => `
-          <div class="proj-card" style="${highlightId === c.id ? 'border-color:var(--accent)' : ''}" onclick="showContactDetailModal('${c.id}')">
-            <div class="pc-body">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start">
-                <div style="display:flex;gap:8px;align-items:center;min-width:0">
-                  <div class="export-check ${window.selectedContacts.has(c.id)?'checked':''}"
-                       onclick="event.stopPropagation();toggleContactSelection('${c.id}')">
-                    ${window.selectedContacts.has(c.id)?'✓':''}
-                  </div>
-                  <div class="pc-name" style="font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name}</div>
-                </div>
-                <button class="si-status pending" style="border:none;background:none;cursor:pointer;opacity:0.5;margin-left:4px;flex-shrink:0" onclick="event.stopPropagation();deleteContact('${c.id}')">✕</button>
+      <div class="contact-table-wrap">
+        <div class="contact-table">
+          <div class="contact-thead">
+            <div class="ct-c"></div>
+            <div class="ct-c">Name</div>
+            <div class="ct-c">Company</div>
+            <div class="ct-c">Role</div>
+            <div class="ct-c">Category</div>
+            <div class="ct-c">Project</div>
+            <div class="ct-c">Phone</div>
+            <div class="ct-c">Email</div>
+            <div class="ct-c"></div>
+          </div>
+          ${contacts.map(c => `
+          <div class="contact-row ${highlightId === c.id ? 'highlighted' : ''}" onclick="showContactDetailModal('${c.id}')">
+            <div class="ct-c" onclick="event.stopPropagation()">
+              <div class="export-check ${window.selectedContacts.has(c.id)?'checked':''}" onclick="toggleContactSelection('${c.id}')">
+                ${window.selectedContacts.has(c.id)?'✓':''}
               </div>
-              <div style="display:flex;gap:4px;flex-wrap:wrap;margin:4px 0 2px">
-                <div class="proj-type-badge" style="font-size:8px;opacity:0.8;margin:0">${c.category || 'Other'}</div>
-                <div class="proj-type-badge" style="font-size:8px;margin:0;background:var(--folder-dim);color:var(--folder);border-color:rgba(245,158,11,0.3)">
-                  ${c.project && c.project !== 'Office' ? '📁 ' + c.project : '🏢 Office'}
-                </div>
-              </div>
-              <div class="pc-meta">${c.role}</div>
-              <div class="proj-type-badge" style="margin-bottom:12px">${c.company}</div>
-
-              <div style="display:flex;gap:8px;margin-top:12px">
-                ${c.phone ? `<a href="tel:${c.phone}" class="btn-add" style="flex:1;justify-content:center;text-decoration:none" onclick="event.stopPropagation()">📞 Call</a>` : ''}
-                ${c.email ? `<a href="mailto:${c.email}" class="btn-add" style="flex:1;justify-content:center;text-decoration:none;background:var(--green-dim);color:var(--green);border-color:rgba(52,211,153,0.2)" onclick="event.stopPropagation()">✉ Email</a>` : ''}
-              </div>
-              ${c.notes ? `<div style="font-size:10px;color:var(--text3);margin-top:10px;font-style:italic;line-height:1.4">"${c.notes}"</div>` : ''}
+            </div>
+            <div class="ct-c ct-name" title="${c.name || ''}">${c.name || ''}</div>
+            <div class="ct-c ct-muted" title="${c.company || ''}">${c.company || '—'}</div>
+            <div class="ct-c ct-muted" title="${c.role || ''}">${c.role || '—'}</div>
+            <div class="ct-c"><span class="proj-type-badge" style="margin:0">${c.category || 'Other'}</span></div>
+            <div class="ct-c ct-muted">${c.project && c.project !== 'Office' ? '📁 ' + c.project : '🏢 Office'}</div>
+            <div class="ct-c">${c.phone ? `<a href="tel:${c.phone}" class="ct-link" onclick="event.stopPropagation()">${c.phone}</a>` : '<span class="ct-muted">—</span>'}</div>
+            <div class="ct-c">${c.email ? `<a href="mailto:${c.email}" class="ct-link" title="${c.email}" onclick="event.stopPropagation()">${c.email}</a>` : '<span class="ct-muted">—</span>'}</div>
+            <div class="ct-c" onclick="event.stopPropagation()">
+              <button class="ct-del" onclick="deleteContact('${c.id}')" title="Delete">✕</button>
             </div>
           </div>
-        `).join('')}
-        <div class="proj-card new-card" onclick="showNewContactModal()">
-          <div style="font-size:22px;opacity:0.4">＋</div>
-          <div style="font-size:12px">Add Contact</div>
+          `).join('')}
+          <div class="contact-row add-row" onclick="showNewContactModal()">
+            <div class="ct-c" style="grid-column:1/-1;text-align:center">＋ Add Contact</div>
+          </div>
         </div>
       </div>
     </div>
