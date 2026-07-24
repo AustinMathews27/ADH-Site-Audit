@@ -7,53 +7,49 @@
 (function () {
   'use strict';
 
-  // ── 5 DISTINCT PDF TEMPLATES ─────────────────────────────────────────────────
-  const PDF_TEMPLATES = {
-    classic: {
-      name: 'Classic',
-      bgPage: '#ffffff', bgHeader: '#1e3a5f', bgRow: '#f8fafc', bgAlt: '#eef2f7',
-      cHeader: '#ffffff', cTitle: '#1e3a5f', cText: '#334155', cSub: '#64748b',
-      cAccent: '#1e3a5f', cBorder: '#cbd5e1', cTag: '#dbeafe', cTagText: '#1e40af',
-      font: 'helvetica', coverGradient: ['#1e3a5f', '#2563eb'],
+  // ── 4 DISTINCT REPORT STYLES ─────────────────────────────────────────────────
+  // Each style is a different PAGE STRUCTURE with its own tuned palette —
+  // not a recolor of the same layout.
+  //   grid    — Branded Grid: navy rules, uppercase section bars, photo grid
+  //   flow    — Clean Flow: hero photo cover, light continuous narrative
+  //   compact — Compact Table: dense rows, small thumbnails, punch-list style
+  //   photo   — Photo Focus: large photos, one item per block, evidence-heavy
+  const REPORT_STYLES = {
+    grid: {
+      name: 'Branded Grid',
+      bgPage: '#ffffff', bgRow: '#f8fafc',
+      cTitle: '#1e3a5f', cText: '#334155', cSub: '#64748b',
+      cAccent: '#1e3a5f', cBorder: '#cbd5e1', font: 'helvetica',
     },
-    modern: {
-      name: 'Modern',
-      bgPage: '#0f172a', bgHeader: '#0f172a', bgRow: '#1e293b', bgAlt: '#0f172a',
-      cHeader: '#38bdf8', cTitle: '#e2e8f0', cText: '#94a3b8', cSub: '#475569',
-      cAccent: '#38bdf8', cBorder: '#334155', cTag: '#0c4a6e', cTagText: '#38bdf8',
-      font: 'helvetica', coverGradient: ['#0f172a', '#1e293b'],
+    flow: {
+      name: 'Clean Flow',
+      bgPage: '#ffffff', bgRow: '#f9fafb',
+      cTitle: '#111827', cText: '#374151', cSub: '#9ca3af',
+      cAccent: '#2563eb', cBorder: '#e5e7eb', font: 'helvetica',
     },
-    minimal: {
-      name: 'Minimal',
-      bgPage: '#ffffff', bgHeader: '#ffffff', bgRow: '#ffffff', bgAlt: '#f9fafb',
-      cHeader: '#111827', cTitle: '#111827', cText: '#374151', cSub: '#9ca3af',
-      cAccent: '#111827', cBorder: '#e5e7eb', cTag: '#f3f4f6', cTagText: '#6b7280',
-      font: 'helvetica', coverGradient: ['#f3f4f6', '#e5e7eb'],
+    compact: {
+      name: 'Compact Table',
+      bgPage: '#ffffff', bgRow: '#f4f4f5',
+      cTitle: '#18181b', cText: '#3f3f46', cSub: '#71717a',
+      cAccent: '#dc2626', cBorder: '#d4d4d8', font: 'helvetica',
     },
-    corporate: {
-      name: 'Corporate',
-      bgPage: '#f0fdf4', bgHeader: '#14532d', bgRow: '#ffffff', bgAlt: '#f0fdf4',
-      cHeader: '#dcfce7', cTitle: '#14532d', cText: '#166534', cSub: '#4d7c0f',
-      cAccent: '#16a34a', cBorder: '#bbf7d0', cTag: '#dcfce7', cTagText: '#14532d',
-      font: 'helvetica', coverGradient: ['#14532d', '#166534'],
-    },
-    photographic: {
-      name: 'Photographic',
-      bgPage: '#fafafa', bgHeader: '#1c1c1c', bgRow: '#ffffff', bgAlt: '#f5f5f5',
-      cHeader: '#f59e0b', cTitle: '#1c1c1c', cText: '#404040', cSub: '#737373',
-      cAccent: '#d97706', cBorder: '#e5e5e5', cTag: '#fef3c7', cTagText: '#92400e',
-      font: 'helvetica', coverGradient: ['#1c1c1c', '#374151'],
+    photo: {
+      name: 'Photo Focus',
+      bgPage: '#ffffff', bgRow: '#fafaf9',
+      cTitle: '#1c1917', cText: '#44403c', cSub: '#78716c',
+      cAccent: '#d97706', cBorder: '#e7e5e4', font: 'helvetica',
     },
   };
 
-  const THEME_ALIAS = {
-    classic: 'classic', modern: 'modern', minimal: 'minimal',
-    corporate: 'corporate', photographic: 'photographic',
-    bright: 'classic', financial: 'corporate', dark: 'modern',
+  // Back-compat: old theme/layout keys map onto the new structural styles
+  const STYLE_ALIAS = {
+    classic: 'grid', corporate: 'grid', bright: 'grid', financial: 'grid',
+    modern: 'flow', dark: 'flow', minimal: 'compact', photographic: 'photo',
   };
 
-  function resolveTemplate(name) {
-    return PDF_TEMPLATES[THEME_ALIAS[name] || 'classic'] || PDF_TEMPLATES.classic;
+  function resolveStyleKey(name) {
+    if (REPORT_STYLES[name]) return name;
+    return STYLE_ALIAS[name] || 'grid';
   }
 
   function statusColor(s) {
@@ -71,9 +67,8 @@
   window.buildPDFPreviewHTML = function (proj, opts) {
     opts = opts || {};
 
-    const layoutKey = (opts.layout === 'flow') ? 'flow' : 'grid';
-    const themeKey  = opts.theme || 'classic';
-    const tpl       = resolveTemplate(themeKey);
+    const styleKey  = resolveStyleKey(opts.style || opts.layout || opts.theme || 'grid');
+    const tpl       = REPORT_STYLES[styleKey];
 
     // Map resolved template colors dynamically
     const P = {
@@ -144,8 +139,10 @@
         </div>`).join('');
 
     // ── COVER ─────────────────────────────────────────────────────────────────
+    // grid + compact share the structured cover; flow + photo share the hero cover
+    const heroCover = styleKey === 'flow' || styleKey === 'photo';
     let coverPage = '';
-    if (inclCover && layoutKey === 'grid') {
+    if (inclCover && !heroCover) {
       const coverPhoto = proj.coverPhoto
         ? `<div style="flex:0 0 165px"><img src="${proj.coverPhoto}" style="width:165px;height:218px;object-fit:cover;border:1px solid ${P.border};border-radius:3px;display:block"></div>` : '';
       coverPage = `
@@ -169,7 +166,7 @@
             <div style="font-size:8px;color:${P.sub};margin-top:10px">Generated ${today}</div>
           </div>
         </div></div>`;
-    } else if (inclCover && layoutKey === 'flow') {
+    } else if (inclCover && heroCover) {
       const bg = proj.coverPhoto
         ? `background-image:url('${proj.coverPhoto}');background-size:cover;background-position:center`
         : `background:${P.ink}`;
@@ -240,6 +237,50 @@
           </div>${cap?`<div style="font-size:8px;color:${P.sub};margin-top:2px;line-height:1.3">${esc(cap)}</div>`:''}`;
       };
 
+      // ── COMPACT TABLE row: dot + SI# | condensed text | small thumb ─────────
+      if (styleKey === 'compact') {
+        const thumb = photos.length ? `
+          <div style="flex:0 0 62px">
+            <div style="position:relative;width:62px;aspect-ratio:${square?'1/1':'4/3'};background:${P.row};border:1px solid ${P.border};border-radius:3px;overflow:hidden">
+              ${srcOf(photos[0])?`<img src="${srcOf(photos[0])}" loading="lazy" style="width:100%;height:100%;object-fit:cover;${imgFilter}" onerror="this.style.opacity=0">`:''}
+            </div>
+            ${photos.length>1?`<div style="font-size:7px;color:${P.sub};text-align:center;margin-top:1px">+${photos.length-1} more</div>`:''}
+          </div>` : '';
+        const bits = [];
+        if (item.statusCode) bits.push(esc(item.statusCode) + (item.statusText ? ' — ' + esc(item.statusText) : ''));
+        if (item.deliveryDate) bits.push('Del ' + esc(item.deliveryDate));
+        if (item.dueDate)      bits.push('Inst ' + esc(item.dueDate));
+        const noteTxt = (inclNotes && item.notes && item.notes.trim())
+          ? `<div style="font-size:8.5px;color:${P.text};line-height:1.4;margin-top:2px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">${esc(item.notes.trim())}</div>` : '';
+        return `<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 4px;border-bottom:1px solid ${P.border}">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:10px;font-weight:800;color:${P.ink};line-height:1.3">
+              <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${statusColor(item.status)};margin-right:4px"></span>${esc(siLbl(item.num))}&nbsp; ${esc(item.title||'')}
+            </div>
+            <div style="font-size:8px;margin-top:2px">
+              <span style="color:${statusColor(item.status)};font-weight:700">${statusLabel(item.status)}</span>
+              ${bits.length?`<span style="color:${P.sub}"> &nbsp;·&nbsp; ${bits.join(' &nbsp;·&nbsp; ')}</span>`:''}
+            </div>
+            ${noteTxt}
+          </div>
+          ${thumb}
+        </div>`;
+      }
+
+      // ── PHOTO FOCUS block: text header, then large photos ───────────────────
+      if (styleKey === 'photo') {
+        const cols = photos.length === 1 ? 1 : 2;
+        const basis = cols === 1 ? '100%' : 'calc(50% - 4px)';
+        const bigGrid = photos.length ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
+            ${photos.map((p,i)=>`<div style="flex:0 0 ${basis};max-width:${basis}">${cell(p,i+1)}</div>`).join('')}
+          </div>` : '';
+        return `<div style="padding:13px 0;border-bottom:1px solid ${P.border}">
+          ${textBlock}
+          <div style="width:36px;height:2px;background:${P.accent};margin-top:6px"></div>
+          ${bigGrid}
+        </div>`;
+      }
+
       let body;
       if (photos.length === 1) {
         body = `<div style="display:flex;gap:12px;align-items:flex-start">
@@ -257,7 +298,7 @@
         body = `<div>${textBlock}</div>`;
       }
 
-      const sep = layoutKey === 'grid'
+      const sep = styleKey === 'grid'
         ? `border-bottom:1px solid ${P.rule}`
         : `border-bottom:1px solid ${P.border}`;
       return `<div style="padding:11px 0;${sep}">${body}</div>`;
@@ -265,22 +306,36 @@
 
     // ── SECTION PAGES ─────────────────────────────────────────────────────────
     let pgNum = inclCover ? 2 : 1;
-    const sectionHeader = (name, count) => layoutKey === 'grid'
-      ? `<div style="padding:14px 18px 0">
+    const sectionHeader = (name, count) => {
+      if (styleKey === 'grid') return `<div style="padding:14px 18px 0">
           <div style="height:3px;background:${P.rule}"></div>
           <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0">
             <span style="font-size:11px;font-weight:800;color:${P.ink};letter-spacing:1px;text-transform:uppercase">${esc(name||'Section')}</span>
             <span style="font-size:8px;color:${P.sub}">${count} item${count!==1?'s':''}</span>
           </div>
           <div style="height:3px;background:${P.rule}"></div>
-        </div>`
-      : `<div style="padding:16px 18px 0">
+        </div>`;
+      if (styleKey === 'compact') return `<div style="padding:12px 18px 0">
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid ${P.border};padding-bottom:4px">
+            <span style="font-size:10px;font-weight:800;color:${P.ink};letter-spacing:0.8px;text-transform:uppercase;border-left:3px solid ${P.accent};padding-left:6px">${esc(name||'Section')}</span>
+            <span style="font-size:8px;color:${P.sub}">${count} item${count!==1?'s':''}</span>
+          </div>
+        </div>`;
+      if (styleKey === 'photo') return `<div style="padding:16px 18px 0">
+          <div style="display:flex;justify-content:space-between;align-items:baseline">
+            <span style="font-size:18px;font-weight:800;color:${P.ink}">${esc(name||'Section')}</span>
+            <span style="font-size:8px;color:${P.sub}">${count} item${count!==1?'s':''}</span>
+          </div>
+          <div style="height:4px;background:${P.accent};margin-top:5px"></div>
+        </div>`;
+      return `<div style="padding:16px 18px 0">
           <div style="display:flex;justify-content:space-between;align-items:baseline">
             <span style="font-size:17px;font-weight:800;color:${P.ink}">${esc(name||'Section')}</span>
             <span style="font-size:8px;color:${P.sub}">${count} item${count!==1?'s':''}</span>
           </div>
           <div style="width:46px;height:3px;background:${P.accent};margin-top:5px"></div>
         </div>`;
+    };
 
     const renderSection = (name, secItems) => {
       const pg = pgNum++;
@@ -392,7 +447,7 @@ body{background:#18212f;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
 .page-scaler{width:560px;min-height:792px;background:${P.bg};
   box-shadow:0 6px 28px rgba(0,0,0,0.38);border-radius:2px;
   display:flex;flex-direction:column;position:relative;overflow:hidden;
-  transform-origin:top center;}
+  transform-origin:top left;}
 .page-num{position:absolute;top:6px;right:10px;font-size:7.5px;font-weight:700;color:${P.sub};opacity:0.5;z-index:10;display:${pageNums?'block':'none'}}
 .pg-footer{padding:6px 18px;display:${pageNums?'flex':'none'};justify-content:space-between;align-items:center;
   margin-top:auto;font-size:7px;font-weight:600;color:${P.sub};border-top:1px solid ${P.border}}
@@ -507,16 +562,29 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
     const reportTitle= S.reportTitle ?? 'Site Conditions Report';
     const footerText = S.footerText  ?? '';
     const whiteLabel = S.whiteLabel  ?? false;
-    const layoutKey  = (S.layout === 'flow') ? 'flow' : 'grid';
-    const themeKey   = S.theme || 'classic';
-    const tpl        = resolveTemplate(themeKey);
+    const styleKey   = resolveStyleKey(S.style || S.layout || 'grid');
+    const tpl        = REPORT_STYLES[styleKey];
+    const filterKey  = S.filter   || 'all';       // all | complete | incomplete
+    const pageNums   = S.pageNums !== false;      // page numbers + footer rule
+    const square     = S.square   ?? false;       // 1:1 photo crops
+    const imgSize    = S.imgSize  || 'regular';   // small | regular | large | xl
 
-    // Dynamic Palette injected directly from Theme Engine
+    // Palette comes from the selected style
     const P = {
       bg: tpl.bgPage, ink: tpl.cTitle, text: tpl.cText, sub: tpl.cSub,
       rule: tpl.cAccent, accent: tpl.cAccent, red: '#c0392b', border: tpl.cBorder,
       row: tpl.bgRow, font: tpl.font || 'helvetica'
     };
+
+    // Photo sizing knobs shared by the style renderers
+    const IMG_SIZES = {
+      small:   { cols: 4, single: 42, aspect: 0.68 },
+      regular: { cols: 3, single: 60, aspect: 0.72 },
+      large:   { cols: 2, single: 85, aspect: 0.75 },
+      xl:      { cols: 1, single: 120, aspect: 0.72 },
+    };
+    const IMG = IMG_SIZES[imgSize] || IMG_SIZES.regular;
+    const photoAspect = square ? 1 : IMG.aspect;
 
     document.getElementById('rg-overlay')?.remove();
     if (typeof closeModal === 'function') closeModal();
@@ -668,9 +736,9 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       drawStats(heroH + 36);
     }
 
-    // ── Section headers ───────────────────────────────────────────────────────
+    // ── Section headers (one shape per style) ─────────────────────────────────
     function sectionHeader(name, count, y) {
-      if (layoutKey === 'grid') {
+      if (styleKey === 'grid') {
         setFill(P.rule); doc.rect(MX, y, CW, 0.7, 'F');
         doc.setFont(P.font,'bold'); doc.setFontSize(11); setText(P.ink);
         doc.text((name||'').toUpperCase(), MX, y+7);
@@ -678,20 +746,43 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
         doc.text(count+' item'+(count!==1?'s':''), PW-MX, y+7, {align:'right'});
         setFill(P.rule); doc.rect(MX, y+10, CW, 0.7, 'F');
         return y + 16;
-      } else {
-        doc.setFont(P.font,'bold'); doc.setFontSize(15); setText(P.ink);
+      }
+      if (styleKey === 'compact') {
+        // Slim single-line bar — maximizes rows per page
+        setFill(P.accent); doc.rect(MX, y, 2.2, 8, 'F');
+        doc.setFont(P.font,'bold'); doc.setFontSize(10); setText(P.ink);
+        doc.text((name||'').toUpperCase(), MX+5, y+6);
+        doc.setFont(P.font,'normal'); doc.setFontSize(8); setText(P.sub);
+        doc.text(count+' item'+(count!==1?'s':''), PW-MX, y+6, {align:'right'});
+        setStroke(P.border); doc.setLineWidth(0.3); doc.line(MX, y+10, PW-MX, y+10);
+        return y + 13;
+      }
+      if (styleKey === 'photo') {
+        // Big title with full-width amber underline
+        doc.setFont(P.font,'bold'); doc.setFontSize(16); setText(P.ink);
         doc.text(name||'', MX, y+6);
         doc.setFont(P.font,'normal'); doc.setFontSize(8); setText(P.sub);
         doc.text(count+' item'+(count!==1?'s':''), PW-MX, y+6, {align:'right'});
-        setFill(P.accent); doc.rect(MX, y+9, 28, 0.8, 'F');
-        return y + 15;
+        setFill(P.accent); doc.rect(MX, y+9.5, CW, 1.2, 'F');
+        return y + 17;
       }
+      // flow
+      doc.setFont(P.font,'bold'); doc.setFontSize(15); setText(P.ink);
+      doc.text(name||'', MX, y+6);
+      doc.setFont(P.font,'normal'); doc.setFontSize(8); setText(P.sub);
+      doc.text(count+' item'+(count!==1?'s':''), PW-MX, y+6, {align:'right'});
+      setFill(P.accent); doc.rect(MX, y+9, 28, 0.8, 'F');
+      return y + 15;
     }
     function contHeader(name) {
-      if (layoutKey === 'grid') {
+      if (styleKey === 'grid') {
         setFill(P.rule); doc.rect(MX, 8, CW, 0.6, 'F');
         doc.setFont(P.font,'bold'); doc.setFontSize(8); setText(P.ink);
         doc.text((name+' (cont.)').toUpperCase(), MX, 7);
+      } else if (styleKey === 'compact') {
+        setFill(P.accent); doc.rect(MX, 4, 1.6, 5, 'F');
+        doc.setFont(P.font,'bold'); doc.setFontSize(7.5); setText(P.sub);
+        doc.text((name+' (cont.)').toUpperCase(), MX+4, 8);
       } else {
         doc.setFont(P.font,'bold'); doc.setFontSize(9); setText(P.sub);
         doc.text(name+' (continued)', MX, 9);
@@ -767,13 +858,18 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       return cyy - y;
     }
 
-    // ── Photo grid (2-up for exactly 2 photos, else 3-up) ─────────────────────
+    // ── Photo grid (cols follow the Image Size setting) ───────────────────────
+    function gridCols(n) {
+      // 2/4 photos look best 2-up at regular size; otherwise the size setting rules
+      const base = (n === 2 || n === 4) ? 2 : 3;
+      const cols = imgSize === 'regular' ? base : IMG.cols;
+      return Math.max(1, Math.min(cols, n));
+    }
     async function drawPhotoGrid(photos, x, y, width, contName) {
-      // Intelligently handle exactly 4 photos using a 2x2 grid for symmetry
-      const cols = (photos.length === 2 || photos.length === 4) ? 2 : 3;
+      const cols = gridCols(photos.length);
       const gap = 4;
       const cellW = (width - gap*(cols-1)) / cols;
-      const cellH = Math.round(cellW * 0.72);
+      const cellH = Math.round(cellW * photoAspect);
       const hasCap = photos.some(p => photoCaption(p));
       const rowH = cellH + (hasCap ? 6 : 0) + 3;
       let gy = y;
@@ -801,43 +897,53 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
 
     // ── One SI item (keep-together; 1-up side-by-side; multi-up grid below) ────
     let cy = PAGE_TOP;
+    const singleW = IMG.single, singleH = Math.round(IMG.single * (square ? 1 : 0.75));
     function estimateItemHeight(item) {
       const single = inclPhotos && (item.photos?.length === 1);
       if (single) {
-        const photoW = 60, photoH = 45, tw = CW - photoW - 6;
-        return Math.max(photoH, itemTextBlock(item, MX+photoW+6, 0, tw, false)) + 6;
+        const tw = CW - singleW - 6;
+        return Math.max(singleH, itemTextBlock(item, MX+singleW+6, 0, tw, false)) + 6;
       }
       const th = itemTextBlock(item, MX, 0, CW, false);
       let ph = 0;
       if (inclPhotos && item.photos?.length) {
-        const cols = (item.photos.length === 2 || item.photos.length === 4) ? 2 : 3;
-        const cellW = (CW - 4*(cols-1)) / cols, cellH = Math.round(cellW*0.72);
+        const cols = gridCols(item.photos.length);
+        const cellW = (CW - 4*(cols-1)) / cols, cellH = Math.round(cellW*photoAspect);
         const rows = Math.ceil(item.photos.length / cols);
         const hasCap = item.photos.some(p => photoCaption(p));
         ph = rows*(cellH + (hasCap?6:0) + 3) + 2;
       }
       return th + ph + 6;
     }
+    async function itemThumb(ph, x, y, w, h, badge) {
+      try {
+        const ts = inclTS ? (ph.takenAt || null) : null;
+        const src = (typeof getPhotoSrcForDisplay === 'function') ? getPhotoSrcForDisplay(ph) : (ph?.url || ph?._blobUrl || ph?.data || null);
+        const comp = src ? await compressImage(src, quality, ts) : null;
+        if (comp) doc.addImage(comp, 'JPEG', x, y, w, h, '', 'FAST');
+        else { setFill(P.row); setStroke(P.border); doc.setLineWidth(0.3); doc.roundedRect(x, y, w, h, 1, 1, 'FD'); }
+      } catch(e) { setFill(P.row); doc.rect(x, y, w, h, 'F'); }
+      if (badge) {
+        const br = 3.2, bx = x + w - br - 1.6, byy = y + br + 1.6;
+        setFill('#1f2937'); doc.circle(bx, byy, br, 'F');
+        doc.setFont(P.font,'bold'); doc.setFontSize(7); setText('#ffffff'); doc.text(String(badge), bx, byy+2.3, {align:'center'});
+      }
+    }
     async function drawItem(item, contName) {
+      if (styleKey === 'compact') return drawItemCompact(item, contName);
+      if (styleKey === 'photo')   return drawItemPhoto(item, contName);
+
       const single = inclPhotos && (item.photos?.length === 1);
       const estH = estimateItemHeight(item);
       if (cy > PAGE_TOP && cy + Math.min(estH, PH - PAGE_TOP - BOT) > PH - BOT) { newPage(); cy = contHeader(contName); }
 
       if (single) {
-        const photoW = 60, photoH = 45, tx = MX + photoW + 6, tw = CW - photoW - 6;
+        const tx = MX + singleW + 6, tw = CW - singleW - 6;
         const ph = item.photos[0];
-        try {
-          const ts = inclTS ? (ph.takenAt || null) : null;
-          const src = (typeof getPhotoSrcForDisplay === 'function') ? getPhotoSrcForDisplay(ph) : (ph?.url || ph?._blobUrl || ph?.data || null);
-          const comp = src ? await compressImage(src, quality, ts) : null;
-          if (comp) doc.addImage(comp, 'JPEG', MX, cy, photoW, photoH, '', 'FAST');
-          else { setFill(P.row); setStroke(P.border); doc.setLineWidth(0.3); doc.roundedRect(MX, cy, photoW, photoH, 1, 1, 'FD'); }
-        } catch(e){}
-        const br = 3.2, bx = MX + photoW - br - 1.6, byy = cy + br + 1.6;
-        setFill('#1f2937'); doc.circle(bx, byy, br, 'F'); doc.setFont(P.font,'bold'); doc.setFontSize(7); setText('#ffffff'); doc.text('1', bx, byy+2.3, {align:'center'});
-        let belowPhoto = cy + photoH;
+        await itemThumb(ph, MX, cy, singleW, singleH, '1');
+        let belowPhoto = cy + singleH;
         const cap = photoCaption(ph);
-        if (cap) { doc.setFont(P.font,'normal'); doc.setFontSize(6.5); setText(P.sub); const cl = doc.splitTextToSize(cap, photoW).slice(0,3); doc.text(cl, MX, belowPhoto+3); belowPhoto += 3 + cl.length*3; }
+        if (cap) { doc.setFont(P.font,'normal'); doc.setFontSize(6.5); setText(P.sub); const cl = doc.splitTextToSize(cap, singleW).slice(0,3); doc.text(cl, MX, belowPhoto+3); belowPhoto += 3 + cl.length*3; }
         const th = itemTextBlock(item, tx, cy, tw, true);
         cy = Math.max(belowPhoto, cy + th) + 6;
       } else {
@@ -847,8 +953,105 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
         cy += 4;
       }
 
-      if (layoutKey === 'grid') { setFill(P.rule); doc.rect(MX, cy, CW, 0.4, 'F'); cy += 5; }
+      if (styleKey === 'grid') { setFill(P.rule); doc.rect(MX, cy, CW, 0.4, 'F'); cy += 5; }
       else { setStroke(P.border); doc.setLineWidth(0.3); doc.line(MX, cy, PW-MX, cy); cy += 5; }
+    }
+
+    // ── COMPACT TABLE row: dot + SI# | condensed text | small thumb ───────────
+    let _compactRowIdx = 0;
+    function compactTextH(item, width) {
+      doc.setFont(P.font,'bold'); doc.setFontSize(9.5);
+      const titleLines = doc.splitTextToSize(siLabel(item.num) + '  ' + (item.title || ''), width).slice(0, 2);
+      let h = titleLines.length * 4.4 + 4.6; // title + status line
+      if (inclNotes && item.notes && item.notes.trim()) {
+        doc.setFont(P.font,'normal'); doc.setFontSize(7.5);
+        h += doc.splitTextToSize(item.notes.trim(), width).slice(0, 3).length * 3.6 + 1;
+      }
+      return h;
+    }
+    async function drawItemCompact(item, contName) {
+      const hasPhoto = inclPhotos && item.photos?.length;
+      const thumbW = 22, thumbH = square ? 18 : 15;
+      const tx = MX + 3, tw = CW - 6 - (hasPhoto ? thumbW + 5 : 0);
+      const rowH = Math.max(compactTextH(item, tw), hasPhoto ? thumbH + 4 : 0) + 6;
+      if (cy > PAGE_TOP && cy + rowH > PH - BOT) { newPage(); cy = contHeader(contName); _compactRowIdx = 0; }
+
+      // Alternating row background for table feel
+      if (_compactRowIdx % 2 === 1) { setFill(P.row); doc.rect(MX, cy, CW, rowH, 'F'); }
+      _compactRowIdx++;
+
+      let ty = cy + 3;
+      // Status dot + SI# + title on one line (max 2 lines)
+      setFill(statusColor(item.status)); doc.circle(tx + 1.4, ty + 2.2, 1.4, 'F');
+      doc.setFont(P.font,'bold'); doc.setFontSize(9.5); setText(P.ink);
+      const titleLines = doc.splitTextToSize(siLabel(item.num) + '  ' + (item.title || ''), tw - 5).slice(0, 2);
+      doc.text(titleLines, tx + 5, ty + 3.4);
+      ty += titleLines.length * 4.4 + 1;
+
+      // Condensed status / field-check / dates line
+      const bits = [statusLabel(item.status)];
+      if (item.statusCode) bits.push(item.statusCode + (item.statusText ? ' — ' + item.statusText : ''));
+      if (item.deliveryDate) bits.push('Del ' + item.deliveryDate);
+      if (item.dueDate)      bits.push('Inst ' + item.dueDate);
+      if (item.punchDate)    bits.push('Punch ' + item.punchDate);
+      doc.setFont(P.font,'bold'); doc.setFontSize(7);
+      setText(statusColor(item.status));
+      const statusTxt = bits.shift();
+      doc.text(statusTxt, tx + 5, ty + 3);
+      if (bits.length) {
+        setText(P.sub); doc.setFont(P.font,'normal');
+        doc.text('  ·  ' + bits.join('  ·  '), tx + 5 + doc.getTextWidth(statusTxt) + 1, ty + 3, { maxWidth: tw - 8 - doc.getTextWidth(statusTxt) });
+      }
+      ty += 4.6;
+
+      // Notes clipped to 3 lines
+      if (inclNotes && item.notes && item.notes.trim()) {
+        doc.setFont(P.font,'normal'); doc.setFontSize(7.5); setText(P.text);
+        const nl = doc.splitTextToSize(item.notes.trim(), tw - 5).slice(0, 3);
+        doc.text(nl, tx + 5, ty + 3);
+        ty += nl.length * 3.6 + 1;
+      }
+
+      // Small thumbnail on the right, "+N" marker when more photos exist
+      if (hasPhoto) {
+        await itemThumb(item.photos[0], MX + CW - thumbW - 3, cy + 3, thumbW, thumbH, null);
+        if (item.photos.length > 1) {
+          doc.setFont(P.font,'bold'); doc.setFontSize(6.5); setText(P.sub);
+          doc.text('+' + (item.photos.length - 1) + ' more', MX + CW - thumbW - 3 + thumbW/2, cy + 3 + thumbH + 3, {align:'center'});
+        }
+      }
+
+      cy += rowH;
+      setStroke(P.border); doc.setLineWidth(0.2); doc.line(MX, cy, PW-MX, cy);
+    }
+
+    // ── PHOTO FOCUS block: text header, then large photos ─────────────────────
+    async function drawItemPhoto(item, contName) {
+      const photos = inclPhotos ? (item.photos || []) : [];
+      // Airy, evidence-first: each item starts high on a fresh page
+      if (cy > PAGE_TOP + 24) { newPage(); cy = contHeader(contName); }
+
+      const th = itemTextBlock(item, MX, cy, CW, true);
+      cy += th + 3;
+      setFill(P.accent); doc.rect(MX, cy, 20, 0.8, 'F'); cy += 4;
+
+      if (photos.length) {
+        const cols = photos.length === 1 ? 1 : 2;
+        const gap = 5;
+        const cellW = (CW - gap*(cols-1)) / cols;
+        const cellH = Math.round(cellW * (square ? 1 : 0.68));
+        const hasCap = photos.some(p => photoCaption(p));
+        for (let i = 0; i < photos.length; i++) {
+          const col = i % cols;
+          if (col === 0 && i > 0) cy += cellH + (hasCap ? 7 : 0) + 4;
+          if (col === 0 && cy + cellH > PH - BOT) { newPage(); cy = contHeader(contName); }
+          const px = MX + col*(cellW + gap);
+          await itemThumb(photos[i], px, cy, cellW, cellH, String(i+1));
+          const cap = photoCaption(photos[i]);
+          if (cap) { doc.setFont(P.font,'normal'); doc.setFontSize(7); setText(P.sub); const cl = doc.splitTextToSize(cap, cellW).slice(0,2); doc.text(cl, px, cy+cellH+3.5); }
+        }
+        cy += cellH + (hasCap ? 7 : 0) + 6;
+      }
     }
 
     // ── DISPATCH: cover ───────────────────────────────────────────────────────
@@ -856,10 +1059,15 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
     // addImage cannot fetch remote URLs, so convert it to a data URL first.
     let coverImg = proj.coverPhoto || null;
     if (coverImg && /^https?:/.test(coverImg)) coverImg = await compressImage(coverImg, 0.9);
-    if (inclCover) { layoutKey === 'flow' ? coverFlow() : coverGrid(); }
+    if (inclCover) { (styleKey === 'flow' || styleKey === 'photo') ? coverFlow() : coverGrid(); }
 
     // ── SECTIONS + ITEMS ──────────────────────────────────────────────────────
-    const allItems = proj.items || [];
+    // Honor the All / Complete / Incomplete filter (and never print deleted SIs)
+    const allItems = (proj.items || []).filter(i => !i._deleted).filter(i => {
+      if (filterKey === 'complete')   return i.status === 'completed' || i.status === 'punch-ongoing';
+      if (filterKey === 'incomplete') return i.status !== 'completed' && i.status !== 'punch-ongoing';
+      return true;
+    });
     const totalCount = allItems.length || 1;
     let done = 0;
     const sections = proj.sections || [];
@@ -869,6 +1077,7 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       const secItems = allItems.filter(i => i.sectionId === sec.id);
       if (!secItems.length) continue;
       newPage();
+      _compactRowIdx = 0;
       cy = sectionHeader(sec.name, secItems.length, 12);
       for (const item of secItems) {
         await drawItem(item, sec.name);
@@ -880,6 +1089,7 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
     const orphans = allItems.filter(i => !sectionIds.has(i.sectionId));
     if (orphans.length) {
       newPage();
+      _compactRowIdx = 0;
       cy = sectionHeader('Other Items', orphans.length, 12);
       for (const item of orphans) {
         await drawItem(item, 'Other Items');
@@ -1005,43 +1215,73 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       doc.line(15,sy+26,85,sy+26); doc.text('Signature',15,sy+30); doc.text('Date: '+new Date().toLocaleDateString(),60,sy+30);
     }
 
-    // ── FOOTERS ───────────────────────────────────────────────────────────────
-    const pageCount = doc.getNumberOfPages();
-    for (let p=1; p<=pageCount; p++) {
-      doc.setPage(p);
-      setStroke(P.border); doc.setLineWidth(0.4); doc.line(MX, PH-10, PW-MX, PH-10);
-      doc.setFontSize(7); setText(P.sub); doc.setFont(P.font,'normal');
-      doc.text(proj.name || '', MX, PH-5.5);
-      if (footerText) doc.text(footerText, PW/2, PH-5.5, {align:'center'});
-      doc.text('Page '+p+' of '+pageCount, PW-MX, PH-5.5, {align:'right'});
+    // ── FOOTERS (honors the Page Numbers toggle) ──────────────────────────────
+    if (pageNums) {
+      const pageCount = doc.getNumberOfPages();
+      for (let p=1; p<=pageCount; p++) {
+        doc.setPage(p);
+        setStroke(P.border); doc.setLineWidth(0.4); doc.line(MX, PH-10, PW-MX, PH-10);
+        doc.setFontSize(7); setText(P.sub); doc.setFont(P.font,'normal');
+        doc.text(proj.name || '', MX, PH-5.5);
+        if (footerText) doc.text(footerText, PW/2, PH-5.5, {align:'center'});
+        doc.text('Page '+p+' of '+pageCount, PW-MX, PH-5.5, {align:'right'});
+      }
     }
 
     window.updatePDFProgress('Saving PDF…', 97);
     await new Promise(r => setTimeout(r, 100));
 
-    const layoutName = layoutKey === 'flow' ? 'Clean Flow' : 'Branded Grid';
-    const filename = (proj.name || 'report').replace(/[^a-z0-9]/gi,'_') + '_' + layoutKey + '_report.pdf';
-    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    if (isIOS) {
-      const blobURL = URL.createObjectURL(doc.output('blob'));
-      window.hidePDFProgress();
+    const styleName = tpl.name;
+    const filename = (proj.name || 'report').replace(/[^a-z0-9]/gi,'_') + '_' + styleKey + '_report.pdf';
+    const blob = doc.output('blob');
+    const pdfFile = new File([blob], filename, { type: 'application/pdf' });
+    const isMobile = /iphone|ipad|ipod|android/i.test(navigator.userAgent);
+    const canShare = !!(navigator.share && navigator.canShare &&
+                        navigator.canShare({ files: [pdfFile] }));
+    window.hidePDFProgress();
+    if (isMobile) {
+      const blobURL = URL.createObjectURL(blob);
       const ov = document.createElement('div');
-      ov.style.cssText = 'position:fixed;inset:0;z-index:700;background:rgba(0,0,0,0.8);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px;';
-      ov.innerHTML = `<div style="background:var(--surface,#1e293b);border:1px solid var(--border,#334155);border-radius:16px;padding:24px;max-width:340px;text-align:center;">
+      // navigator.share needs a FRESH user gesture — the long PDF generation
+      // consumed the original tap, so this ready-sheet's buttons provide it.
+      // The share sheet gives AirDrop / Save to Files / email on iOS and the
+      // full share tray on Android.
+      ov.style.cssText = 'position:fixed;inset:0;z-index:750;background:rgba(0,0,0,0.8);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px;';
+      ov.innerHTML = `<div style="background:var(--surface,#1e293b);border:1px solid var(--border,#334155);border-radius:16px;padding:24px;max-width:340px;width:100%;text-align:center;">
         <div style="font-size:36px;margin-bottom:12px">\u{1F4C4}</div>
-        <div style="font-size:15px;font-weight:600;margin-bottom:8px">PDF Ready — ${layoutName}</div>
-        <div style="font-size:12px;color:var(--text2,#94a3b8);margin-bottom:20px;line-height:1.6">Tap <strong>Share \u2B06</strong> → <strong>Save to Files</strong></div>
+        <div style="font-size:15px;font-weight:600;margin-bottom:8px">PDF Ready — ${styleName}</div>
+        <div style="font-size:12px;color:var(--text2,#94a3b8);margin-bottom:20px;line-height:1.6">${canShare ? 'Share, AirDrop, or save it to Files.' : 'Download or open the report.'}</div>
         <div style="display:flex;flex-direction:column;gap:10px;">
-          <button onclick="window.open('${blobURL}','_blank');this.closest('div[style]').remove();"
-            style="background:var(--accent,#3db8f5);color:#000;border:none;border-radius:10px;padding:12px;font-family:monospace;font-size:13px;font-weight:700;cursor:pointer;">Open PDF \u2197</button>
-          <button onclick="this.closest('div[style]').remove();"
-            style="background:var(--surface2,#1e293b);color:var(--text2,#94a3b8);border:1px solid var(--border,#334155);border-radius:10px;padding:10px;font-family:monospace;font-size:12px;cursor:pointer;">Cancel</button>
+          ${canShare ? `<button id="pdf-share-btn"
+            style="background:var(--accent,#3db8f5);color:#000;border:none;border-radius:10px;padding:13px;font-family:monospace;font-size:13px;font-weight:700;cursor:pointer;">\u2B06 Share / Save PDF</button>` : ''}
+          <button id="pdf-download-btn"
+            style="background:${canShare ? 'var(--surface2,#0f172a)' : 'var(--accent,#3db8f5)'};color:${canShare ? 'var(--text,#e2e8f0)' : '#000'};border:1px solid var(--border,#334155);border-radius:10px;padding:12px;font-family:monospace;font-size:13px;font-weight:700;cursor:pointer;">\u2B07 Download</button>
+          <button id="pdf-cancel-btn"
+            style="background:none;color:var(--text2,#94a3b8);border:none;border-radius:10px;padding:8px;font-family:monospace;font-size:12px;cursor:pointer;">Cancel</button>
         </div></div>`;
       document.body.appendChild(ov);
+      const cleanup = () => { ov.remove(); URL.revokeObjectURL(blobURL); };
+      ov.querySelector('#pdf-share-btn')?.addEventListener('click', async () => {
+        try {
+          await navigator.share({ files: [pdfFile], title: filename });
+          cleanup();
+          if (typeof showToast === 'function') showToast('\u2713 PDF shared', 'green');
+        } catch(e) {
+          if (e && e.name === 'AbortError') return; // user closed the sheet — keep ours open
+          window.open(blobURL, '_blank'); cleanup(); // share failed → open the blob
+        }
+      });
+      ov.querySelector('#pdf-download-btn')?.addEventListener('click', () => {
+        const a = document.createElement('a');
+        a.href = blobURL; a.download = filename;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(cleanup, 500); // let the download start before revoking
+        if (typeof showToast === 'function') showToast('\u2713 PDF Downloaded — ' + styleName, 'green');
+      });
+      ov.querySelector('#pdf-cancel-btn')?.addEventListener('click', cleanup);
     } else {
       doc.save(filename);
-      window.hidePDFProgress();
-      if (typeof showToast === 'function') showToast('\u2713 PDF Downloaded — ' + layoutName, 'green');
+      if (typeof showToast === 'function') showToast('\u2713 PDF Downloaded — ' + styleName, 'green');
     }
   };
 

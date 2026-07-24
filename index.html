@@ -818,6 +818,21 @@ select.field-input { cursor:pointer; }
 .rg-section-body { padding:8px 14px 12px; }
 .rg-section-body.collapsed { display:none; }
 .rg-radio-group { display:flex; flex-direction:column; gap:5px; }
+/* Report style cards */
+.rg-style-list { display:flex; flex-direction:column; gap:6px; }
+.rg-style-card {
+  display:block; padding:8px 10px; border-radius:9px;
+  border:1px solid var(--border); background:var(--surface2);
+  cursor:pointer; transition:all 0.13s;
+}
+.rg-style-card:hover { border-color:var(--accent); }
+.rg-style-card.active {
+  border-color:var(--accent); background:var(--accent-dim);
+  box-shadow:0 0 0 1px var(--accent);
+}
+.rg-style-name { font-size:11.5px; font-weight:700; color:var(--text); }
+.rg-style-card.active .rg-style-name { color:var(--accent); }
+.rg-style-desc { font-size:9.5px; color:var(--text3); margin-top:2px; line-height:1.4; }
 .rg-radio-row {
   display:flex; align-items:center; gap:7px;
   font-size:11px; color:var(--text2); cursor:pointer;
@@ -977,10 +992,24 @@ body.theme-dark .rg-preview-wrap { background:#1a1a1a; }
 }
 .rg-item-note { font-size:10px; color:#555; line-height:1.5; }
 
+/* Phone: preview on top (with pinned export bar), settings as a bottom sheet */
 @media (max-width:640px) {
   .rg-shell { flex-direction:column; }
-  .rg-sidebar { width:100%; min-width:0; max-height:220px; }
+  .rg-main { order:1; flex:1; min-height:0; }
+  .rg-sidebar {
+    order:2; width:100%; min-width:0;
+    max-height:46dvh; flex-shrink:0;
+    border-right:none; border-top:1px solid var(--border);
+    padding-bottom:var(--sab);
+  }
   .rg-preview-wrap { padding:12px; }
+  .rg-topbar { padding:10px 12px; }
+  .rg-btn-outline, .rg-btn-primary { padding:10px 14px; font-size:12px; }
+  .rg-check-row, .rg-radio-row { padding:7px 0; font-size:12px; }
+  .rg-check-row input[type=checkbox] { width:17px; height:17px; }
+  .rg-style-card { padding:11px 12px; }
+  .rg-style-name { font-size:13px; }
+  .rg-style-desc { font-size:10.5px; }
 }
 
 
@@ -9369,14 +9398,11 @@ function showShareModal() {
 
   // ── Report Generator State ─────────────────────────────────────────────────
   let _rgFilter     = 'all';
-  let _rgTheme      = 'photographic';
-  let _rgLayout     = 'grid';
-  let _rgPrimary    = '#1a73e8';
+  let _rgStyle      = 'grid';     // grid | flow | compact | photo
   let _rgImgSize    = 'regular';
   let _rgImgQual    = 'low';
   let _rgSquare     = false;
   let _rgPageNums   = true;
-  let _rgCoverNotes = true;
   let _rgInclPhotos = true;
   let _rgInclTS     = true;
   let _rgInclNotes  = true;
@@ -9388,7 +9414,7 @@ function showShareModal() {
   let _rgWhiteLabel  = false;
 
   // Section collapse state
-  const _sec = { layout:true, themes:true, cover:true, colours:false, images:false, include:false, branding:false };
+  const _sec = { style:true, cover:true, images:false, include:false, branding:false };
   // Inject display name input at top of share modal
   requestAnimationFrame(()=>{
     const mo=document.querySelector('.modal');
@@ -9401,13 +9427,6 @@ function showShareModal() {
     }
   });
 
-  // Map RG theme → PDF template key (passed directly to pdf-export.js)
-  const _themeToPDF = {
-    classic:'classic', modern:'modern', minimal:'minimal',
-    corporate:'corporate', photographic:'photographic',
-    bright:'classic', financial:'corporate', dark:'modern',
-  };
-
   // ── Expose settings for exportPDF() to read ───────────────────────────────
   window._pdfExportSettings = {
     get quality()      { return _rgImgQual === 'max' ? 0.92 : 0.70; },
@@ -9417,8 +9436,11 @@ function showShareModal() {
     get inclTags()     { return _rgInclTags; },
     get inclCover()    { return _rgInclCover; },
     get inclEnv()      { return _rgInclEnv; },
-    get pdfTheme()     { return _themeToPDF[_rgTheme]   || 'classic'; },
-    get layout()       { return _rgLayout; },
+    get style()        { return _rgStyle; },
+    get filter()       { return _rgFilter; },
+    get pageNums()     { return _rgPageNums; },
+    get square()       { return _rgSquare; },
+    get imgSize()      { return _rgImgSize; },
     get reportTitle()  { return _rgReportTitle; },
     get footerText()   { return _rgFooterText; },
     get whiteLabel()   { return _rgWhiteLabel; },
@@ -9443,16 +9465,14 @@ function showShareModal() {
     }
     const co = window.getActiveCompany?.() || ADH_COMPANIES[0];
     const html = window.buildPDFPreviewHTML(proj, {
-      theme:       _rgTheme,
+      style:       _rgStyle,
       filter:      _rgFilter,
-      primary:     _rgPrimary,
       inclCover:   _rgInclCover,
       inclPhotos:  _rgInclPhotos,
       inclNotes:   _rgInclNotes,
       inclTags:    _rgInclTags,
       inclTS:      _rgInclTS,
       inclEnv:     _rgInclEnv,
-      coverNotes:  _rgCoverNotes,
       reportTitle: _rgReportTitle,
       whiteLabel:  _rgWhiteLabel,
       square:      _rgSquare,
@@ -9467,7 +9487,7 @@ function showShareModal() {
     if (window._rgPreviewBlobUrl) URL.revokeObjectURL(window._rgPreviewBlobUrl);
     window._rgPreviewBlobUrl = url;
     return `<iframe src="${url}" style="width:100%;height:100%;border:none;display:block;"
-      sandbox="allow-same-origin" loading="lazy"></iframe>`;
+      sandbox="allow-same-origin allow-scripts" loading="lazy"></iframe>`;
   }
 
   // ── Sidebar ────────────────────────────────────────────────────────────────
@@ -9489,9 +9509,9 @@ function showShareModal() {
           </div>`).join('')}
       </div>
 
-      <!-- LAYOUT -->
+      <!-- REPORT STYLE -->
       <div class="rg-section">
-        <div class="rg-section-hdr" onclick="window._rgSecToggle('layout')">
+        <div class="rg-section-hdr" onclick="window._rgSecToggle('style')">
           <div class="rg-section-title">
             <div class="rg-section-dot">
               <svg viewBox="0 0 9 9" fill="#fff">
@@ -9499,43 +9519,21 @@ function showShareModal() {
                 <rect x="5" y="1" width="3" height="3" rx="0.6" fill="none" stroke="#fff" stroke-width="1"/>
                 <rect x="5" y="5" width="3" height="3" rx="0.6" fill="none" stroke="#fff" stroke-width="1"/>
               </svg>
-            </div>Layout
-          </div>${chevron('layout')}
+            </div>Report Style
+          </div>${chevron('style')}
         </div>
-        <div class="rg-section-body ${_sec.layout?'':'collapsed'}">
-          <div class="rg-radio-group">
-            ${[['grid','Branded Grid — navy bars, photo grid'],
-               ['flow','Clean Flow — hero cover, continuous']].map(([v,l])=>`
-              <label class="rg-radio-row">
-                <input type="radio" name="rg-layout" value="${v}"
-                  ${_rgLayout===v?'checked':''}
-                  onchange="window._rgSetLayout('${v}')"> ${l}
-              </label>`).join('')}
-          </div>
-        </div>
-      </div>
-
-      <!-- THEMES -->
-      <div class="rg-section">
-        <div class="rg-section-hdr" onclick="window._rgSecToggle('themes')">
-          <div class="rg-section-title">
-            <div class="rg-section-dot">
-              <svg viewBox="0 0 9 9" fill="#fff">
-                <circle cx="4.5" cy="4.5" r="3.5" fill="none" stroke="#fff" stroke-width="1.5"/>
-                <circle cx="4.5" cy="4.5" r="1.5" fill="#fff"/>
-              </svg>
-            </div>Themes
-          </div>${chevron('themes')}
-        </div>
-        <div class="rg-section-body ${_sec.themes?'':'collapsed'}">
-          <div class="rg-radio-group">
-            ${[['classic','Classic'],['modern','Modern / Dark'],
-               ['minimal','Minimal'],['corporate','Corporate / Green'],
-               ['photographic','Photographic']].map(([v,l])=>`
-              <label class="rg-radio-row">
-                <input type="radio" name="rg-theme" value="${v}"
-                  ${_rgTheme===v?'checked':''}
-                  onchange="window._rgSetTheme('${v}')"> ${l}
+        <div class="rg-section-body ${_sec.style?'':'collapsed'}">
+          <div class="rg-style-list">
+            ${[['grid','Branded Grid','Navy section bars · photo grid · formal'],
+               ['flow','Clean Flow','Hero photo cover · continuous narrative'],
+               ['compact','Compact Table','Dense rows · small thumbs · punch-list'],
+               ['photo','Photo Focus','Large photos · one item per block']].map(([v,l,d])=>`
+              <label class="rg-style-card ${_rgStyle===v?'active':''}">
+                <input type="radio" name="rg-style" value="${v}" style="display:none"
+                  ${_rgStyle===v?'checked':''}
+                  onchange="window._rgSetStyle('${v}')">
+                <div class="rg-style-name">${l}</div>
+                <div class="rg-style-desc">${d}</div>
               </label>`).join('')}
           </div>
         </div>
@@ -9662,10 +9660,6 @@ function showShareModal() {
             <input type="checkbox" ${_rgInclCover?'checked':''}
               onchange="window._rgToggle('cover')"> Show Cover Page
           </label>
-          <label class="rg-check-row">
-            <input type="checkbox" ${_rgCoverNotes?'checked':''}
-              onchange="window._rgToggle('notes_cover')"> General Notes on Cover
-          </label>
           <div style="margin-top:8px">
             <div style="font-size:10px;color:var(--text3);font-family:var(--mono);font-weight:600;
               text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">Report Title</div>
@@ -9673,39 +9667,6 @@ function showShareModal() {
               value="${_rgReportTitle}"
               oninput="window._rgSetReportTitle(this.value)"
               placeholder="Site Conditions Report"/>
-          </div>
-        </div>
-      </div>
-
-      <!-- COLOURS -->
-      <div class="rg-section">
-        <div class="rg-section-hdr" onclick="window._rgSecToggle('colours')">
-          <div class="rg-section-title">
-            <div class="rg-section-dot">
-              <svg viewBox="0 0 9 9" fill="#fff">
-                <rect x="0.5" y="0.5" width="4" height="4" rx="0.5" fill="#fff"/>
-                <rect x="4.5" y="0.5" width="4" height="4" rx="0.5" fill="#fff" opacity="0.65"/>
-                <rect x="0.5" y="4.5" width="4" height="4" rx="0.5" fill="#fff" opacity="0.65"/>
-                <rect x="4.5" y="4.5" width="4" height="4" rx="0.5" fill="#fff" opacity="0.35"/>
-              </svg>
-            </div>Colours
-          </div>${chevron('colours')}
-        </div>
-        <div class="rg-section-body ${_sec.colours?'':'collapsed'}">
-          <div class="rg-color-list">
-            <div class="rg-color-item">
-              <span>Primary Colour</span>
-              <input type="color" value="${_rgPrimary}"
-                onchange="window._rgSetPrimary(this.value)">
-            </div>
-            <div class="rg-color-item">
-              <span>Text</span>
-              <input type="color" value="#000000">
-            </div>
-            <div class="rg-color-item">
-              <span>Sub Text</span>
-              <input type="color" value="#d40b0b">
-            </div>
           </div>
         </div>
       </div>
@@ -9801,11 +9762,9 @@ function showShareModal() {
   // ── Global handlers ────────────────────────────────────────────────────────
   window._rgRebuildAll     = () => { _rebuildSidebar(); _rebuildPreview(); };
   window._rgSetFilter      = v  => { _rgFilter  = v; _rebuildSidebar(); _rebuildPreview(); };
-  window._rgSetTheme       = v  => { _rgTheme   = v; _rebuildSidebar(); _rebuildPreview(); };
-  window._rgSetLayout      = v  => { _rgLayout  = v; _rebuildSidebar(); _rebuildPreview(); };
-  window._rgSetImgSize     = v  => { _rgImgSize = v; _rebuildPreview(); };
+  window._rgSetStyle       = v  => { _rgStyle   = v; _rebuildSidebar(); _rebuildPreview(); };
+  window._rgSetImgSize     = v  => { _rgImgSize = v; _rebuildSidebar(); _rebuildPreview(); };
   window._rgSetImgQual     = v  => { _rgImgQual = v; _rebuildSidebar(); _rebuildPreview(); };
-  window._rgSetPrimary     = v  => { _rgPrimary = v; _rebuildPreview(); };
   let _rgTitleDebounce = null;
   window._rgSetReportTitle = v  => { _rgReportTitle = v; clearTimeout(_rgTitleDebounce); _rgTitleDebounce = setTimeout(_rebuildPreview, 500); };
   window._rgSecToggle      = name => { secToggle(name); };
@@ -9911,7 +9870,6 @@ function showShareModal() {
   };
   window._rgToggle = key => {
     const acts = {
-      notes_cover: () => _rgCoverNotes = !_rgCoverNotes,
       photos:      () => _rgInclPhotos = !_rgInclPhotos,
       ts:          () => _rgInclTS     = !_rgInclTS,
       notes:       () => _rgInclNotes  = !_rgInclNotes,
@@ -9927,6 +9885,9 @@ function showShareModal() {
 
   // ── Mount the overlay ──────────────────────────────────────────────────────
   closeModal();
+  // A previous generator instance must be removed first — duplicate IDs make
+  // the rebuild helpers target the OLD instance, leaving the new one blank.
+  document.getElementById('rg-overlay')?.remove();
   const ov = document.createElement('div');
   ov.className = 'rg-overlay';
   ov.id = 'rg-overlay';
