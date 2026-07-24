@@ -3536,7 +3536,9 @@ function _buildProjectPayload(proj) {
     : undefined;
 
   const out = Object.assign({}, proj, {
-    coverPhoto: null,  // stays in IndexedDB only
+    // Blob-storage URL syncs through Cosmos; pending base64 stays local
+    // until _flushPendingPhotos uploads it.
+    coverPhoto: (proj.coverPhoto && !proj.coverPhoto.startsWith('data:')) ? proj.coverPhoto : null,
     items: (proj.items || []).map(item => {
       const cloudPhotos = (item.photos || [])
         .filter(p => p.url)
@@ -3808,7 +3810,6 @@ function _mergeProjectIntoLocal(cloudProj) {
   const localProj = store.projects.find(p => p.id === localPid);
 
   if (localProj) {
-    if (localProj.coverPhoto) localPhotos['_cover'] = localProj.coverPhoto;
     (localProj.items || []).forEach(i => {
       if (i.photos && i.photos.length) localPhotos[i.id] = i.photos;
     });
@@ -3860,8 +3861,12 @@ function _mergeProjectIntoLocal(cloudProj) {
     id:        localPid,  // always keep local ID format
     items:     [...localItemMap.values()]
   });
-  // Restore cover photo (never in Cosmos)
-  if (localPhotos['_cover']) mergedProj.coverPhoto = localPhotos['_cover'];
+  // Cover photo: a pending local upload (base64 not yet flushed to blob
+  // storage) always wins; otherwise the cloud value is authoritative so
+  // covers — and cover removals (null) — sync across devices like SI photos.
+  if (localProj.coverPhoto && localProj.coverPhoto.startsWith('data:')) {
+    mergedProj.coverPhoto = localProj.coverPhoto;
+  }
   // Restore floor plan image data (never in Cosmos)
   if (localProj.floorPlan && localProj.floorPlan.imageData && mergedProj.floorPlan) {
     mergedProj.floorPlan.imageData = localProj.floorPlan.imageData;
@@ -3879,6 +3884,18 @@ function _mergeProjectIntoLocal(cloudProj) {
 // ── Main sync function ────────────────────────────────────────────────────────
 
 async function _flushPendingPhotos(proj) {
+  // Cover photo: same treatment as SI photos — upload the pending base64
+  // to blob storage and replace it with the permanent URL, which then
+  // syncs to other devices through the project document.
+  if (proj.coverPhoto && proj.coverPhoto.startsWith('data:')) {
+    try {
+      const coverUrl = await _uploadPhotoToAzureBlob(proj.coverPhoto, proj.id, 'cover');
+      if (coverUrl) proj.coverPhoto = coverUrl;
+    } catch(e) {
+      console.warn('[Sync] Cover photo upload failed:', e.message);
+    }
+  }
+
   for (const item of proj.items || []) {
     for (const p of item.photos || []) {
       
@@ -8469,6 +8486,9 @@ function handleCoverPhotoUpload(e) {
       buildProjectView(_coverPid);
       renderLeft(route());
       showToast('✓ Cover photo updated', 'green');
+      // Push right away so the cover lands in blob storage without
+      // waiting for the 30s auto-sync (no-op while offline).
+      if (navigator.onLine) syncChanges(true);
     };
     img.src = ev.target.result;
   };

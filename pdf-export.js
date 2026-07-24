@@ -620,10 +620,10 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
         doc.setFontSize(7.5); doc.setFont(P.font,'bold'); setText(P.sub); doc.text(k.toUpperCase(),MX,ty);
         doc.setFontSize(11); doc.setFont(P.font,'normal'); setText(P.text); doc.text(String(v),MX,ty+6,{maxWidth:CW-78}); ty += 15;
       });
-      if (proj.coverPhoto) { try {
+      if (coverImg) { try {
         const iw=70, ih=92, ix=PW-MX-iw, iy=72;
         setStroke(P.border); doc.setLineWidth(0.3); doc.roundedRect(ix,iy,iw,ih,2,2,'D');
-        doc.addImage(proj.coverPhoto,'JPEG',ix,iy,iw,ih,'','FAST');
+        doc.addImage(coverImg,'JPEG',ix,iy,iw,ih,'','FAST');
       } catch(e){} }
       drawStats(228);
       setText(P.sub); doc.setFontSize(8); doc.text('Generated '+new Date().toLocaleDateString(), MX, PH-14);
@@ -634,7 +634,7 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       newPage();
       const heroH = 176;
       let drew = false;
-      if (proj.coverPhoto) { try { doc.addImage(proj.coverPhoto,'JPEG',0,0,PW,heroH,'','FAST'); drew = true; } catch(e){} }
+      if (coverImg) { try { doc.addImage(coverImg,'JPEG',0,0,PW,heroH,'','FAST'); drew = true; } catch(e){} }
       if (!drew) { setFill(P.ink); doc.rect(0,0,PW,heroH,'F'); }
       try {
         doc.setGState(new doc.GState({opacity:0.45})); setFill('#0b1220'); doc.rect(0,0,PW,heroH,'F');
@@ -852,6 +852,10 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
     }
 
     // ── DISPATCH: cover ───────────────────────────────────────────────────────
+    // The cover can be a blob-storage URL (synced like SI photos) — jsPDF's
+    // addImage cannot fetch remote URLs, so convert it to a data URL first.
+    let coverImg = proj.coverPhoto || null;
+    if (coverImg && /^https?:/.test(coverImg)) coverImg = await compressImage(coverImg, 0.9);
     if (inclCover) { layoutKey === 'flow' ? coverFlow() : coverGrid(); }
 
     // ── SECTIONS + ITEMS ──────────────────────────────────────────────────────
