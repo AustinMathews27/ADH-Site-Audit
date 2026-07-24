@@ -1199,7 +1199,7 @@ input[type="radio"] {
   background:var(--surface); border-top:1px solid var(--border);
   padding:8px 0 calc(8px + var(--sab));
   z-index:300;
-  grid-template-columns:repeat(3,1fr);
+  grid-template-columns:repeat(5,1fr);
 }
 .mbn-item {
   display:flex; flex-direction:column; align-items:center; gap:3px;
@@ -1212,7 +1212,6 @@ input[type="radio"] {
 
 /* Phone: stack vertically, hide left panel, show bottom nav */
 @media (max-width:640px) {
-  .left-panel { display:none; }
   .app-body { flex-direction:column; }
   .right-panel { flex:1; overflow:hidden; }
   .mobile-bottom-nav { display:grid; }
@@ -1777,8 +1776,40 @@ html.is-phone .camera-fab::before {
   mask-size: contain;
 }
 
+/* ── PHONE LEFT-PANEL DRAWER ────────────────────────────────── */
+/* On phones the left panel (folders / SI list / bulk actions) becomes
+   an off-canvas drawer, opened via the Browse tab in the bottom nav. */
+html.is-phone .left-panel {
+  position: fixed; top: 0; left: 0; bottom: 0;
+  width: min(84vw, 340px);
+  z-index: 700;
+  transform: translateX(-105%);
+  transition: transform 0.26s ease;
+  border-right: 1px solid var(--border);
+  box-shadow: none;
+  padding-bottom: var(--sab);
+}
+html.is-phone body.drawer-open .left-panel {
+  transform: translateX(0);
+  box-shadow: 12px 0 34px rgba(0,0,0,0.28);
+}
+.drawer-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 690;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.26s ease;
+}
+body.drawer-open .drawer-overlay { opacity: 1; pointer-events: auto; }
+.drawer-close-btn { display: none; }
+html.is-phone .drawer-close-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface2);
+  color: var(--text2); font-size: 14px; cursor: pointer;
+}
+
 /* ── PHONE NAV BAR ──────────────────────────────────────────── */
-html.is-phone .left-panel { display: none !important; }
 html.is-phone .app-body { flex-direction: column; }
 html.is-phone .right-panel { flex: 1; overflow: hidden; }
 
@@ -1894,7 +1925,7 @@ html.is-phone .notif-badge {
 /* ── PHONE BOTTOM NAV ───────────────────────────────────────── */
 html.is-phone .mobile-bottom-nav {
   display: grid !important;
-  grid-template-columns: repeat(4, 1fr) !important;
+  grid-template-columns: repeat(5, 1fr) !important;
   background: var(--surface);
   border-top: 1px solid var(--border);
   padding: 8px 4px calc(8px + var(--sab));
@@ -1934,6 +1965,10 @@ html.is-phone .mbn-label {
 html.is-phone #mbn-home .mbn-icon::before {
   -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 9.5 12 3l9 6.5'/><path d='M5 9v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9'/><path d='M9 21V12h6v9'/></svg>");
           mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 9.5 12 3l9 6.5'/><path d='M5 9v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9'/><path d='M9 21V12h6v9'/></svg>");
+}
+html.is-phone #mbn-browse .mbn-icon::before {
+  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M8 6h13'/><path d='M8 12h13'/><path d='M8 18h13'/><path d='M3 6h.01'/><path d='M3 12h.01'/><path d='M3 18h.01'/></svg>");
+          mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M8 6h13'/><path d='M8 12h13'/><path d='M8 18h13'/><path d='M3 6h.01'/><path d='M3 12h.01'/><path d='M3 18h.01'/></svg>");
 }
 html.is-phone #mbn-contacts .mbn-icon::before {
   -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/><circle cx='9' cy='7' r='4'/><path d='M22 21v-2a4 4 0 0 0-3-3.87'/><path d='M16 3.13a4 4 0 0 1 0 7.75'/></svg>");
@@ -2854,6 +2889,16 @@ textarea.field-input { min-height: 88px !important; line-height: 1.6 !important;
   margin: 3px 0;
 }
 
+/* Dot on the sync button while a merged cloud update waits to repaint */
+.sync-pending { position: relative; }
+.sync-pending::after {
+  content: '';
+  position: absolute; top: 7px; right: 7px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
 /* ── LEFT PANEL HIDDEN ON ROOT (option C) ────────────────────── */
 .left-panel.is-hidden { display: none !important; }
 
@@ -3077,6 +3122,7 @@ html.dark .folder-logo-img.logo-dark-bg{ background:#1c1c1e !important; padding:
     <div class="panel-header">
       <div class="panel-header-row">
         <span class="panel-title" id="left-panel-title">Folders</span>
+        <button class="drawer-close-btn" onclick="closeMobileDrawer()" title="Close">✕</button>
       </div>
       <div class="search-box">
         <span class="search-icon">⌕</span>
@@ -3150,10 +3196,16 @@ html.dark .folder-logo-img.logo-dark-bg{ background:#1c1c1e !important; padding:
 <input type="file" id="attach-file-input" accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.txt,.csv,.zip,.png,.jpg,.jpeg" multiple onchange="handleAttachmentImport(event)" style="display:none">
 <input type="file" id="floorplan-input" accept="image/*,.pdf" onchange="handleFloorPlanUpload(event)" style="display:none">
 
+<!-- Drawer overlay (phones only) — closes the left-panel drawer -->
+<div class="drawer-overlay" id="drawer-overlay" onclick="closeMobileDrawer()"></div>
+
 <!-- Mobile bottom nav (phones only) -->
 <div class="mobile-bottom-nav" id="mobile-bottom-nav">
   <div class="mbn-item" onclick="navToRoot()" id="mbn-home">
     <span class="mbn-icon">🏠</span><span class="mbn-label">Home</span>
+  </div>
+  <div class="mbn-item" onclick="toggleMobileDrawer()" id="mbn-browse">
+    <span class="mbn-icon">📋</span><span class="mbn-label">Browse</span>
   </div>
   <div class="mbn-item" onclick="navToContacts()" id="mbn-contacts">
     <span class="mbn-icon">📇</span><span class="mbn-label">Contacts</span>
@@ -3729,6 +3781,25 @@ function _localPidFrom(cloudProj) {
  * - Skips items flagged _dirty (user has unsaved changes).
  * - Adds project if it doesn't exist locally yet.
  */
+const _SNAP_VOLATILE = new Set(['_ts', '_rid', '_self', '_etag', '_attachments', 'projectId']);
+function _projSnapshot(p) {
+  // Cheap change-detection serialization. Cosmos metadata is excluded
+  // (it changes on every save even when content is identical), and long
+  // strings (base64 photos, signatures, floor plans) are reduced to a
+  // length+edges fingerprint so we never stringify megabytes just to
+  // compare two project versions.
+  return JSON.stringify(p, (k, v) => {
+    if (_SNAP_VOLATILE.has(k)) return undefined;
+    if (typeof v === 'string' && v.length > 256) {
+      return 'trunc:' + v.length + ':' + v.slice(0, 24) + v.slice(-24);
+    }
+    return v;
+  });
+}
+
+// Returns true when the merge actually changed local data — callers use
+// this to skip pointless re-renders when the cloud _ts bumped but the
+// content is identical (or every local item was dirty and skipped).
 function _mergeProjectIntoLocal(cloudProj) {
   const localPid = _localPidFrom(cloudProj);
 
@@ -3757,7 +3828,7 @@ function _mergeProjectIntoLocal(cloudProj) {
   if (!localProj) {
     // Never (re-)add a project that is deleted — either the cloud doc itself
     // is a tombstone, or we already hold a tombstone for that ID.
-    if (cloudProj._deleted || (store.projectTombstones || {})[localPid]) return;
+    if (cloudProj._deleted || (store.projectTombstones || {})[localPid]) return false;
     // New project from another device — add it
     const newProj = Object.assign({}, cloudProj, {
       id:        localPid,
@@ -3765,7 +3836,7 @@ function _mergeProjectIntoLocal(cloudProj) {
     });
     delete newProj.projectId; // only needed for Cosmos key lookup
     store.projects.push(newProj);
-    return;
+    return true;
   }
 
   // Merge items: skip _dirty local items, merge the rest field-by-field
@@ -3799,6 +3870,10 @@ function _mergeProjectIntoLocal(cloudProj) {
 
   const idx = store.projects.findIndex(p => p.id === localPid);
   if (idx >= 0) store.projects[idx] = mergedProj;
+
+  // localProj was never mutated (merge builds new objects), so comparing
+  // it against mergedProj tells us whether anything actually changed.
+  return _projSnapshot(localProj) !== _projSnapshot(mergedProj);
 }
 
 // ── Main sync function ────────────────────────────────────────────────────────
@@ -3948,7 +4023,9 @@ async function _syncSingleProject(pid) {
         _cloudTs.projects[pid] = remoteTs;
         await _idbSet('fap_v3', store);
         await _saveCloudTs();
-        _renderFromSync();
+        // Manual sync — the user asked for this, repaint immediately
+        // (their own button tap would otherwise defer it as "activity").
+        _applySyncRender();
       }
     }
   } catch(err) {
@@ -4015,16 +4092,37 @@ async function _pullAll() {
 // debounce has not fired yet — rebuilds the textarea from the stale store,
 // dropping in-flight keystrokes. These helpers gate that rebuild.
 
-function _isEditingSI() {
-  // True when the user is actively interacting with the open SI editor.
-  const editor = document.getElementById('v-si');
+// ── Sync repaint deferral ─────────────────────────────────────────
+// Cloud data is ALWAYS merged into the store the moment it arrives;
+// what gets deferred is only the repaint. While the user is actively
+// working — recent touch/typing/scroll, a focused form field, a pending
+// autosave, an open modal/annotation/search overlay, or the phone
+// drawer — the repaint is queued (dot on the sync button) and flushed
+// once they go idle or navigate. Sync never yanks the screen mid-work.
+
+let _pendingSyncRender = false;
+let _lastUserActivity  = Date.now();
+const SYNC_IDLE_MS     = 10000;
+
+['pointerdown','keydown','touchstart','wheel'].forEach(ev =>
+  window.addEventListener(ev, () => { _lastUserActivity = Date.now(); },
+    { capture: true, passive: true }));
+
+function _userIsBusy() {
   const ae = document.activeElement;
-  const focusedInEditor = !!(editor && ae && editor.contains(ae) &&
-    /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName || ''));
+  if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName || '')) return true;
   // _autoSaveTimer is non-null only while a debounced save is pending
   // (it is nulled the moment the timer fires — see scheduleAutoSave).
-  const savePending = _autoSaveTimer != null;
-  return focusedInEditor || savePending;
+  if (_autoSaveTimer != null) return true;
+  if (document.getElementById('modal-overlay')) return true;
+  if (document.querySelector('.annotation-overlay, .global-search-overlay')) return true;
+  if (document.body.classList.contains('drawer-open')) return true;
+  return (Date.now() - _lastUserActivity) < SYNC_IDLE_MS;
+}
+
+function _setSyncPendingDot(on) {
+  document.querySelectorAll('#sync-btn, .nav-actions .btn-icon[onclick*="syncChanges"]')
+    .forEach(el => el.classList.toggle('sync-pending', on));
 }
 
 function _rebuildSIEditorPreservingScroll() {
@@ -4062,21 +4160,30 @@ function _rebuildSIEditorPreservingScroll() {
   }
 }
 
-function _renderFromSync() {
-  // Render entry point for background sync. Protects the active SI editor.
+function _applySyncRender() {
+  _pendingSyncRender = false;
+  _setSyncPendingDot(false);
   const r = route();
-  if (r.view === 'si') {
-    if (_isEditingSI()) {
-      // Mid-edit: store is already merged; refresh only the left panel.
-      // The form refreshes on the next idle poll (preserving scroll).
-      renderLeft(r);
-      return;
-    }
-    _rebuildSIEditorPreservingScroll();
-    return;
-  }
+  if (r.view === 'si') { _rebuildSIEditorPreservingScroll(); return; }
   render();
 }
+
+// Render entry point for background sync. Returns true when the repaint
+// actually happened, false when it was queued for later.
+function _renderFromSync() {
+  if (_userIsBusy()) {
+    _pendingSyncRender = true;
+    _setSyncPendingDot(true);
+    return false;
+  }
+  _applySyncRender();
+  return true;
+}
+
+// Flush a queued sync repaint once the user has gone idle
+setInterval(() => {
+  if (_pendingSyncRender && !_userIsBusy()) _applySyncRender();
+}, 3000);
 
 let _pollIntervalId  = null;
 const POLL_MS        = 15000;
@@ -4109,8 +4216,7 @@ async function _pollForRemoteChanges() {
 
       if (newIds.length > 0) {
         await _idbSet('fap_v3', store);
-        _renderFromSync();
-        showToast('🔄 New project available', 'green');
+        if (_renderFromSync()) showToast('🔄 New project available', 'green');
       }
     }
 
@@ -4121,12 +4227,16 @@ async function _pollForRemoteChanges() {
       try {
         const cp = await _apiGetProject(r.projectId);
         if (cp && (cp._ts || 0) > lastTs) {
-          _mergeProjectIntoLocal(cp);
+          const changed = _mergeProjectIntoLocal(cp);
           _cloudTs.projects[r.projectId] = cp._ts;
           await _idbSet('fap_v3', store);
-          _renderFromSync();
-          showToast('🔄 Updated from cloud', 'green');
-          console.log(`[Poll] Project ${r.projectId} updated from cloud`);
+          // Only repaint (or queue a repaint) when the merge actually
+          // changed local data — a ts bump with identical content, or a
+          // merge fully skipped because local items were dirty, is a no-op.
+          if (changed) {
+            if (_renderFromSync()) showToast('🔄 Updated from cloud', 'green');
+            console.log(`[Poll] Project ${r.projectId} updated from cloud`);
+          }
         }
       } catch(e) { console.warn(`[Poll] Project ${r.projectId} check failed:`, e.message); }
     }
@@ -4578,7 +4688,19 @@ function navToTbLog(pid){
 // ══════════════════════════════════════════
 function render() {
   const r = route();
-  
+
+  // A full render always paints the freshest store, so it satisfies any
+  // sync repaint that was queued while the user was busy.
+  _pendingSyncRender = false;
+  _setSyncPendingDot(false);
+
+  // Navigating away closes the phone drawer — but background sync renders
+  // (same route) must not rip it out from under the user.
+  if (document.body.classList.contains('drawer-open') &&
+      JSON.stringify(r) !== window._drawerRoute) {
+    closeMobileDrawer();
+  }
+
   // 1. Instantly draw the nav bar
   renderNavBar(r);
   
@@ -4695,6 +4817,19 @@ function updateMobileNav(r) {
   if(r.view==='contacts') document.getElementById('mbn-contacts')?.classList.add('active');
 }
 
+// ── MOBILE DRAWER (phone left panel) ─────
+function toggleMobileDrawer() {
+  if (document.body.classList.contains('drawer-open')) { closeMobileDrawer(); return; }
+  window._drawerRoute = JSON.stringify(route()); // remember where it was opened
+  document.body.classList.add('drawer-open');
+  document.getElementById('mbn-browse')?.classList.add('active');
+  renderLeft(route()); // panel is skipped while closed — build it now
+}
+function closeMobileDrawer() {
+  document.body.classList.remove('drawer-open');
+  document.getElementById('mbn-browse')?.classList.remove('active');
+}
+
 // ── LEFT PANEL ───────────────────────────
 function renderLeft(r) {
   // Hide left panel on root home screen (option C) — folders shown in main grid instead
@@ -4703,12 +4838,14 @@ function renderLeft(r) {
     !['contacts','toolbox','awi','resources','tblog','env','schedule','manpower','activity','floorplan'].includes(r.view);
 
   const q = (document.getElementById('search-input')?.value || '').toLowerCase();
+  const isPhone = document.documentElement.classList.contains('is-phone');
 
-  // When a global search query is active, always show the left panel
-  if (leftPanel) leftPanel.classList.toggle('is-hidden', isRootView && !q);
+  // When a global search query is active, always show the left panel.
+  // On phones the panel is a drawer — never hard-hide it there.
+  if (leftPanel) leftPanel.classList.toggle('is-hidden', isRootView && !q && !isPhone);
 
-  // Do not waste CPU building the left panel if it is hidden on mobile
-  if (document.documentElement.classList.contains('is-phone')) {
+  // Do not waste CPU building the panel while the phone drawer is closed
+  if (isPhone && !document.body.classList.contains('drawer-open')) {
     return;
   }
 
@@ -6253,6 +6390,12 @@ function buildFolderView(fid) {
       <div class="sort-btn ${fs.groupBy==='auditor'?'active':''}" id="sort-btn-auditor"
         onclick="getFolderState('${fid}').groupBy=getFolderState('${fid}').groupBy==='auditor'?'none':'auditor';rebuildFolderProjs('${fid}')">👤 Auditor</div>
     </div>
+
+    ${subfolders.length ? `
+      <div class="section-divider">Folders</div>
+      <div class="folder-grid" style="margin-bottom:20px">
+        ${subfolders.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(f=>folderCardHTML(f)).join('')}
+      </div>` : ''}
 
     <div class="section-divider">Projects</div>
     <div id="folder-proj-area"></div>
