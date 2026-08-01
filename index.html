@@ -11998,14 +11998,24 @@ function _initMobileQoL() {
   }, { passive: true });
 
   // ── Prevent pull-to-refresh rubber-banding on iOS in PWA mode ──
-  let _lastY = 0;
-  document.addEventListener('touchmove', e => {
-    const el = e.target.closest('[data-scroll]') || e.target.closest('.list-scroll') ||
-                e.target.closest('.edit-scroll') || e.target.closest('.grid-wrap') ||
-                e.target.closest('.env-wrap') || e.target.closest('[style*="overflow"]');
-    if (!el) {
-      e.preventDefault();
+  // Allow the gesture when ANYTHING under the finger can actually scroll,
+  // decided once per touch and cached for the rest of the gesture. The old
+  // class whitelist here silently blocked touch-scrolling in every container
+  // it didn't know about (admin console, Innergy picker, modals…).
+  let _tmAllow = false;
+  document.addEventListener('touchstart', e => {
+    _tmAllow = false;
+    let el = e.target instanceof Element ? e.target : null;
+    while (el && el !== document.documentElement) {
+      if (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1) {
+        const s = getComputedStyle(el);
+        if (/(auto|scroll)/.test(s.overflowY + ' ' + s.overflowX)) { _tmAllow = true; break; }
+      }
+      el = el.parentElement;
     }
+  }, { capture: true, passive: true });
+  document.addEventListener('touchmove', e => {
+    if (!_tmAllow) e.preventDefault();
   }, { passive: false });
 }
 
