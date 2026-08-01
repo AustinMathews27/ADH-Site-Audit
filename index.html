@@ -819,7 +819,34 @@ select.field-input { cursor:pointer; }
 }
 .recovery-btn:hover { border-color:var(--accent); color:var(--accent); }
 .recovery-btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+.recovery-btn.danger { background:var(--red-dim); border-color:var(--red-dim); color:var(--red); }
 .recovery-btn:disabled { opacity:0.4; cursor:default; pointer-events:none; }
+.adm-tabs {
+  display:flex; gap:6px; padding:8px 16px; overflow-x:auto; flex-shrink:0;
+  background:var(--surface); border-bottom:1px solid var(--border);
+  -webkit-overflow-scrolling:touch;
+}
+.adm-tab {
+  padding:7px 13px; border-radius:20px; border:1px solid var(--border);
+  background:var(--surface2); color:var(--text2); font-family:var(--mono); font-size:11px;
+  font-weight:700; cursor:pointer; white-space:nowrap; transition:all 0.15s; flex-shrink:0;
+}
+.adm-tab.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+.adm-section {
+  border:1px solid var(--border); border-radius:12px; background:var(--surface);
+  padding:14px; margin-bottom:12px;
+}
+.adm-section-title { font-size:12px; font-weight:700; margin-bottom:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.adm-stat-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; margin-bottom:12px; }
+.adm-stat { border:1px solid var(--border); border-radius:10px; background:var(--surface); padding:10px 12px; }
+.adm-stat b { display:block; font-size:18px; font-family:var(--mono); }
+.adm-stat span { font-size:10px; color:var(--text2); }
+.adm-row {
+  display:flex; align-items:center; gap:10px; padding:9px 12px; margin-bottom:6px;
+  border:1px solid var(--border); border-radius:9px; background:var(--surface); font-size:12px;
+}
+.adm-row .adm-row-main { flex:1; min-width:0; overflow:hidden; }
+.adm-row .adm-row-sub { font-size:10px; color:var(--text2); font-family:var(--mono); }
 
 /* ── REPORT GENERATOR — SITE AUDIT PRO STYLE ── */
 .rg-overlay {
@@ -4629,11 +4656,11 @@ function showUserMenu() {
       </div>
     </div>
     ${isAdmin ? `
-    <button onclick="closeModal();showPhotoRecovery()"
+    <button onclick="closeModal();showAdminConsole()"
       style="width:100%;margin-top:14px;padding:10px;background:var(--accent-dim);color:var(--accent);
       border:1px solid var(--accent-dim);border-radius:9px;font-family:var(--mono);font-size:12px;
       font-weight:700;cursor:pointer">
-      🧰 Photo Recovery (Admin)
+      🛠 Admin Console
     </button>` : ''}
     ${!isLocal && !isSharedWorkspace ? `
     <button onclick="localStorage.removeItem('adh_auth_token'); localStorage.removeItem('adh_user_id'); window.location.href='/.auth/logout?post_logout_redirect_uri=/'"
@@ -4686,8 +4713,9 @@ function showLoginModal() {
       crypto.subtle.digest('SHA-256', enc.encode(id)).then(hashHex),
       crypto.subtle.digest('SHA-256', enc.encode(pw)).then(hashHex),
     ]);
-    const ADMIN_ID = 'c7c1319276e936c8d64f1d5ed80cd8a0cf54e6dea7b0125533eb4163e03a2c11';
-    const ADMIN_PW = '6a21d6a9c4e10c951b1b15b0734cde6e257a31f63f5abe26b55073d42acf8167';
+    // Console-set credentials (System tab) override the built-in defaults
+    const ADMIN_ID = store.settings.adminIdHash || 'c7c1319276e936c8d64f1d5ed80cd8a0cf54e6dea7b0125533eb4163e03a2c11';
+    const ADMIN_PW = store.settings.adminPwHash || '6a21d6a9c4e10c951b1b15b0734cde6e257a31f63f5abe26b55073d42acf8167';
     if (idHash === ADMIN_ID && pwHash === ADMIN_PW) {
       isAdmin = true;
       store.settings.isAdmin = true;
@@ -9353,61 +9381,98 @@ function previewPhoto(pid,sid,idx) {
 // data loss) are exactly what this recovers. Read-only against Azure:
 // restore just re-attaches URLs, it never moves or deletes blobs.
 // ══════════════════════════════════════════════════════════════════
-let _rec = null; // { blobs:[], pid:null, sel:Set<idx> }
+let _rec = null; // recovery tab state: { blobs:[], pid:null, sel:Set<idx> }
+let _admTab = 'recovery';
+let _admBlobCache = null; // shared blob listing for Recovery / Dead Photos / Storage tabs
 
-function showPhotoRecovery() {
+const _ADM_TABS = [
+  ['recovery', '📷 Recovery'], ['sweeper', '🧹 Dead Photos'], ['cleanup', '🗄 Storage'],
+  ['trash', '🗑 Trash'], ['sync', '⇅ Sync'], ['activity', '📜 Activity'],
+  ['backup', '💾 Backup'], ['system', '⚙️ System'],
+];
+
+function showAdminConsole(tab) {
   if (!isAdmin) { showToast('Admin access required', 'red'); return; }
-  _rec = { blobs: [], pid: null, sel: new Set() };
-
+  document.getElementById('admin-overlay')?.remove();
   const ov = document.createElement('div');
   ov.className = 'recovery-overlay';
-  ov.id = 'recovery-overlay';
+  ov.id = 'admin-overlay';
   ov.innerHTML = `
     <div class="recovery-header">
-      <span style="font-size:15px;font-weight:700">🧰 Photo Recovery</span>
-      <span id="rec-crumb" style="font-size:12px;color:var(--text2);flex:1"></span>
-      <button class="recovery-btn" onclick="_recRefresh()">↻ Refresh</button>
-      <button class="recovery-btn" onclick="_recClose()">✕ Close</button>
+      <span style="font-size:15px;font-weight:700">🛠 Admin Console</span>
+      <span id="rec-crumb" style="font-size:12px;color:var(--text2);flex:1;min-width:120px"></span>
+      <button class="recovery-btn" onclick="_admRefresh()">↻ Refresh</button>
+      <button class="recovery-btn" onclick="_admClose()">✕ Close</button>
     </div>
-    <div class="recovery-body" id="rec-body">
-      <div style="text-align:center;padding:40px 0;color:var(--text2)">Loading blob storage…</div>
-    </div>
+    <div class="adm-tabs" id="adm-tabs"></div>
+    <div class="recovery-body" id="rec-body"></div>
     <div class="recovery-bar" id="rec-bar" style="display:none"></div>`;
   document.body.appendChild(ov);
-  _recRefresh();
+  _admSwitch(tab || _admTab || 'recovery');
 }
+function showPhotoRecovery() { showAdminConsole('recovery'); } // legacy entry point
 
-function _recClose() {
-  document.getElementById('recovery-overlay')?.remove();
+function _admClose() {
+  document.getElementById('admin-overlay')?.remove();
   _rec = null;
 }
 
-async function _recRefresh() {
-  if (!_rec) return;
+function _admSwitch(tab) {
+  _admTab = tab;
+  const tabs = document.getElementById('adm-tabs');
+  if (tabs) tabs.innerHTML = _ADM_TABS.map(([id, label]) =>
+    `<button class="adm-tab ${id === tab ? 'active' : ''}" onclick="_admSwitch('${id}')">${label}</button>`).join('');
+  const bar = document.getElementById('rec-bar');
+  if (bar) { bar.style.display = 'none'; bar.innerHTML = ''; }
+  const body = document.getElementById('rec-body');
+  if (body) body.innerHTML = '';
+  const crumb = document.getElementById('rec-crumb');
+  if (crumb) crumb.textContent = '';
+  const renderers = {
+    recovery: _recEnter, sweeper: _admRenderSweeper, cleanup: _admRenderCleanup,
+    trash: _admRenderTrash, sync: _admRenderSync, activity: _admRenderActivity,
+    backup: _admRenderBackup, system: _admRenderSystem,
+  };
+  (renderers[tab] || _recEnter)();
+}
+
+function _admRefresh() {
+  if (['recovery', 'sweeper', 'cleanup'].includes(_admTab)) _admBlobCache = null;
+  _admSwitch(_admTab);
+}
+
+async function _admLoadBlobs() {
+  if (_admBlobCache) return _admBlobCache;
+  const res = await fetch('/api/listBlobs');
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  const blobs = (data.blobs || []).map((b, i) => {
+    const parts = b.name.split('/');
+    const file  = parts[parts.length - 1] || '';
+    const m     = file.match(/^(\d{13})-/);
+    return {
+      idx: i, name: b.name, url: b.url, size: b.size || 0,
+      projId: parts[0] || '',
+      siId:   parts.length >= 3 ? parts[1] : '',
+      date:   m ? new Date(+m[1]) : (b.lastModified ? new Date(b.lastModified) : null),
+    };
+  });
+  _admBlobCache = { blobs, truncated: !!data.truncated };
+  if (data.truncated) showToast('⚠️ Blob list truncated at ' + blobs.length, 'red');
+  return _admBlobCache;
+}
+
+// ── Tab: Photo Recovery ─────────────────────────────────────────────
+async function _recEnter() {
+  _rec = { blobs: [], pid: null, sel: new Set() };
   const body = document.getElementById('rec-body');
   if (body) body.innerHTML = `<div style="text-align:center;padding:40px 0;color:var(--text2)">Loading blob storage…</div>`;
   try {
-    const res = await fetch('/api/listBlobs');
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-    _rec.blobs = (data.blobs || []).map((b, i) => {
-      const parts = b.name.split('/');
-      const file  = parts[parts.length - 1] || '';
-      const m     = file.match(/^(\d{13})-/);
-      const date  = m ? new Date(+m[1]) : (b.lastModified ? new Date(b.lastModified) : null);
-      return {
-        idx: i, name: b.name, url: b.url, size: b.size || 0,
-        projId: parts[0] || '',
-        siId:   parts.length >= 3 ? parts[1] : '',
-        date,
-      };
-    });
-    _rec.sel = new Set();
-    if (data.truncated) showToast('⚠️ Blob list truncated — showing first ' + _rec.blobs.length, 'red');
+    _rec.blobs = (await _admLoadBlobs()).blobs;
     _recRender();
   } catch (e) {
     if (body) body.innerHTML = `<div style="color:var(--red);padding:24px;text-align:center">Could not list blob storage: ${_htmlEsc(e.message)}<br>
-      <span style="font-size:11px;color:var(--text2)">Requires the listBlobs API (deployed with this version) and storage settings in Azure.</span></div>`;
+      <span style="font-size:11px;color:var(--text2)">Requires the listBlobs API and storage settings in Azure.</span></div>`;
   }
 }
 
@@ -9602,6 +9667,558 @@ function _recRestoreSelected() {
 
   _rec.sel = new Set();
   _recRenderProject();
+}
+
+// ── Tab: Dead Photos (sweeper) ──────────────────────────────────────
+// Photo entries that can never display again: no local image data AND
+// either no URL or a URL whose blob no longer exists in storage.
+let _admDeadGroups = [];
+
+async function _admRenderSweeper() {
+  const body  = document.getElementById('rec-body');
+  const crumb = document.getElementById('rec-crumb');
+  if (crumb) crumb.textContent = 'Photo entries whose image no longer exists anywhere';
+  if (body) body.innerHTML = `<div style="text-align:center;padding:40px 0;color:var(--text2)">Scanning all projects…</div>`;
+
+  let blobSet = null;
+  try { blobSet = new Set((await _admLoadBlobs()).blobs.map(b => b.url)); } catch (e) { blobSet = null; }
+
+  const hasData = ph => (ph.data instanceof Blob) || (typeof ph.data === 'string' && ph.data.startsWith('data:'));
+  _admDeadGroups = [];
+  let total = 0;
+  (store.projects || []).filter(p => !p._deleted).forEach(p => {
+    (p.items || []).filter(i => !i._deleted).forEach(it => {
+      const dead = (it.photos || []).filter(ph => {
+        if (hasData(ph)) return false;
+        if (!ph.url) return true;                       // stub: no url, no data
+        if (blobSet && !blobSet.has(ph.url)) return true; // url points at a deleted blob
+        return false;
+      });
+      if (dead.length) {
+        _admDeadGroups.push({ pid: p.id, pname: p.name, sid: it.id,
+          label: (it.num || '').replace(/^SI\s+/, 'SI# ') + (it.title ? ' — ' + it.title : ''), dead });
+        total += dead.length;
+      }
+    });
+  });
+
+  const rows = _admDeadGroups.map(g => `
+    <div class="adm-row">
+      <span style="font-size:16px">🚫</span>
+      <div class="adm-row-main">
+        <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_htmlEsc(g.pname)}</div>
+        <div class="adm-row-sub">${_htmlEsc(g.label)}</div>
+      </div>
+      <span style="font-size:11px;font-weight:700;color:var(--red)">${g.dead.length} dead</span>
+    </div>`).join('');
+
+  if (body) body.innerHTML = `
+    <div style="font-size:11px;color:var(--text2);margin-bottom:10px">
+      These entries show as "Photo unavailable" tiles — the image data is gone from every device and from storage, so removing them only clears clutter.
+      ${blobSet ? '' : '<br>⚠️ Blob storage unreachable — only checking entries with no URL at all this pass.'}
+    </div>
+    ${total ? rows : '<div style="text-align:center;padding:30px;color:var(--text2)">✓ No dead photo entries found</div>'}`;
+
+  const bar = document.getElementById('rec-bar');
+  if (bar) {
+    bar.style.display = total ? 'flex' : 'none';
+    bar.innerHTML = total ? `
+      <span style="font-size:12px;color:var(--text2);flex:1">${total} dead entr${total !== 1 ? 'ies' : 'y'} across ${_admDeadGroups.length} scope item${_admDeadGroups.length !== 1 ? 's' : ''}</span>
+      <button class="recovery-btn danger" onclick="_admSweepDead()">🧹 Remove all ${total}</button>` : '';
+  }
+}
+
+function _admSweepDead() {
+  const total = _admDeadGroups.reduce((s, g) => s + g.dead.length, 0);
+  if (!total) return;
+  makeModal('Remove Dead Photo Entries', `
+    <div style="text-align:center;padding:8px 0 16px">
+      <div style="font-size:32px;margin-bottom:10px">🧹</div>
+      <div style="font-size:13px;color:var(--text2)">Remove ${total} dead photo entr${total !== 1 ? 'ies' : 'y'}?<br>
+      These have no recoverable image — this only deletes the empty placeholders.</div>
+    </div>`, () => {
+    let removed = 0;
+    _admDeadGroups.forEach(g => {
+      const it = getSI(g.pid, g.sid);
+      if (!it || !it.photos) return;
+      const rm = new Set(g.dead);
+      const before = it.photos.length;
+      it.photos = it.photos.filter(ph => !rm.has(ph));
+      removed += before - it.photos.length;
+      markAsDirty(g.sid);
+    });
+    if (removed) { save(); scheduleDirtySync(); }
+    closeModal();
+    showToast(`✓ Removed ${removed} dead entr${removed !== 1 ? 'ies' : 'y'}`, 'green');
+    _admRenderSweeper();
+  });
+}
+
+// ── Tab: Storage cleanup ────────────────────────────────────────────
+// Blobs in Azure that no project references anymore. Deleting them is
+// permanent — guarded by an age filter and a confirm step.
+let _admCleanAge = 30;
+let _admCleanSel = new Set(); // blob idx
+
+async function _admRenderCleanup() {
+  const body  = document.getElementById('rec-body');
+  const crumb = document.getElementById('rec-crumb');
+  if (crumb) crumb.textContent = 'Orphaned blobs — in storage but not referenced by any project';
+  if (body) body.innerHTML = `<div style="text-align:center;padding:40px 0;color:var(--text2)">Comparing storage against app data…</div>`;
+
+  let blobs;
+  try { blobs = (await _admLoadBlobs()).blobs; }
+  catch (e) { if (body) body.innerHTML = `<div style="color:var(--red);padding:24px;text-align:center">Could not list blob storage: ${_htmlEsc(e.message)}</div>`; return; }
+
+  const appUrls = _recAppUrls(); // includes tombstoned projects, so trash-restorable photos are protected
+  const cutoff  = Date.now() - _admCleanAge * 86400000;
+  const orphans = blobs.filter(b => !appUrls.has(b.url) &&
+    (_admCleanAge === 0 || !b.date || b.date.getTime() < cutoff));
+  const orphanIdx = new Set(orphans.map(b => b.idx));
+  _admCleanSel = new Set([..._admCleanSel].filter(i => orphanIdx.has(i)));
+
+  const groups = {};
+  orphans.forEach(b => (groups[b.projId] = groups[b.projId] || []).push(b));
+  const rows = Object.entries(groups).map(([pid, list]) => {
+    const proj = getProject(pid);
+    const mb = (list.reduce((s, b) => s + b.size, 0) / 1048576).toFixed(1);
+    const allSel = list.every(b => _admCleanSel.has(b.idx));
+    return `<div class="adm-row" style="cursor:pointer" onclick="_admCleanToggleGroup('${_htmlEsc(pid)}')">
+      <span style="font-size:15px">${allSel ? '☑️' : '⬜'}</span>
+      <div class="adm-row-main">
+        <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_htmlEsc(proj ? proj.name : pid)}${proj && proj._deleted ? ' <span style="color:var(--red);font-size:10px">(deleted project)</span>' : ''}</div>
+        <div class="adm-row-sub">${list.length} orphaned blob${list.length !== 1 ? 's' : ''} · ${mb} MB</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const totalMb = (orphans.reduce((s, b) => s + b.size, 0) / 1048576).toFixed(1);
+  if (body) body.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-size:11px;color:var(--text2)">
+      <span>⚠️ Deleting blobs is <strong>permanent</strong>. The Recovery tab can no longer restore anything deleted here.</span>
+      <label style="margin-left:auto;display:flex;align-items:center;gap:6px">Older than
+        <select onchange="_admCleanAge=+this.value;_admRenderCleanup()" style="padding:4px 8px;border-radius:7px;border:1px solid var(--border);background:var(--surface2);color:var(--text1)">
+          <option value="7"  ${_admCleanAge === 7  ? 'selected' : ''}>7 days</option>
+          <option value="30" ${_admCleanAge === 30 ? 'selected' : ''}>30 days</option>
+          <option value="90" ${_admCleanAge === 90 ? 'selected' : ''}>90 days</option>
+          <option value="0"  ${_admCleanAge === 0  ? 'selected' : ''}>any age</option>
+        </select>
+      </label>
+    </div>
+    ${orphans.length ? rows : `<div style="text-align:center;padding:30px;color:var(--text2)">✓ No orphaned blobs${_admCleanAge ? ' older than ' + _admCleanAge + ' days' : ''}</div>`}`;
+
+  const bar = document.getElementById('rec-bar');
+  if (bar) {
+    const n = _admCleanSel.size;
+    bar.style.display = orphans.length ? 'flex' : 'none';
+    bar.innerHTML = orphans.length ? `
+      <span style="font-size:12px;color:var(--text2);flex:1">${orphans.length} orphaned · ${totalMb} MB · ${n} selected</span>
+      <button class="recovery-btn danger" onclick="_admCleanDelete()" ${n ? '' : 'disabled'}>🗑 Delete ${n || ''} permanently</button>` : '';
+  }
+}
+
+function _admCleanToggleGroup(pid) {
+  const list = (_admBlobCache?.blobs || []).filter(b => b.projId === pid);
+  const appUrls = _recAppUrls();
+  const cutoff = Date.now() - _admCleanAge * 86400000;
+  const orphans = list.filter(b => !appUrls.has(b.url) && (_admCleanAge === 0 || !b.date || b.date.getTime() < cutoff));
+  const allSel = orphans.every(b => _admCleanSel.has(b.idx));
+  orphans.forEach(b => allSel ? _admCleanSel.delete(b.idx) : _admCleanSel.add(b.idx));
+  _admRenderCleanup();
+}
+
+function _admCleanDelete() {
+  const n = _admCleanSel.size;
+  if (!n) return;
+  makeModal('Delete Orphaned Blobs', `
+    <div style="text-align:center;padding:8px 0 16px">
+      <div style="font-size:32px;margin-bottom:10px">🗑</div>
+      <div style="font-size:13px;color:var(--red);font-weight:600;margin-bottom:6px">Permanently delete ${n} blob${n !== 1 ? 's' : ''} from Azure Storage?</div>
+      <div style="font-size:12px;color:var(--text2)">This cannot be undone. Make sure nothing here still needs recovering.</div>
+    </div>`, async () => {
+    closeModal();
+    const targets = (_admBlobCache?.blobs || []).filter(b => _admCleanSel.has(b.idx));
+    let done = 0, failed = 0;
+    showToast(`Deleting 0/${targets.length}…`);
+    for (const b of targets) {
+      try {
+        const res = await fetch('/api/deleteBlob', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ blobUrl: b.url }),
+        });
+        if (res.ok) done++; else failed++;
+      } catch (e) { failed++; }
+      if ((done + failed) % 10 === 0) showToast(`Deleting ${done + failed}/${targets.length}…`);
+    }
+    _admBlobCache = null;
+    _admCleanSel = new Set();
+    showToast(`✓ ${done} deleted${failed ? ' · ' + failed + ' failed' : ''}`, failed ? 'red' : 'green');
+    _admRenderCleanup();
+  });
+}
+
+// ── Tab: Trash ──────────────────────────────────────────────────────
+// Tombstoned projects and scope items. SI restore clears the flag in
+// place. Project restore must resurrect under a NEW id — the cloud index
+// merges tombstones as newest-wins, so a deleted project id can never
+// come back; a fresh id sidesteps that permanently.
+function _admRenderTrash() {
+  const body  = document.getElementById('rec-body');
+  const crumb = document.getElementById('rec-crumb');
+  if (crumb) crumb.textContent = 'Deleted projects and scope items still held locally';
+
+  const deadProjects = (store.projects || []).filter(p => p._deleted);
+  const deadSIs = [];
+  (store.projects || []).filter(p => !p._deleted).forEach(p =>
+    (p.items || []).filter(i => i._deleted).forEach(i => deadSIs.push({ p, i })));
+
+  const projRows = deadProjects.map(p => `
+    <div class="adm-row">
+      <span style="font-size:16px">📁</span>
+      <div class="adm-row-main">
+        <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_htmlEsc(p.name)}</div>
+        <div class="adm-row-sub">${(p.items || []).filter(i => !i._deleted).length} scope items · deleted ${p._deletedAt ? _timeAgo(p._deletedAt) : '—'}</div>
+      </div>
+      <button class="recovery-btn" style="font-size:10px;padding:5px 12px" onclick="_admRestoreProject('${_htmlEsc(p.id)}')">↩ Restore</button>
+    </div>`).join('');
+
+  const siRows = deadSIs.map(({ p, i }) => `
+    <div class="adm-row">
+      <span style="font-size:16px">📋</span>
+      <div class="adm-row-main">
+        <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_htmlEsc((i.num || '').replace(/^SI\s+/, 'SI# '))} — ${_htmlEsc(i.title || '')}</div>
+        <div class="adm-row-sub">${_htmlEsc(p.name)} · deleted ${i._deletedAt ? _timeAgo(i._deletedAt) : '—'}</div>
+      </div>
+      <button class="recovery-btn" style="font-size:10px;padding:5px 12px" onclick="_admRestoreSI('${_htmlEsc(p.id)}','${_htmlEsc(i.id)}')">↩ Restore</button>
+    </div>`).join('');
+
+  if (body) body.innerHTML = `
+    <div style="font-size:11px;color:var(--text2);margin-bottom:12px">
+      Deletions keep a hidden copy so they sync across devices; old ones are purged automatically after ~90 days.
+      Photo blobs are removed from storage at delete time, so a restored item may need the <strong>Dead Photos</strong> sweep — and check <strong>Recovery</strong> in case some photos survived.
+    </div>
+    <div class="adm-section">
+      <div class="adm-section-title">📁 Deleted projects <span style="color:var(--text3);font-weight:400">${deadProjects.length}</span></div>
+      ${projRows || '<div style="font-size:12px;color:var(--text2)">Nothing here</div>'}
+    </div>
+    <div class="adm-section">
+      <div class="adm-section-title">📋 Deleted scope items <span style="color:var(--text3);font-weight:400">${deadSIs.length}</span></div>
+      ${siRows || '<div style="font-size:12px;color:var(--text2)">Nothing here</div>'}
+    </div>`;
+}
+
+function _admRestoreProject(pid) {
+  const src = (store.projects || []).find(p => p.id === pid && p._deleted);
+  if (!src) return;
+  // Resurrect as a fresh project id (see comment above _admRenderTrash)
+  const ts = Date.now();
+  const clone = JSON.parse(JSON.stringify(src, (k, v) => (v instanceof Blob ? undefined : v)));
+  clone.id = 'proj_' + ts;
+  delete clone._deleted; delete clone._deletedAt;
+  clone._fieldTs = clone._fieldTs || {}; delete clone._fieldTs._deleted;
+  clone.ownedBy = _currentUser?.userId || '';
+  const secMap = {};
+  clone.sections = (clone.sections || []).map(s => {
+    const nid = 'sec_' + Math.random().toString(36).slice(2);
+    secMap[s.id] = nid;
+    return { ...s, id: nid };
+  });
+  clone.items = (clone.items || []).filter(i => !i._deleted).map((item, i) => ({
+    ...item,
+    id: 'si_' + (ts + i),
+    sectionId: secMap[item.sectionId] || item.sectionId,
+    // keep only photos that still have a cloud copy — local blobs died with the old project
+    photos: (item.photos || []).filter(ph => ph.url).map(ph => ({ url: ph.url, caption: ph.caption || '', takenAt: ph.takenAt || '' })),
+  }));
+  store.projects.push(clone);
+  const fld = store.folders.find(f => (f.projects || []).includes(pid)) || store.folders[0];
+  if (fld) { fld.projects = fld.projects || []; fld.projects.push(clone.id); }
+  markProjectDirty(clone.id);
+  markStoreDirty(); save(); scheduleDirtySync();
+  showToast(`✓ Restored "${src.name}"${fld ? ' → ' + fld.name : ''}`, 'green');
+  _admRenderTrash();
+}
+
+function _admRestoreSI(pid, sid) {
+  const proj = getProject(pid); if (!proj) return;
+  const item = (proj.items || []).find(i => i.id === sid && i._deleted);
+  if (!item) return;
+  item._deleted = false;
+  delete item._deletedAt;
+  item._fieldTs = item._fieldTs || {};
+  item._fieldTs._deleted = Date.now();
+  item._dirty = true; // guard the restore against a stale cloud merge
+  markAsDirty(sid);
+  scheduleDirtySync();
+  showToast(`✓ Restored ${item.num || 'scope item'}`, 'green');
+  _admRenderTrash();
+}
+
+// ── Tab: Sync health ────────────────────────────────────────────────
+function _admRenderSync() {
+  const body  = document.getElementById('rec-body');
+  const crumb = document.getElementById('rec-crumb');
+  if (crumb) crumb.textContent = 'What this device still owes the cloud';
+
+  const dirty = [..._dirtyProjectIds].map(pid => getProject(pid)).filter(Boolean);
+  const pending = [];
+  let stubCount = 0;
+  (store.projects || []).filter(p => !p._deleted).forEach(p => {
+    let up = 0;
+    (p.items || []).filter(i => !i._deleted).forEach(it => (it.photos || []).forEach(ph => {
+      const hasData = (ph.data instanceof Blob) || (typeof ph.data === 'string' && ph.data.startsWith('data:'));
+      if (hasData && (!ph.url || ph._needsUpload)) up++;
+      if (!hasData && !ph.url) stubCount++;
+    }));
+    if (up) pending.push({ p, up });
+  });
+
+  if (body) body.innerHTML = `
+    <div class="adm-stat-grid">
+      <div class="adm-stat"><b style="color:${navigator.onLine ? 'var(--green,#16a34a)' : 'var(--red)'}">${navigator.onLine ? 'Online' : 'Offline'}</b><span>connection</span></div>
+      <div class="adm-stat"><b>${dirty.length + (_dirtyIndex ? 1 : 0)}</b><span>unsynced change set${dirty.length !== 1 ? 's' : ''}${_dirtyIndex ? ' (incl. folders/settings)' : ''}</span></div>
+      <div class="adm-stat"><b style="color:${pending.length ? 'var(--yellow,#ca8a04)' : 'inherit'}">${pending.reduce((s, x) => s + x.up, 0)}</b><span>photos waiting to upload</span></div>
+      <div class="adm-stat"><b style="color:${stubCount ? 'var(--red)' : 'inherit'}">${stubCount}</b><span>dead photo entries (see 🧹)</span></div>
+      <div class="adm-stat"><b style="font-size:13px">${store.lastUpdated ? _timeAgo(store.lastUpdated) : '—'}</b><span>last local change</span></div>
+    </div>
+    ${dirty.length ? `<div class="adm-section"><div class="adm-section-title">⇡ Projects with unpushed changes</div>
+      ${dirty.map(p => `<div class="adm-row"><div class="adm-row-main">${_htmlEsc(p.name)}</div></div>`).join('')}</div>` : ''}
+    ${pending.length ? `<div class="adm-section"><div class="adm-section-title">📤 Photo uploads pending</div>
+      ${pending.map(x => `<div class="adm-row"><div class="adm-row-main">${_htmlEsc(x.p.name)}</div><span style="font-size:11px;font-weight:700;color:var(--yellow,#ca8a04)">${x.up} photo${x.up !== 1 ? 's' : ''}</span></div>`).join('')}
+      <div style="font-size:11px;color:var(--text2);margin-top:6px">These upload automatically on the next sync — or push now below.</div></div>` : ''}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
+      <button class="recovery-btn primary" onclick="showToast('Pushing…');syncChanges(false).then(()=>_admTab==='sync'&&_admRenderSync())">⇡ Push everything now</button>
+      <button class="recovery-btn" onclick="showToast('Pulling…');_pullAll().then(()=>_admTab==='sync'&&_admRenderSync())">⇣ Pull all from cloud</button>
+    </div>`;
+}
+
+// ── Tab: Activity log ───────────────────────────────────────────────
+let _admActPid = 'all';
+let _admActQuery = '';
+
+function _admRenderActivity() {
+  const body  = document.getElementById('rec-body');
+  const crumb = document.getElementById('rec-crumb');
+  if (crumb) crumb.textContent = 'Who did what, when';
+
+  const live = (store.projects || []).filter(p => !p._deleted)
+    .slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  let entries = [];
+  live.forEach(p => {
+    if (_admActPid !== 'all' && p.id !== _admActPid) return;
+    (p.activityLog || []).forEach(e => entries.push({ ...e, _pname: p.name }));
+  });
+  entries.sort((a, b) => (b.at || 0) - (a.at || 0));
+  const q = _admActQuery.toLowerCase();
+  if (q) entries = entries.filter(e =>
+    ((e.by || '') + ' ' + (e.detail || '') + ' ' + (e.type || '') + ' ' + (e.siNum || '') + ' ' + e._pname).toLowerCase().includes(q));
+  const shown = entries.slice(0, 300);
+
+  const icons = { photo: '📷', status: '🚦', note: '📝', si: '📋', delete: '🗑' };
+  const rows = shown.map(e => `
+    <div class="adm-row">
+      <span style="font-size:15px">${icons[e.type] || '•'}</span>
+      <div class="adm-row-main">
+        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_htmlEsc(e.detail || e.type || '')}${e.siNum ? ` <span style="color:var(--accent);font-family:var(--mono);font-size:11px">${_htmlEsc(String(e.siNum).replace(/^SI\s+/, 'SI# '))}</span>` : ''}</div>
+        <div class="adm-row-sub">${_htmlEsc(e._pname)} · ${_htmlEsc(e.by || '?')} · ${e.at ? _timeAgo(e.at) : ''}</div>
+      </div>
+    </div>`).join('');
+
+  if (body) body.innerHTML = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <select onchange="_admActPid=this.value;_admRenderActivity()" style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text1);font-size:12px;max-width:260px">
+        <option value="all" ${_admActPid === 'all' ? 'selected' : ''}>All projects</option>
+        ${live.map(p => `<option value="${_htmlEsc(p.id)}" ${_admActPid === p.id ? 'selected' : ''}>${_htmlEsc(p.name)}</option>`).join('')}
+      </select>
+      <input placeholder="Filter by person, SI, action…" value="${_htmlEsc(_admActQuery)}"
+        oninput="_admActQuery=this.value;_admRenderActivity()"
+        style="flex:1;min-width:160px;padding:7px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text1);font-size:12px;outline:none">
+    </div>
+    ${rows || `<div style="text-align:center;padding:30px;color:var(--text2)">No activity recorded${q ? ' matching the filter' : ' yet'}</div>`}
+    ${entries.length > 300 ? `<div style="font-size:11px;color:var(--text2);padding:6px 0">Showing newest 300 of ${entries.length} — narrow with the filter.</div>` : ''}`;
+}
+
+// ── Tab: Backup ─────────────────────────────────────────────────────
+function _admRenderBackup() {
+  const body  = document.getElementById('rec-body');
+  const crumb = document.getElementById('rec-crumb');
+  if (crumb) crumb.textContent = 'Export or restore the entire dataset';
+
+  const projCount = (store.projects || []).filter(p => !p._deleted).length;
+  if (body) body.innerHTML = `
+    <div class="adm-section">
+      <div class="adm-section-title">💾 Export backup</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px">
+        Downloads everything — folders, ${projCount} projects, scope items, notes, statuses, photo links, contacts and settings — as a JSON file you keep somewhere safe.
+        Photos that are still device-only (not yet uploaded) can't be included; the cloud links of uploaded photos are.
+      </div>
+      <button class="recovery-btn primary" onclick="_admExportBackup()">⬇ Download backup file</button>
+    </div>
+    <div class="adm-section">
+      <div class="adm-section-title">📥 Restore from backup</div>
+      <div style="font-size:12px;color:var(--red);margin-bottom:10px">
+        ⚠️ Replaces ALL data on this device with the backup, then syncs that state to the cloud. Only use this to recover from serious data loss.
+      </div>
+      <input type="file" id="adm-import-file" accept=".json,application/json" style="display:none" onchange="_admImportBackup(this)">
+      <button class="recovery-btn danger" onclick="document.getElementById('adm-import-file').click()">⬆ Choose backup file…</button>
+    </div>`;
+}
+
+function _admExportBackup() {
+  try {
+    const payload = {
+      _adhBackup: 2,
+      exportedAt: new Date().toISOString(),
+      exportedBy: store.settings?.displayName || _currentUser?.userDetails || '',
+      store,
+    };
+    const json = JSON.stringify(payload, (k, v) => (v instanceof Blob ? undefined : v));
+    const blob = new Blob([json], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const d = new Date();
+    a.download = `adh-backup-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+    showToast('✓ Backup downloaded — ' + (json.length / 1048576).toFixed(1) + ' MB', 'green');
+  } catch (e) {
+    showToast('Backup failed: ' + e.message, 'red');
+  }
+}
+
+function _admImportBackup(input) {
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try { data = JSON.parse(reader.result); } catch (e) { showToast('Not a valid backup file', 'red'); return; }
+    const incoming = data._adhBackup ? data.store : data; // accept raw store exports too
+    if (!incoming || !Array.isArray(incoming.projects) || !Array.isArray(incoming.folders)) {
+      showToast('Not a valid backup file', 'red'); return;
+    }
+    const pc = incoming.projects.filter(p => !p._deleted).length;
+    makeModal('Restore Backup', `
+      <div style="text-align:center;padding:8px 0 16px">
+        <div style="font-size:32px;margin-bottom:10px">📥</div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:6px">${_htmlEsc(file.name)}</div>
+        <div style="font-size:12px;color:var(--text2)">${pc} projects${data.exportedAt ? ' · exported ' + _htmlEsc(String(data.exportedAt).slice(0, 10)) : ''}</div>
+        <div style="font-size:12px;color:var(--red);margin-top:10px">This replaces everything on this device and pushes it to the cloud.</div>
+      </div>`, () => {
+      store = incoming;
+      if (!store.settings) store.settings = { isAdmin: false, theme: 'light' };
+      store.settings.isAdmin = true; // keep the admin session that performed the restore
+      isAdmin = true;
+      store.lastUpdated = Date.now();
+      save();
+      closeModal();
+      render();
+      showToast('✓ Backup restored — pushing to cloud…', 'green');
+      syncChanges(false);
+      _admRenderBackup();
+    });
+  };
+  reader.readAsText(file);
+}
+
+// ── Tab: System ─────────────────────────────────────────────────────
+function _admRenderSystem() {
+  const body  = document.getElementById('rec-body');
+  const crumb = document.getElementById('rec-crumb');
+  if (crumb) crumb.textContent = 'Diagnostics, device tools and admin access';
+
+  let photoCount = 0, siCount = 0;
+  const liveProjects = (store.projects || []).filter(p => !p._deleted);
+  liveProjects.forEach(p => (p.items || []).filter(i => !i._deleted).forEach(it => { siCount++; photoCount += (it.photos || []).length; }));
+
+  if (body) body.innerHTML = `
+    <div class="adm-stat-grid">
+      <div class="adm-stat"><b>${liveProjects.length}</b><span>projects</span></div>
+      <div class="adm-stat"><b>${siCount}</b><span>scope items</span></div>
+      <div class="adm-stat"><b>${photoCount}</b><span>photo entries</span></div>
+      <div class="adm-stat"><b id="adm-sys-cache">…</b><span>app cache version</span></div>
+      <div class="adm-stat"><b id="adm-sys-storage" style="font-size:13px">…</b><span>device storage used</span></div>
+    </div>
+    <div class="adm-section">
+      <div class="adm-section-title">🩺 Service health <button class="recovery-btn" style="font-size:10px;padding:4px 10px" onclick="_admSysHealth()">Run checks</button></div>
+      <div id="adm-sys-health" style="font-size:12px;color:var(--text2)">Not checked yet</div>
+    </div>
+    <div class="adm-section">
+      <div class="adm-section-title">📲 This device</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px">Force-refresh clears this device's app cache and reloads — use it when an iPad is stuck on an old version. Local data is not touched.</div>
+      <button class="recovery-btn" onclick="_admForceRefresh()">↻ Force-refresh app on this device</button>
+    </div>
+    <div class="adm-section">
+      <div class="adm-section-title">🔐 Change admin login</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px">Takes effect on every device after sync. Don't forget these — there is no automatic reset.</div>
+      <div style="display:flex;flex-direction:column;gap:8px;max-width:340px">
+        <input id="adm-cred-id" placeholder="New admin ID" autocomplete="off" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text1);font-size:13px;outline:none">
+        <input id="adm-cred-pw" type="password" placeholder="New password (min 6 chars)" autocomplete="new-password" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text1);font-size:13px;outline:none">
+        <input id="adm-cred-pw2" type="password" placeholder="Repeat password" autocomplete="new-password" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text1);font-size:13px;outline:none">
+        <button class="recovery-btn primary" onclick="_admSetCredentials()">Save new credentials</button>
+      </div>
+    </div>`;
+
+  fetch('/sw.js', { cache: 'no-store' }).then(r => r.text()).then(t => {
+    const m = t.match(/CACHE_VERSION\s*=\s*'([^']+)'/);
+    const el = document.getElementById('adm-sys-cache');
+    if (el) el.textContent = m ? m[1].replace('adh-audit-', '') : '?';
+  }).catch(() => {});
+  if (navigator.storage && navigator.storage.estimate) {
+    navigator.storage.estimate().then(est => {
+      const el = document.getElementById('adm-sys-storage');
+      if (el) el.textContent = (est.usage / 1048576).toFixed(0) + ' MB of ' + (est.quota / 1073741824).toFixed(1) + ' GB';
+    }).catch(() => {});
+  }
+}
+
+async function _admSysHealth() {
+  const el = document.getElementById('adm-sys-health');
+  if (!el) return;
+  el.textContent = 'Checking…';
+  const checks = [
+    ['Cloud database (Cosmos)', () => fetch('/api/getIndex?userId=' + encodeURIComponent(_currentUser?.userId || '')).then(r => r.ok || r.status === 404)],
+    ['Photo storage (Blob)',    () => fetch('/api/getBlobSasUrl').then(r => r.ok)],
+    ['Blob listing (Recovery)', () => fetch('/api/listBlobs').then(r => r.ok)],
+    ['Innergy proxy',           () => fetch('/api/innergy/health').then(r => r.ok ? r.json().then(j => !!j.ok) : false)],
+  ];
+  const results = await Promise.all(checks.map(([label, fn]) =>
+    fn().then(ok => ({ label, ok })).catch(() => ({ label, ok: false }))));
+  el.innerHTML = results.map(r =>
+    `<div style="padding:3px 0">${r.ok ? '✅' : '❌'} ${r.label}</div>`).join('');
+}
+
+async function _admForceRefresh() {
+  showToast('Clearing cache…');
+  try {
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => caches.delete(k)));
+    const regs = await (navigator.serviceWorker?.getRegistrations?.() || Promise.resolve([]));
+    await Promise.all(regs.map(r => r.update().catch(() => {})));
+  } catch (e) {}
+  location.reload();
+}
+
+async function _admSetCredentials() {
+  const id  = document.getElementById('adm-cred-id')?.value.trim();
+  const pw  = document.getElementById('adm-cred-pw')?.value;
+  const pw2 = document.getElementById('adm-cred-pw2')?.value;
+  if (!id || !pw) { showToast('Enter both an ID and a password', 'red'); return; }
+  if (pw.length < 6) { showToast('Password must be at least 6 characters', 'red'); return; }
+  if (pw !== pw2) { showToast('Passwords do not match', 'red'); return; }
+  const enc = new TextEncoder();
+  const hashHex = buf => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  const [idHash, pwHash] = await Promise.all([
+    crypto.subtle.digest('SHA-256', enc.encode(id)).then(hashHex),
+    crypto.subtle.digest('SHA-256', enc.encode(pw)).then(hashHex),
+  ]);
+  store.settings.adminIdHash = idHash;
+  store.settings.adminPwHash = pwHash;
+  markStoreDirty(); save(); scheduleDirtySync();
+  showToast('✓ Admin credentials updated', 'green');
+  ['adm-cred-id', 'adm-cred-pw', 'adm-cred-pw2'].forEach(i => { const e = document.getElementById(i); if (e) e.value = ''; });
 }
 
 // ══════════════════════════════════════════
