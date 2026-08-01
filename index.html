@@ -4686,8 +4686,8 @@ function showLoginModal() {
       crypto.subtle.digest('SHA-256', enc.encode(id)).then(hashHex),
       crypto.subtle.digest('SHA-256', enc.encode(pw)).then(hashHex),
     ]);
-    const ADMIN_ID = 'c3196027fbc47ddb17bfcb8a07ab778958fb763a22696b6f329e368ec372be73';
-    const ADMIN_PW = '3c8b46cacd0109af0afe94d568d9e20ed8c34c60e0665ab3d59857bd24847bba';
+    const ADMIN_ID = 'c7c1319276e936c8d64f1d5ed80cd8a0cf54e6dea7b0125533eb4163e03a2c11';
+    const ADMIN_PW = '6a21d6a9c4e10c951b1b15b0734cde6e257a31f63f5abe26b55073d42acf8167';
     if (idHash === ADMIN_ID && pwHash === ADMIN_PW) {
       isAdmin = true;
       store.settings.isAdmin = true;
