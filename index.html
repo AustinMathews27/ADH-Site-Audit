@@ -1583,7 +1583,7 @@ body.theme-dark .week-cell.labor-row { background:var(--accent); color:#000; }
 .import-xls-btn:hover { background:rgba(251,191,36,0.2); }
 .innergy-btn { background:rgba(139,92,246,0.12) !important; color:#a78bfa !important; border-color:rgba(139,92,246,0.25) !important; }
 .innergy-btn:hover { background:rgba(139,92,246,0.22) !important; }
-.innergy-job-list { display:flex; flex-direction:column; gap:6px; max-height:380px; overflow-y:auto; margin-top:8px; }
+.innergy-job-list { display:flex; flex-direction:column; gap:6px; max-height:min(52vh,480px); overflow-y:auto; margin-top:8px; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
 .innergy-job-row { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--surface2); cursor:pointer; transition:all 0.15s; }
 .innergy-job-row:hover { border-color:#a78bfa; background:rgba(139,92,246,0.08); }
 .innergy-job-row.selected { border-color:#a78bfa; background:rgba(139,92,246,0.15); }
@@ -13097,6 +13097,7 @@ function _innergyAddr(proj) {
 // State for the two-step Innergy modal
 let _innergyFid = '';
 let _innergyAllProjects = [];
+let _innergyHiddenClosed = 0;
 let _innergySelected = null;
 let _innergyBudgetGroups = [];
 let _innergyWorkOrders = [];   // Installation (and optionally other types) WOs
@@ -13104,6 +13105,7 @@ let _innergyWorkOrders = [];   // Installation (and optionally other types) WOs
 async function showInnergyImport(fid) {
   _innergyFid = fid;
   _innergyAllProjects = [];
+  _innergyHiddenClosed = 0;
   _innergySelected = null;
   _innergyBudgetGroups = [];
 
@@ -13115,15 +13117,33 @@ async function showInnergyImport(fid) {
   try {
     const data = await _innergyFetch('/api/projects');
     // Innergy wraps results in { Items: [...] } (capital I)
-    _innergyAllProjects = Array.isArray(data) ? data
+    const fetched = Array.isArray(data) ? data
       : Array.isArray(data.Items) ? data.Items
       : Array.isArray(data.items) ? data.items
       : [];
 
-    if (!_innergyAllProjects.length) {
+    if (!fetched.length) {
       _innergyShowError('No projects found in Innergy. Check that your API key has Project → View permission.');
       return;
     }
+
+    // Closed projects don't need a site audit — keep them out of the picker
+    _innergyAllProjects = fetched.filter(p => {
+      const s = String(p.Status || p.status || '').toLowerCase();
+      return !s.includes('close');
+    });
+    _innergyHiddenClosed = fetched.length - _innergyAllProjects.length;
+
+    if (!_innergyAllProjects.length) {
+      _innergyShowError(`All ${fetched.length} Innergy projects are closed — nothing to audit.`);
+      return;
+    }
+
+    // Newest project numbers first, so the list is browsable when you
+    // don't know the number offhand
+    _innergyAllProjects.sort((a, b) =>
+      String(_innergyNumber(b)).localeCompare(String(_innergyNumber(a)), undefined, { numeric: true }));
+
     _innergyRenderPicker();
   } catch(e) {
     _innergyShowError('Could not reach Innergy: ' + e.message);
@@ -13142,7 +13162,7 @@ function _innergyRenderPicker(filter) {
         (_innergyNumber(p) + ' ' + _innergyName(p) + ' ' + _innergyClient(p)).toLowerCase().includes(q))
     : _innergyAllProjects;
 
-  const rows = projs.slice(0, 150).map(p => {
+  const rows = projs.map(p => {
     const num    = _htmlEsc(_innergyNumber(p));
     const name   = _htmlEsc(_innergyName(p));
     const client = _htmlEsc(_innergyClient(p));
@@ -13160,7 +13180,7 @@ function _innergyRenderPicker(filter) {
   const body = `
     <input class="innergy-search" id="innergy-search" placeholder="Search by number, name or client…"
       oninput="_innergyRenderPicker(this.value)" value="${_htmlEsc(filter||'')}">
-    <div style="font-size:11px;color:var(--text2);margin-bottom:4px">${projs.length} project${projs.length!==1?'s':''} · click one to preview</div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:4px">${projs.length} project${projs.length!==1?'s':''} · scroll or search · click one to preview${_innergyHiddenClosed>0?` · ${_innergyHiddenClosed} closed hidden`:''}</div>
     <div class="innergy-job-list">${rows || '<div style="padding:16px;color:var(--text2);text-align:center">No matches</div>'}</div>
     <div id="innergy-detail"></div>`;
 
