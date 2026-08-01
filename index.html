@@ -3543,12 +3543,87 @@ let _deviceLabel = '';
   _idbGet('device_label').then(v => { if (v && !_deviceLabel) _deviceLabel = v; }).catch(() => {});
 })();
 
-const _deviceTag = () => _deviceLabel ? `${_deviceLabel} · ${_deviceId.slice(0, 12)}` : _deviceId;
+const _deviceTag = () => {
+  const nice = _deviceLabel || _deviceUser;
+  return nice ? `${nice} · ${_deviceId.slice(0, 12)}` : _deviceId;
+};
 
 function setDeviceLabel(label) {
   _deviceLabel = (label || '').trim().slice(0, 40);
   try { localStorage.setItem('adh_device_label', _deviceLabel); } catch (e) {}
   _idbSet('device_label', _deviceLabel).catch(() => {});
+}
+
+// ── Device user ─────────────────────────────────────────────────────
+// The person using this install. Stored DEVICE-LOCALLY next to the device
+// ID — deliberately NOT in store.settings, because settings sync wholesale
+// across the shared workspace ("cloud wins"), which is why the old shared
+// displayName kept getting silently overwritten by whichever device saved
+// last. Captured once per device by a blocking prompt on startup; editable
+// later from the Account menu. When Entra ID returns, a real signed-in
+// identity adopts the name automatically and the prompt never shows.
+let _deviceUser = '';
+try { _deviceUser = localStorage.getItem('adh_device_user') || ''; } catch (e) {}
+
+/** Name stamped on edits/photos/pushes from this device. */
+function _whoAmI() {
+  return _deviceUser || store.settings.displayName || _userName() || 'You';
+}
+
+function setDeviceUser(name) {
+  const n = (name || '').trim().slice(0, 40);
+  if (!n) return;
+  _deviceUser = n;
+  try { localStorage.setItem('adh_device_user', n); } catch (e) {}
+  _idbSet('device_user', n).catch(() => {});
+}
+
+async function _ensureDeviceUser() {
+  if (_deviceUser) return;
+  // IDB mirror survives a localStorage clear
+  try {
+    const v = await _idbGet('device_user');
+    if (v) { _deviceUser = v; try { localStorage.setItem('adh_device_user', v); } catch (e) {} return; }
+  } catch (e) {}
+  // Entra path: a real per-person login names the device automatically
+  const uid = _currentUser?.userId || '';
+  const isSharedWorkspace = !uid || uid === 'dev-local' || uid === '25a348bbf3bb4e9087aefec8b88424b6';
+  if (!isSharedWorkspace && _userName()) { setDeviceUser(_userName()); return; }
+  _showDeviceUserPrompt();
+}
+
+function _showDeviceUserPrompt() {
+  if (document.getElementById('device-user-overlay')) return;
+  const ov = document.createElement('div');
+  ov.id = 'device-user-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:960;background:rgba(0,0,0,0.72);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border2);border-radius:14px;max-width:380px;width:100%;padding:22px 20px;text-align:center">
+      <div style="font-size:34px;margin-bottom:10px">👋</div>
+      <div style="font-size:16px;font-weight:700;margin-bottom:6px">Who's using this device?</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:16px;line-height:1.5">
+        Your name gets stamped on the edits and photos you make on this iPad,
+        so the team can see who did what. You can change it later under Account.
+      </div>
+      <input id="device-user-input" placeholder="First + last name" autocomplete="name" maxlength="40"
+        style="width:100%;box-sizing:border-box;padding:11px 14px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text1);font-size:15px;outline:none;text-align:center;margin-bottom:12px"
+        onkeydown="if(event.key==='Enter')_confirmDeviceUser()">
+      <button onclick="_confirmDeviceUser()"
+        style="width:100%;padding:11px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-family:var(--mono);font-size:13px;font-weight:700;cursor:pointer">
+        Let's go →
+      </button>
+    </div>`;
+  document.body.appendChild(ov);
+  setTimeout(() => document.getElementById('device-user-input')?.focus(), 150);
+}
+
+function _confirmDeviceUser() {
+  const inp = document.getElementById('device-user-input');
+  const n = (inp?.value || '').trim();
+  if (n.length < 2) { showToast('Please enter your name', 'red'); return; }
+  setDeviceUser(n);
+  document.getElementById('device-user-overlay')?.remove();
+  showToast(`✓ Thanks, ${n.split(' ')[0]}!`, 'green');
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3698,7 +3773,7 @@ function _buildProjectPayload(proj) {
 
   const out = Object.assign({}, proj, {
     // Who pushed this doc last — stored on the cloud doc for diagnostics
-    _pushedBy: { device: _deviceId, label: _deviceLabel, name: store.settings.displayName || '', at: Date.now() },
+    _pushedBy: { device: _deviceId, label: _deviceLabel, name: _whoAmI(), at: Date.now() },
     // Blob-storage URL syncs through Cosmos; pending base64 stays local
     // until _flushPendingPhotos uploads it.
     coverPhoto: (proj.coverPhoto && !proj.coverPhoto.startsWith('data:')) ? proj.coverPhoto : null,
@@ -4591,6 +4666,11 @@ async function _initStore() {
     store.settings.displayName = _userName();
   }
 
+  // One-time per-device user capture (links a person to this device's ID).
+  // Existing installs get the prompt on their first launch of this version;
+  // fresh installs on their very first start. Skipped forever once answered.
+  _ensureDeviceUser();
+
   // Restore dirty state, timestamp cache, and orphan tracker from IDB
   await _loadDirtyState();
   await _loadCloudTs();
@@ -4724,8 +4804,8 @@ function showUserMenu() {
     </div>
     <div style="display:flex;flex-direction:column;gap:8px">
       <div class="field-group">
-        <div class="field-label">Display name (shown on edits)</div>
-        <input class="field-input" id="disp-name-menu" value="${store.settings.displayName || name}"
+        <div class="field-label">Your name (shown on edits from this device)</div>
+        <input class="field-input" id="disp-name-menu" value="${_deviceUser || store.settings.displayName || name}"
           placeholder="Your name" />
       </div>
     </div>
@@ -4747,7 +4827,8 @@ function showUserMenu() {
     </button>` : ''}
   `, () => {
     const newName = document.getElementById('disp-name-menu')?.value.trim();
-    if (newName) { store.settings.displayName = newName; markStoreDirty(); save(); }
+    // Device-local — deliberately NOT written to synced settings (see _deviceUser)
+    if (newName) setDeviceUser(newName);
     closeModal();
     showToast('✓ Profile updated', 'green');
   });
@@ -8489,7 +8570,7 @@ function setStatus(pid,sid,status) {
   syncEditorToStore(pid,sid);
   const prev=item.status;
   item.status=status;
-  item._updatedBy=store.settings.displayName||(_currentUser?.userDetails)||'You';
+  item._updatedBy=_whoAmI();
   item._updatedAt=Date.now();
   item._updatedByDevice=_deviceId;
   _logActivity(pid,{type:'status',siId:sid,siNum:item.num,detail:`${prev}→${status}`,by:item._updatedBy});
@@ -8602,7 +8683,7 @@ function _doSave(pid,sid,toast=true) {
   const item=getSI(pid,sid); if(!item) return;
   const prevNotes=item.notes||'';
   syncEditorToStore(pid, sid);
-  item._updatedBy=store.settings.displayName||'You';
+  item._updatedBy=_whoAmI();
   item._updatedAt=Date.now();
   item._updatedByDevice=_deviceId;
   if(item.notes!==prevNotes && item.notes) _logActivity(pid,{type:'note',siId:sid,siNum:item.num,detail:item.notes.slice(0,80),by:item._updatedBy});
@@ -8830,7 +8911,7 @@ function handleFileImport(e) {
             // Store this raw 'blob' object directly into IndexedDB instead of the Base64 string.
             const photoEntry = {data: blob, caption: '', takenAt};
             item.photos.push(photoEntry);
-            _logActivity(_pt.pid,{type:'photo',siId:_pt.sid,siNum:item.num,detail:`Photo ${item.photos.length}`,by:store.settings.displayName||'You'});
+            _logActivity(_pt.pid,{type:'photo',siId:_pt.sid,siNum:item.num,detail:`Photo ${item.photos.length}`,by:_whoAmI()});
             if(++loaded===files.length){ markAsDirty(_pt.sid); save(); buildSIEditor(_pt.pid,_pt.sid); renderLeft(route()); }
 
             // Then upload to Azure Blob Storage in the background
@@ -10109,7 +10190,7 @@ function _admRenderSync() {
       <div class="adm-stat"><b style="color:${pending.length ? 'var(--yellow,#ca8a04)' : 'inherit'}">${pending.reduce((s, x) => s + x.up, 0)}</b><span>photos waiting to upload</span></div>
       <div class="adm-stat"><b style="color:${stubCount ? 'var(--red)' : 'inherit'}">${stubCount}</b><span>dead photo entries (see 🧹)</span></div>
       <div class="adm-stat"><b style="font-size:13px">${store.lastUpdated ? _timeAgo(store.lastUpdated) : '—'}</b><span>last local change</span></div>
-      <div class="adm-stat"><b style="font-size:12px;word-break:break-all">${_htmlEsc(_deviceLabel || _deviceId)}</b><span>this device</span></div>
+      <div class="adm-stat"><b style="font-size:12px;word-break:break-all">${_htmlEsc(_deviceUser || _deviceLabel || _deviceId)}</b><span>this device</span></div>
     </div>
     ${dirty.length ? `<div class="adm-section"><div class="adm-section-title">⇡ Projects with unpushed changes</div>
       ${dirty.map(p => `<div class="adm-row"><div class="adm-row-main">${_htmlEsc(p.name)}</div></div>`).join('')}</div>` : ''}
@@ -10279,6 +10360,9 @@ function _admRenderSystem() {
         Give this device a label so logs read like "Bruce's iPad" instead of a random code.
       </div>
       <div style="font-family:var(--mono);font-size:12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:8px;user-select:all;word-break:break-all">${_htmlEsc(_deviceId)}</div>
+      <div style="font-size:12px;margin-bottom:8px">Registered user: <strong>${_htmlEsc(_deviceUser || '— not set —')}</strong>
+        ${_deviceUser ? '' : `<button class="recovery-btn" style="font-size:10px;padding:4px 10px;margin-left:6px" onclick="_showDeviceUserPrompt()">Register now</button>`}
+      </div>
       <div style="display:flex;gap:8px;max-width:380px">
         <input id="adm-dev-label" placeholder="Device label (e.g. Bruce's iPad)" value="${_htmlEsc(_deviceLabel)}"
           style="flex:1;min-width:0;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text1);font-size:13px;outline:none">
@@ -10553,7 +10637,7 @@ function showShareModal() {
       const row=document.createElement('div');
       row.id='disp-name-row';
       row.style.cssText='padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;background:var(--surface2)';
-      row.innerHTML=`<span style="font-size:11px;font-family:var(--mono);color:var(--text3);white-space:nowrap">Your Name</span><input id="disp-name-inp" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:5px 10px;font-size:12px;color:var(--text);outline:none;font-family:var(--sans)" placeholder="e.g. J. Garcia" value="${store.settings.displayName||''}" oninput="store.settings.displayName=this.value;markStoreDirty();save()">`;
+      row.innerHTML=`<span style="font-size:11px;font-family:var(--mono);color:var(--text3);white-space:nowrap">Your Name</span><input id="disp-name-inp" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:5px 10px;font-size:12px;color:var(--text);outline:none;font-family:var(--sans)" placeholder="e.g. J. Garcia" value="${_deviceUser||''}" onchange="setDeviceUser(this.value)">`;
       mo.insertBefore(row,mo.children[1]);
     }
   });
@@ -13423,7 +13507,7 @@ function _logActivity(pid,entry) {
 function _postChangeLog(pid, details) {
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') return;
   const proj = getProject(pid);
-  const by   = store.settings?.displayName || (_currentUser?.userDetails) || 'Unknown';
+  const by   = _whoAmI();
   const byId = _currentUser?.userId || null;
   const payload = {
     projectId:   pid,
@@ -13548,7 +13632,7 @@ function handleAttachmentImport(e){
     reader.onload=ev=>{
       const ext=file.name.split('.').pop().toLowerCase();
       const icons={pdf:'📄',doc:'📝',docx:'📝',xlsx:'📊',xls:'📊',pptx:'📑',csv:'📊',txt:'📃',zip:'🗜️',png:'🖼️',jpg:'🖼️',jpeg:'🖼️'};
-      const attach={id:'att_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),name:file.name,type:file.type,ext,icon:icons[ext]||'📎',size:file.size,data:ev.target.result,addedAt:Date.now(),addedBy:store.settings.displayName||'You'};
+      const attach={id:'att_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),name:file.name,type:file.type,ext,icon:icons[ext]||'📎',size:file.size,data:ev.target.result,addedAt:Date.now(),addedBy:_whoAmI()};
       item.attachments.push(attach);
       _logActivity(pid,{type:'attach',siId:sid,siNum:item.num,detail:file.name,by:attach.addedBy});
       if(++loaded===files.length){
