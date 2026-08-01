@@ -3847,11 +3847,19 @@ function _mergeProjectIntoLocal(cloudProj) {
   function restorePhotos(item) {
     const out = Object.assign({}, item);
     const local = localPhotos[item.id] || [];
-    // Cloud only has URL photos; local may also have base64 (not yet uploaded)
-    const cloudUrls   = (item.photos || []).filter(p => p.url);
-    const localUrlSet = new Set(local.map(p => p.url).filter(Boolean));
-    const freshCloud  = cloudUrls.filter(p => !localUrlSet.has(p.url));
-    out.photos = [...local, ...freshCloud];
+    // Cloud only has URL photos; local may also have Blob/base64 (not yet uploaded)
+    const cloudUrls    = (item.photos || []).filter(p => p.url);
+    const cloudUrlSet  = new Set(cloudUrls.map(p => p.url));
+    const localUrlSet  = new Set(local.map(p => p.url).filter(Boolean));
+    // Keep every local photo that is still referenced by the cloud, still has
+    // usable local image data, or is waiting to upload. Drop only entries whose
+    // cloud copy disappeared (photo deleted or replaced by a markup on another
+    // device) AND that hold no local data — those can never display again and
+    // would sit as dead broken-image tiles forever.
+    const hasLocalData = p => (p.data instanceof Blob) || (typeof p.data === 'string' && p.data.startsWith('data:'));
+    const keptLocal = local.filter(p => !p.url || cloudUrlSet.has(p.url) || p._needsUpload || hasLocalData(p));
+    const freshCloud = cloudUrls.filter(p => !localUrlSet.has(p.url));
+    out.photos = [...keptLocal, ...freshCloud];
     return out;
   }
 
@@ -3927,16 +3935,27 @@ async function _flushPendingPhotos(proj) {
 
   for (const item of proj.items || []) {
     for (const p of item.photos || []) {
-      
+
       // Check if the URL is completely missing, OR if it is a temporary local string
       const isTemporaryUrl = p.url && (p.url.startsWith('data:') || p.url.startsWith('blob:'));
 
-      // If it doesn't have a permanent Azure URL, upload it!
-      if ((!p.url || isTemporaryUrl) && p.data) {
+      // Upload if there's no permanent Azure URL, or a markup re-upload is
+      // still pending (_needsUpload — photo.url points at the pre-markup copy)
+      if ((!p.url || isTemporaryUrl || p._needsUpload) && p.data) {
         try {
           const newUrl = await _uploadPhotoToAzureBlob(p.data, proj.id, item.id);
           if (newUrl) {
-             p.url = newUrl; // Overwrite the temporary string with the real Azure link
+            const staleUrl = (p._replaceUrl && p._replaceUrl !== newUrl) ? p._replaceUrl : null;
+            p.url = newUrl; // Overwrite the temporary string with the real Azure link
+            delete p._needsUpload;
+            delete p._replaceUrl;
+            if (staleUrl) {
+              fetch('/api/deleteBlob', {
+                method : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body   : JSON.stringify({ blobUrl: staleUrl }),
+              }).catch(() => {});
+            }
           }
         } catch(uploadErr) {
           console.warn('[Sync] Pending photo upload failed:', uploadErr.message);
@@ -4503,22 +4522,27 @@ const activeItems = proj => (proj && proj.items ? proj.items.filter(i => !i._del
 
 // Helper function to parse mixed photo formats from IndexedDB
 function getPhotoSrcForDisplay(p) {
-  if (p.url) return p.url; // Remote Azure Blob URL
-  
-  // 1. Is it the new Blob format?
+  // 1. Local Blob first — it is always the current version (fresh captures and
+  //    markups land here before upload; p.url may still point at the pre-markup
+  //    cloud copy until the re-upload succeeds) and it works offline.
   if (p.data instanceof Blob) {
     // Convert the raw binary blob into a temporary local URL for the <img> tag
     // Cached internally as _blobUrl to prevent memory leaks during frequent UI re-renders
     if (!p._blobUrl) p._blobUrl = URL.createObjectURL(p.data);
     return p._blobUrl;
   }
-  
-  // 2. Is it the legacy Base64 string?
+
+  // 2. Remote Azure Blob URL
+  if (p.url) return p.url;
+
+  // 3. Is it the legacy Base64 string?
   if (typeof p.data === 'string' && p.data.startsWith('data:image')) {
     return p.data;
   }
-  
-  return p.data || null; // Fallback for corrupted data
+
+  // Nothing usable — the image data was lost (e.g. a failed upload followed by
+  // local eviction). Callers render a "photo unavailable" placeholder on null.
+  return null;
 }
 
 const MAIN_FOLDERS = ['A.S.S.T', 'AMI', 'ACD', 'ACS', 'ADH', 'ACM'];
@@ -4975,9 +4999,8 @@ function renderLeft(r) {
       } else {
         // Show matching SI rows
         matchingSIs.forEach(item => {
-          const thumb = item.photos && item.photos.length
-            ? `<img src="${getPhotoSrcForDisplay(item.photos[0])}" loading="lazy" />`
-            : `<span>📷</span>`;
+          const thumbSrc = item.photos && item.photos.length ? getPhotoSrcForDisplay(item.photos[0]) : null;
+          const thumb = thumbSrc ? `<img src="${thumbSrc}" loading="lazy" />` : `<span>📷</span>`;
           html += `<div class="si-row ${r.siId === item.id ? 'active' : ''}" onclick="navToSI('${p.id}','${item.id}')">
             <div class="si-thumb">${thumb}</div>
             <div class="si-info">
@@ -5062,7 +5085,8 @@ function renderLeft(r) {
       if(!items.length&&q) return;
       html+=`<div class="section-group">${sec.name}<span class="section-count">${items.length}</span></div>`;
       items.forEach(item=>{
-        const thumb=item.photos.length?`<img src="${getPhotoSrcForDisplay(item.photos[0])}" loading="lazy" />`:`<span>📷</span>`;
+        const thumbSrc=item.photos.length?getPhotoSrcForDisplay(item.photos[0]):null;
+        const thumb=thumbSrc?`<img src="${thumbSrc}" loading="lazy" />`:`<span>📷</span>`;
         const tw = item.towerWork;
         const twEnabled = tw && tw.enabled && tw.rooms && tw.rooms.length > 0;
         const twDone = twEnabled ? tw.rooms.filter(r=>r.status==='completed').length : 0;
@@ -6637,12 +6661,17 @@ function buildSIEditor(pid,sid) {
   const photosHTML = item.photos.length===0
     ? `<div class="photo-empty"><div class="photo-empty-icon">📷</div>No photos yet</div>`
     : item.photos.map((p,i)=>{
-        const src = getPhotoSrcForDisplay(p); // Azure Blob URL preferred; fall back to local Blob/base64
+        const src = getPhotoSrcForDisplay(p); // local Blob preferred; falls back to Azure URL/base64
         const dateLabel = p.takenAt ? `<div class="photo-date-label">${p.takenAt}</div>` : '';
+        const body = src
+          ? `<img src="${src}" loading="lazy" />`
+          : `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:100%;height:100%;background:var(--bg3,#2a2f3a);color:var(--text3,#8b95a8);font-size:10px;text-align:center;padding:6px">
+               <span style="font-size:20px">🚫</span>Photo unavailable<br>Retake needed
+             </div>`;
         return `
         <div class="photo-cell">
           <div class="photo-card" onclick="previewPhoto('${pid}','${sid}',${i})">
-            <img src="${src}" loading="lazy" />
+            ${body}
             <div class="photo-card-overlay">
               <span class="photo-num">${i+1}</span>
               <button class="photo-menu-btn" onclick="event.stopPropagation();showPhotoMenu(event,'${pid}','${sid}',${i})" title="Photo options">⋯</button>
@@ -8645,8 +8674,11 @@ function handleFileImport(e) {
                 buildSIEditor(_pt.pid, _pt.sid);
               }
             } catch(uploadErr) {
-              // Non-fatal — photo is still saved locally as a Blob
+              // Non-fatal — photo is still saved locally as a Blob and
+              // _flushPendingPhotos re-uploads it on the next sync
               console.warn('[Photo] Azure Blob upload failed, photo kept locally:', uploadErr.message);
+              showToast('⚠️ Photo saved on this device — cloud upload pending', 'red');
+              scheduleDirtySync(15000);
             }
           }, 'image/jpeg', 0.8); // 0.8 adds a slight compression for faster syncs
         };
@@ -9052,11 +9084,16 @@ async function _annSave() {
     if (photo._blobUrl) { try { URL.revokeObjectURL(photo._blobUrl); } catch (e) {} delete photo._blobUrl; }
 
     const oldUrl = photo.url || null;
-    // Replace with the annotated Blob; clear remote URL so the new version
-    // both displays immediately and gets re-uploaded by the sync engine.
+    // Replace with the annotated Blob but KEEP photo.url — the old cloud copy
+    // stays referenced until the re-upload lands. Nulling it here meant a
+    // failed upload left the photo with no cloud reference at all: the next
+    // sync then pushed the SI with an empty photo list, and if the local Blob
+    // was ever lost the photo was gone everywhere. Display prefers the local
+    // Blob, so the annotated version still shows immediately.
     photo.data = blob;
-    photo.url = null;
     photo.annotated = true;
+    photo._needsUpload = true;   // sync engine retries until the upload lands
+    photo._replaceUrl = oldUrl;  // stale cloud copy to bin after a successful upload
 
     markAsDirty(sid);
     save();
@@ -9071,9 +9108,11 @@ async function _annSave() {
         const newUrl = await _uploadPhotoToAzureBlob(blob, pid, sid);
         if (newUrl) {
           photo.url = newUrl;
+          delete photo._needsUpload;
+          delete photo._replaceUrl;
           markAsDirty(sid);
           save();
-          if (oldUrl) {
+          if (oldUrl && oldUrl !== newUrl) {
             fetch('/api/deleteBlob', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -9082,7 +9121,9 @@ async function _annSave() {
           }
         }
       } catch (e) {
-        console.warn('[Annotation] Azure re-upload failed, kept locally:', e && e.message);
+        console.warn('[Annotation] Azure re-upload failed, will retry on next sync:', e && e.message);
+        showToast('⚠️ Markup saved on this device — cloud upload pending', 'red');
+        scheduleDirtySync(15000); // retry shortly; the online handler also flushes on reconnect
       }
     })();
   };
@@ -9227,9 +9268,12 @@ function deletePhoto(pid,sid,idx) {
 }
 function previewPhoto(pid,sid,idx) {
   const item=getSI(pid,sid); if(!item) return;
+  const src=getPhotoSrcForDisplay(item.photos[idx]);
   const ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;z-index:999;background:rgba(0,0,0,0.93);display:flex;align-items:center;justify-content:center;cursor:pointer;';
-  ov.innerHTML=`<img src="${getPhotoSrcForDisplay(item.photos[idx])}" style="max-width:92%;max-height:92%;border-radius:10px;object-fit:contain;" />`;
+  ov.innerHTML=src
+    ?`<img src="${src}" style="max-width:92%;max-height:92%;border-radius:10px;object-fit:contain;" />`
+    :`<div style="color:#8b95a8;text-align:center;font-size:14px"><div style="font-size:40px;margin-bottom:10px">🚫</div>This photo's image data was lost before it could upload.<br>It needs to be retaken.</div>`;
   ov.onclick=()=>document.body.removeChild(ov);
   document.body.appendChild(ov);
 }

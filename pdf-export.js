@@ -80,7 +80,11 @@
     const siLbl = n => String(n||'').replace(/^SI\s+/i,'SI-');
     const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const capOf = ph => (ph && (ph.caption||ph.note||ph.label||'')) || '';
-    const srcOf = ph => ph?.url || ph?._blobUrl || ph?.data || null;
+    // Local blob first — it's the current version when a markup re-upload is
+    // still pending (ph.url can point at the pre-markup cloud copy).
+    const srcOf = ph => (ph && typeof getPhotoSrcForDisplay === 'function')
+      ? getPhotoSrcForDisplay(ph)
+      : (ph?._blobUrl || ph?.url || ph?.data || null);
 
     const inclCover  = opts.inclCover  !== false;
     const inclPhotos = opts.inclPhotos !== false;
