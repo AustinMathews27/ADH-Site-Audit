@@ -762,6 +762,65 @@ select.field-input { cursor:pointer; }
   font-family:var(--sans); min-width:120px;
 }
 
+/* ── PHOTO RECOVERY (ADMIN) ── */
+.recovery-overlay {
+  position:fixed; inset:0; z-index:940;
+  background:var(--bg); display:flex; flex-direction:column;
+}
+.recovery-header {
+  display:flex; align-items:center; gap:10px; padding:12px 16px;
+  background:var(--surface); border-bottom:1px solid var(--border); flex-shrink:0; flex-wrap:wrap;
+}
+.recovery-body { flex:1; overflow-y:auto; padding:14px 16px calc(20px + env(safe-area-inset-bottom)); overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
+.recovery-proj-row {
+  display:flex; align-items:center; gap:12px; padding:12px 14px; margin-bottom:8px;
+  border:1px solid var(--border); border-radius:10px; background:var(--surface); cursor:pointer; transition:all 0.15s;
+}
+.recovery-proj-row:hover { border-color:var(--accent); }
+.recovery-si-group { margin-bottom:18px; }
+.recovery-si-title {
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  font-size:12px; font-weight:700; margin-bottom:8px; color:var(--text1);
+}
+.recovery-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; }
+.recovery-card {
+  position:relative; border:2px solid var(--border); border-radius:9px; overflow:hidden;
+  background:var(--surface2); cursor:pointer; aspect-ratio:1;
+}
+.recovery-card img { width:100%; height:100%; object-fit:cover; display:block; }
+.recovery-card.selected { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-dim); }
+.recovery-card .rec-check {
+  position:absolute; top:5px; left:5px; width:20px; height:20px; border-radius:6px;
+  background:rgba(0,0,0,0.55); border:1.5px solid #fff; color:#fff;
+  display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700;
+}
+.recovery-card.selected .rec-check { background:var(--accent); border-color:var(--accent); }
+.recovery-card .rec-open {
+  position:absolute; top:5px; right:5px; width:22px; height:22px; border-radius:6px;
+  background:rgba(0,0,0,0.55); color:#fff; border:none; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; font-size:11px;
+}
+.recovery-card .rec-date {
+  position:absolute; bottom:0; left:0; right:0; padding:3px 5px;
+  background:rgba(0,0,0,0.55); color:#fff; font-size:9px; font-family:var(--mono); text-align:center;
+}
+.recovery-card .rec-inapp {
+  position:absolute; bottom:18px; left:5px; padding:2px 6px; border-radius:10px;
+  background:rgba(22,101,52,0.85); color:#dcfce7; font-size:9px; font-weight:700;
+}
+.recovery-bar {
+  display:flex; align-items:center; gap:10px; padding:10px 16px calc(10px + env(safe-area-inset-bottom));
+  background:var(--surface); border-top:1px solid var(--border); flex-shrink:0; flex-wrap:wrap;
+}
+.recovery-btn {
+  padding:8px 16px; border-radius:9px; border:1px solid var(--border);
+  background:var(--surface2); color:var(--text1); font-family:var(--mono); font-size:12px;
+  font-weight:700; cursor:pointer; transition:all 0.15s; white-space:nowrap;
+}
+.recovery-btn:hover { border-color:var(--accent); color:var(--accent); }
+.recovery-btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+.recovery-btn:disabled { opacity:0.4; cursor:default; pointer-events:none; }
+
 /* ── REPORT GENERATOR — SITE AUDIT PRO STYLE ── */
 .rg-overlay {
   position:fixed; inset:0; z-index:500;
@@ -4569,6 +4628,13 @@ function showUserMenu() {
           placeholder="Your name" />
       </div>
     </div>
+    ${isAdmin ? `
+    <button onclick="closeModal();showPhotoRecovery()"
+      style="width:100%;margin-top:14px;padding:10px;background:var(--accent-dim);color:var(--accent);
+      border:1px solid var(--accent-dim);border-radius:9px;font-family:var(--mono);font-size:12px;
+      font-weight:700;cursor:pointer">
+      🧰 Photo Recovery (Admin)
+    </button>` : ''}
     ${!isLocal && !isSharedWorkspace ? `
     <button onclick="localStorage.removeItem('adh_auth_token'); localStorage.removeItem('adh_user_id'); window.location.href='/.auth/logout?post_logout_redirect_uri=/'"
       style="width:100%;margin-top:16px;padding:10px;background:var(--red-dim);color:var(--red);
@@ -9276,6 +9342,266 @@ function previewPhoto(pid,sid,idx) {
     :`<div style="color:#8b95a8;text-align:center;font-size:14px"><div style="font-size:40px;margin-bottom:10px">🚫</div>This photo's image data was lost before it could upload.<br>It needs to be retaken.</div>`;
   ov.onclick=()=>document.body.removeChild(ov);
   document.body.appendChild(ov);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// PHOTO RECOVERY (ADMIN ONLY)
+// Browses every blob in the Azure Storage container, grouped by the
+// app's project → scope item names and sorted by date, and re-links
+// selected photos into their SIs in bulk. Orphaned blobs (uploaded but
+// no longer referenced by any photo entry — e.g. after the markup-save
+// data loss) are exactly what this recovers. Read-only against Azure:
+// restore just re-attaches URLs, it never moves or deletes blobs.
+// ══════════════════════════════════════════════════════════════════
+let _rec = null; // { blobs:[], pid:null, sel:Set<idx> }
+
+function showPhotoRecovery() {
+  if (!isAdmin) { showToast('Admin access required', 'red'); return; }
+  _rec = { blobs: [], pid: null, sel: new Set() };
+
+  const ov = document.createElement('div');
+  ov.className = 'recovery-overlay';
+  ov.id = 'recovery-overlay';
+  ov.innerHTML = `
+    <div class="recovery-header">
+      <span style="font-size:15px;font-weight:700">🧰 Photo Recovery</span>
+      <span id="rec-crumb" style="font-size:12px;color:var(--text2);flex:1"></span>
+      <button class="recovery-btn" onclick="_recRefresh()">↻ Refresh</button>
+      <button class="recovery-btn" onclick="_recClose()">✕ Close</button>
+    </div>
+    <div class="recovery-body" id="rec-body">
+      <div style="text-align:center;padding:40px 0;color:var(--text2)">Loading blob storage…</div>
+    </div>
+    <div class="recovery-bar" id="rec-bar" style="display:none"></div>`;
+  document.body.appendChild(ov);
+  _recRefresh();
+}
+
+function _recClose() {
+  document.getElementById('recovery-overlay')?.remove();
+  _rec = null;
+}
+
+async function _recRefresh() {
+  if (!_rec) return;
+  const body = document.getElementById('rec-body');
+  if (body) body.innerHTML = `<div style="text-align:center;padding:40px 0;color:var(--text2)">Loading blob storage…</div>`;
+  try {
+    const res = await fetch('/api/listBlobs');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    _rec.blobs = (data.blobs || []).map((b, i) => {
+      const parts = b.name.split('/');
+      const file  = parts[parts.length - 1] || '';
+      const m     = file.match(/^(\d{13})-/);
+      const date  = m ? new Date(+m[1]) : (b.lastModified ? new Date(b.lastModified) : null);
+      return {
+        idx: i, name: b.name, url: b.url, size: b.size || 0,
+        projId: parts[0] || '',
+        siId:   parts.length >= 3 ? parts[1] : '',
+        date,
+      };
+    });
+    _rec.sel = new Set();
+    if (data.truncated) showToast('⚠️ Blob list truncated — showing first ' + _rec.blobs.length, 'red');
+    _recRender();
+  } catch (e) {
+    if (body) body.innerHTML = `<div style="color:var(--red);padding:24px;text-align:center">Could not list blob storage: ${_htmlEsc(e.message)}<br>
+      <span style="font-size:11px;color:var(--text2)">Requires the listBlobs API (deployed with this version) and storage settings in Azure.</span></div>`;
+  }
+}
+
+/** Set of every photo URL the app currently references (SI photos + covers). */
+function _recAppUrls() {
+  const set = new Set();
+  (store.projects || []).forEach(p => {
+    if (p.coverPhoto && !p.coverPhoto.startsWith('data:')) set.add(p.coverPhoto);
+    (p.items || []).forEach(it => (it.photos || []).forEach(ph => { if (ph.url) set.add(ph.url); }));
+  });
+  return set;
+}
+
+function _recFmtDate(d) {
+  if (!d || isNaN(d)) return '';
+  return (d.getMonth()+1).toString().padStart(2,'0') + '/' + d.getDate().toString().padStart(2,'0') + '/' + d.getFullYear()
+    + ' ' + d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+}
+
+function _recRender() {
+  if (!_rec) return;
+  if (_rec.pid) _recRenderProject(); else _recRenderProjects();
+}
+
+// ── Level 1: projects ───────────────────────────────────────────────
+function _recRenderProjects() {
+  const body  = document.getElementById('rec-body');
+  const crumb = document.getElementById('rec-crumb');
+  const bar   = document.getElementById('rec-bar');
+  if (crumb) crumb.textContent = 'All projects in blob storage';
+  if (bar) bar.style.display = 'none';
+
+  const appUrls = _recAppUrls();
+  const groups = {};
+  _rec.blobs.forEach(b => {
+    (groups[b.projId] = groups[b.projId] || { blobs: [], newest: 0, orphans: 0 }).blobs.push(b);
+    const t = b.date ? b.date.getTime() : 0;
+    if (t > groups[b.projId].newest) groups[b.projId].newest = t;
+    if (!appUrls.has(b.url)) groups[b.projId].orphans++;
+  });
+
+  const rows = Object.entries(groups)
+    .sort((a, b) => b[1].newest - a[1].newest)
+    .map(([pid, g]) => {
+      const proj  = getProject(pid);
+      const title = proj ? proj.name : pid + ' (not in app)';
+      const dates = g.blobs.map(b => b.date).filter(Boolean).sort((a, b) => a - b);
+      const range = dates.length ? _recFmtDate(dates[0]).split(' ')[0] + ' – ' + _recFmtDate(dates[dates.length-1]).split(' ')[0] : '';
+      const mb    = (g.blobs.reduce((s, b) => s + b.size, 0) / 1048576).toFixed(1);
+      return `<div class="recovery-proj-row" onclick="_recOpenProject('${_htmlEsc(pid)}')">
+        <span style="font-size:20px">${proj ? '📁' : '❓'}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_htmlEsc(title)}</div>
+          <div style="font-size:11px;color:var(--text2);font-family:var(--mono)">${g.blobs.length} photo${g.blobs.length!==1?'s':''} · ${mb} MB${range ? ' · ' + range : ''}</div>
+        </div>
+        ${g.orphans > 0 ? `<span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:12px;background:var(--red-dim);color:var(--red)">${g.orphans} not in app</span>` : `<span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:12px;background:var(--green-dim,rgba(22,101,52,0.15));color:var(--green,#16a34a)">all linked</span>`}
+        <span style="color:var(--text3)">›</span>
+      </div>`;
+    }).join('');
+
+  if (body) body.innerHTML = `
+    <div style="font-size:11px;color:var(--text2);margin-bottom:10px">${_rec.blobs.length} photos in storage · projects sorted by newest photo · <strong>"not in app"</strong> = uploaded but no longer linked to any scope item (recoverable)</div>
+    ${rows || '<div style="text-align:center;padding:30px;color:var(--text2)">Blob storage is empty</div>'}`;
+}
+
+function _recOpenProject(pid) {
+  if (!_rec) return;
+  _rec.pid = pid;
+  _rec.sel = new Set();
+  _recRenderProject();
+}
+
+// ── Level 2: one project, grouped by SI, sorted by date ─────────────
+function _recRenderProject() {
+  const body  = document.getElementById('rec-body');
+  const crumb = document.getElementById('rec-crumb');
+  const pid   = _rec.pid;
+  const proj  = getProject(pid);
+  const appUrls = _recAppUrls();
+
+  if (crumb) crumb.innerHTML = `<a onclick="_rec.pid=null;_recRender()" style="cursor:pointer;color:var(--accent)">‹ All projects</a> · ${_htmlEsc(proj ? proj.name : pid)}`;
+
+  const blobs = _rec.blobs.filter(b => b.projId === pid);
+  const groups = {};
+  blobs.forEach(b => (groups[b.siId] = groups[b.siId] || []).push(b));
+
+  const keyOf = sid => {
+    if (sid === 'cover') return { order: '1', label: '🖼 Project Cover Photos', si: null };
+    const si = proj ? (proj.items || []).find(i => i.id === sid) : null;
+    if (si) return { order: '0' + String(si.num || ''), label: `${_htmlEsc((si.num || '').replace(/^SI\s+/, 'SI# '))} — ${_htmlEsc(si.title || '')}${si._deleted ? ' <span style="color:var(--red)">(deleted SI)</span>' : ''}`, si };
+    return { order: '2' + sid, label: `${_htmlEsc(sid || '(no folder)')} <span style="color:var(--text3)">(SI not found in app)</span>`, si: null };
+  };
+
+  const sections = Object.keys(groups)
+    .map(sid => ({ sid, ...keyOf(sid) }))
+    .sort((a, b) => a.order.localeCompare(b.order, undefined, { numeric: true }))
+    .map(sec => {
+      const shots = groups[sec.sid].slice().sort((a, b) => (a.date?.getTime() || 0) - (b.date?.getTime() || 0));
+      const missing = shots.filter(b => !appUrls.has(b.url));
+      const cards = shots.map(b => {
+        const inApp = appUrls.has(b.url);
+        const selected = _rec.sel.has(b.idx);
+        return `<div class="recovery-card ${selected ? 'selected' : ''}" id="rec-card-${b.idx}" onclick="_recToggle(${b.idx})">
+          <img src="${b.url}" loading="lazy" alt="">
+          <div class="rec-check">${selected ? '✓' : ''}</div>
+          <button class="rec-open" onclick="event.stopPropagation();window.open('${b.url}','_blank')" title="Open full size">⤢</button>
+          ${inApp ? '<div class="rec-inapp">in app</div>' : ''}
+          <div class="rec-date">${_recFmtDate(b.date) || '—'}</div>
+        </div>`;
+      }).join('');
+      const selBtn = missing.length
+        ? `<button class="recovery-btn" style="font-size:10px;padding:4px 10px" onclick="_recSelectMissing('${_htmlEsc(sec.sid)}')">Select ${missing.length} missing</button>`
+        : `<span style="font-size:10px;color:var(--green,#16a34a);font-weight:700">all linked ✓</span>`;
+      return `<div class="recovery-si-group">
+        <div class="recovery-si-title">${sec.label}<span style="font-weight:400;color:var(--text3);font-size:11px">· ${shots.length} photo${shots.length!==1?'s':''}</span>${selBtn}</div>
+        <div class="recovery-grid">${cards}</div>
+      </div>`;
+    }).join('');
+
+  if (body) body.innerHTML = `
+    ${proj ? '' : `<div style="font-size:12px;color:var(--red);margin-bottom:10px">⚠️ This project is not in the app${'—'} photos can be viewed and opened, but restore needs the project to exist locally.</div>`}
+    ${sections || '<div style="text-align:center;padding:30px;color:var(--text2)">No photos for this project</div>'}`;
+  _recUpdateBar();
+}
+
+function _recToggle(idx) {
+  if (!_rec) return;
+  if (_rec.sel.has(idx)) _rec.sel.delete(idx); else _rec.sel.add(idx);
+  const card = document.getElementById('rec-card-' + idx);
+  if (card) {
+    card.classList.toggle('selected', _rec.sel.has(idx));
+    const chk = card.querySelector('.rec-check');
+    if (chk) chk.textContent = _rec.sel.has(idx) ? '✓' : '';
+  }
+  _recUpdateBar();
+}
+
+function _recSelectMissing(sid) {
+  if (!_rec) return;
+  const appUrls = _recAppUrls();
+  _rec.blobs.filter(b => b.projId === _rec.pid && b.siId === sid && !appUrls.has(b.url))
+    .forEach(b => _rec.sel.add(b.idx));
+  _recRenderProject();
+}
+
+function _recUpdateBar() {
+  const bar = document.getElementById('rec-bar');
+  if (!bar || !_rec) return;
+  const n = _rec.sel.size;
+  bar.style.display = 'flex';
+  bar.innerHTML = `
+    <span style="font-size:12px;color:var(--text2);flex:1">${n} selected</span>
+    <button class="recovery-btn" onclick="_rec.sel=new Set();_recRenderProject()" ${n ? '' : 'disabled'}>Clear</button>
+    <button class="recovery-btn primary" onclick="_recRestoreSelected()" ${n ? '' : 'disabled'}>⤵ Restore ${n || ''} to app</button>`;
+}
+
+function _recRestoreSelected() {
+  if (!_rec || !_rec.sel.size) return;
+  const appUrls = _recAppUrls();
+  let restored = 0, skipped = 0, already = 0;
+  const dirtySIs = new Set();
+  let projDirty = false;
+
+  _rec.sel.forEach(idx => {
+    const b = _rec.blobs[idx];
+    if (!b) { skipped++; return; }
+    if (appUrls.has(b.url)) { already++; return; }
+    const proj = getProject(b.projId);
+    if (!proj) { skipped++; return; }
+    if (b.siId === 'cover') {
+      // Only fill an empty cover — never overwrite one that exists
+      if (!proj.coverPhoto) { proj.coverPhoto = b.url; projDirty = true; restored++; }
+      else skipped++;
+      return;
+    }
+    const si = (proj.items || []).find(i => i.id === b.siId && !i._deleted);
+    if (!si) { skipped++; return; }
+    si.photos = si.photos || [];
+    si.photos.push({ url: b.url, caption: '', takenAt: _recFmtDate(b.date) });
+    dirtySIs.add(si.id);
+    restored++;
+  });
+
+  dirtySIs.forEach(sid => markAsDirty(sid));
+  if (projDirty) markProjectDirty(_rec.pid);
+  if (dirtySIs.size || projDirty) { save(); scheduleDirtySync(); }
+
+  const bits = [`✓ ${restored} restored`];
+  if (already) bits.push(`${already} already linked`);
+  if (skipped) bits.push(`${skipped} skipped (no matching SI)`);
+  showToast(bits.join(' · '), restored ? 'green' : 'red');
+
+  _rec.sel = new Set();
+  _recRenderProject();
 }
 
 // ══════════════════════════════════════════
