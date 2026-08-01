@@ -3507,6 +3507,50 @@ function _userName() {
   return email.includes('@') ? email.split('@')[0] : email;
 }
 
+// ══════════════════════════════════════════
+// DEVICE IDENTITY
+// Every install mints a permanent random device ID on first run. It lives
+// OUTSIDE the synced store (localStorage + IDB, never Cosmos-merged) so one
+// device can never overwrite another's identity, and it is surfaced only in
+// the Admin Console. With Entra auth disabled every device shares one userId
+// — this is what lets a bad push or edit be traced to a specific iPad. When
+// Entra returns, it complements the real user identity rather than replace it.
+// ══════════════════════════════════════════
+let _deviceId = '';
+let _deviceLabel = '';
+
+(function _initDeviceIdentity() {
+  try {
+    _deviceId    = localStorage.getItem('adh_device_id') || '';
+    _deviceLabel = localStorage.getItem('adh_device_label') || '';
+  } catch (e) {}
+  if (!_deviceId) {
+    _deviceId = 'dev_' + (crypto.randomUUID
+      ? crypto.randomUUID().replace(/-/g, '').slice(0, 20)
+      : Date.now().toString(36) + Math.random().toString(36).slice(2, 12));
+    try { localStorage.setItem('adh_device_id', _deviceId); } catch (e) {}
+  }
+  // Second copy in IndexedDB: whichever store survives a clear restores the
+  // other. The IDB copy is authoritative — it predates any freshly minted ID.
+  _idbGet('device_id').then(v => {
+    if (v && v !== _deviceId) {
+      _deviceId = v;
+      try { localStorage.setItem('adh_device_id', v); } catch (e) {}
+    } else if (!v) {
+      _idbSet('device_id', _deviceId).catch(() => {});
+    }
+  }).catch(() => {});
+  _idbGet('device_label').then(v => { if (v && !_deviceLabel) _deviceLabel = v; }).catch(() => {});
+})();
+
+const _deviceTag = () => _deviceLabel ? `${_deviceLabel} · ${_deviceId.slice(0, 12)}` : _deviceId;
+
+function setDeviceLabel(label) {
+  _deviceLabel = (label || '').trim().slice(0, 40);
+  try { localStorage.setItem('adh_device_label', _deviceLabel); } catch (e) {}
+  _idbSet('device_label', _deviceLabel).catch(() => {});
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // SYNC ENGINE v5 — Per-Project Document Architecture
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3653,6 +3697,8 @@ function _buildProjectPayload(proj) {
     : undefined;
 
   const out = Object.assign({}, proj, {
+    // Who pushed this doc last — stored on the cloud doc for diagnostics
+    _pushedBy: { device: _deviceId, label: _deviceLabel, name: store.settings.displayName || '', at: Date.now() },
     // Blob-storage URL syncs through Cosmos; pending base64 stays local
     // until _flushPendingPhotos uploads it.
     coverPhoto: (proj.coverPhoto && !proj.coverPhoto.startsWith('data:')) ? proj.coverPhoto : null,
@@ -3685,7 +3731,8 @@ function _buildIndexPayload() {
     // Deleted project IDs — the server unions projectIds from both sides, so
     // tombstones are the only way an ID ever leaves the cloud index.
     projectTombstones: store.projectTombstones || {},
-    _savedAt:   Date.now()
+    _savedAt:   Date.now(),
+    _savedByDevice: _deviceId
   };
 }
 
@@ -3932,22 +3979,34 @@ function _mergeProjectIntoLocal(cloudProj) {
     });
   }
 
-  function restorePhotos(item) {
+  function restorePhotos(item, localItem) {
     const out = Object.assign({}, item);
     const local = localPhotos[item.id] || [];
+    // Photo tombstones (url → deletedAt) from both sides: a deletion made
+    // anywhere beats a stale copy anywhere else. GC'd after 60 days.
+    const tombCutoff = Date.now() - 60 * 86400000;
+    const tomb = {};
+    [(localItem && localItem.photoTombstones) || {}, item.photoTombstones || {}].forEach(m =>
+      Object.entries(m).forEach(([u, ts]) => {
+        if (ts > tombCutoff && (!tomb[u] || ts > tomb[u])) tomb[u] = ts;
+      }));
     // Cloud only has URL photos; local may also have Blob/base64 (not yet uploaded)
-    const cloudUrls    = (item.photos || []).filter(p => p.url);
+    const cloudUrls    = (item.photos || []).filter(p => p.url && !tomb[p.url]);
     const cloudUrlSet  = new Set(cloudUrls.map(p => p.url));
     const localUrlSet  = new Set(local.map(p => p.url).filter(Boolean));
-    // Keep every local photo that is still referenced by the cloud, still has
-    // usable local image data, or is waiting to upload. Drop only entries whose
-    // cloud copy disappeared (photo deleted or replaced by a markup on another
-    // device) AND that hold no local data — those can never display again and
-    // would sit as dead broken-image tiles forever.
     const hasLocalData = p => (p.data instanceof Blob) || (typeof p.data === 'string' && p.data.startsWith('data:'));
-    const keptLocal = local.filter(p => !p.url || cloudUrlSet.has(p.url) || p._needsUpload || hasLocalData(p));
+    // Keep a local photo only if it isn't tombstoned AND either still has
+    // usable local image data (fresh capture / pending upload) or its cloud
+    // copy still exists. Everything else is dead weight — stubs with no data
+    // and no URL (the "Photo unavailable" tiles) and entries whose cloud copy
+    // was deleted or replaced on another device. Dropping them here is what
+    // lets every device self-heal instead of showing broken tiles forever.
+    const keptLocal  = local.filter(p =>
+      !(p.url && tomb[p.url]) && (hasLocalData(p) || (p.url && cloudUrlSet.has(p.url))));
     const freshCloud = cloudUrls.filter(p => !localUrlSet.has(p.url));
     out.photos = [...keptLocal, ...freshCloud];
+    if (Object.keys(tomb).length) out.photoTombstones = tomb;
+    else delete out.photoTombstones;
     return out;
   }
 
@@ -3975,7 +4034,10 @@ function _mergeProjectIntoLocal(cloudProj) {
     } else if (!li._dirty) {
       // Safe to merge — no unsaved local changes
       const merged = Object.assign({}, li, ci);
-      merged.photos = restorePhotos(ci).photos;
+      const rp = restorePhotos(ci, li);
+      merged.photos = rp.photos;
+      if (rp.photoTombstones) merged.photoTombstones = rp.photoTombstones;
+      else delete merged.photoTombstones;
       localItemMap.set(ci.id, merged);
     }
     // else: li._dirty → skip, preserve local version
@@ -4100,8 +4162,17 @@ async function syncChanges(isAuto = false) {
         const result = await _apiSaveProject(_buildProjectPayload(proj));
         if (result.ok) {
           _dirtyProjectIds.delete(proj.id);
-          if (result._ts) _cloudTs.projects[proj.id] = result._ts;
           (proj.items || []).forEach(i => { i._dirty = false; });
+          if (result.project) {
+            // Merge the server's post-merge truth back in — it may hold data
+            // this device never saw (photos restored elsewhere, fields another
+            // device preserved). Recording _ts without merging used to freeze
+            // the pushing device on its own stale view forever.
+            _mergeProjectIntoLocal(result.project);
+            if (result._ts) _cloudTs.projects[proj.id] = result._ts;
+          }
+          // No result.project (older API): leave _cloudTs untouched so the
+          // next poll pulls and merges the server-side result.
         }
       } catch(err) { console.warn(`[Sync] Project ${proj.id} failed:`, err.message); }
     }
@@ -4155,8 +4226,9 @@ async function _syncSingleProject(pid) {
       const result = await _apiSaveProject(_buildProjectPayload(proj));
       if (result.ok) {
         _dirtyProjectIds.delete(pid);
-        if (result._ts) _cloudTs.projects[pid] = result._ts;
         (proj.items || []).forEach(i => { i._dirty = false; });
+        // Don't record _ts here — the pull below fetches the server's merged
+        // doc (which may hold data this device never saw) and records it then.
         await _persistDirtyState();
       } else { anyError = true; }
     } catch(err) {
@@ -8419,6 +8491,7 @@ function setStatus(pid,sid,status) {
   item.status=status;
   item._updatedBy=store.settings.displayName||(_currentUser?.userDetails)||'You';
   item._updatedAt=Date.now();
+  item._updatedByDevice=_deviceId;
   _logActivity(pid,{type:'status',siId:sid,siNum:item.num,detail:`${prev}→${status}`,by:item._updatedBy});
   // Persist to server-side audit history (fire-and-forget)
   _postChangeLog(pid,{siId:sid,siNum:item.num,siTitle:item.title,field:'status',oldValue:prev,newValue:status});
@@ -8531,6 +8604,7 @@ function _doSave(pid,sid,toast=true) {
   syncEditorToStore(pid, sid);
   item._updatedBy=store.settings.displayName||'You';
   item._updatedAt=Date.now();
+  item._updatedByDevice=_deviceId;
   if(item.notes!==prevNotes && item.notes) _logActivity(pid,{type:'note',siId:sid,siNum:item.num,detail:item.notes.slice(0,80),by:item._updatedBy});
   markAsDirty(sid);
   save();
@@ -9353,8 +9427,14 @@ function deletePhoto(pid,sid,idx) {
     URL.revokeObjectURL(removed._blobUrl);
   }
 
-  // If the photo was uploaded to Azure Blob, delete it server-side too
+  // If the photo was uploaded to Azure Blob, delete it server-side too, and
+  // leave a tombstone (url → deletedAt) so the deletion propagates: without
+  // it the server's keep-cloud-photos safety net resurrects the dead URL on
+  // the next push and every device shows a broken tile forever.
   if (removed && removed.url) {
+    item.photoTombstones = item.photoTombstones || {};
+    item.photoTombstones[removed.url] = Date.now();
+    markAsDirty(sid);
     fetch('/api/deleteBlob', {
       method : 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -9695,6 +9775,8 @@ function _recRestoreSelected() {
     if (!si) { skipped++; return; }
     si.photos = si.photos || [];
     si.photos.push({ url: b.url, caption: '', takenAt: _recFmtDate(b.date) });
+    // A deliberate restore beats any old deletion tombstone for this URL
+    if (si.photoTombstones) delete si.photoTombstones[b.url];
     dirtySIs.add(si.id);
     restored++;
   });
@@ -9787,6 +9869,10 @@ function _admSweepDead() {
       const rm = new Set(g.dead);
       const before = it.photos.length;
       it.photos = it.photos.filter(ph => !rm.has(ph));
+      // Tombstone swept URLs so the cleanup propagates to every device
+      g.dead.forEach(ph => {
+        if (ph.url) { it.photoTombstones = it.photoTombstones || {}; it.photoTombstones[ph.url] = Date.now(); }
+      });
       removed += before - it.photos.length;
       markAsDirty(g.sid);
     });
@@ -10023,6 +10109,7 @@ function _admRenderSync() {
       <div class="adm-stat"><b style="color:${pending.length ? 'var(--yellow,#ca8a04)' : 'inherit'}">${pending.reduce((s, x) => s + x.up, 0)}</b><span>photos waiting to upload</span></div>
       <div class="adm-stat"><b style="color:${stubCount ? 'var(--red)' : 'inherit'}">${stubCount}</b><span>dead photo entries (see 🧹)</span></div>
       <div class="adm-stat"><b style="font-size:13px">${store.lastUpdated ? _timeAgo(store.lastUpdated) : '—'}</b><span>last local change</span></div>
+      <div class="adm-stat"><b style="font-size:12px;word-break:break-all">${_htmlEsc(_deviceLabel || _deviceId)}</b><span>this device</span></div>
     </div>
     ${dirty.length ? `<div class="adm-section"><div class="adm-section-title">⇡ Projects with unpushed changes</div>
       ${dirty.map(p => `<div class="adm-row"><div class="adm-row-main">${_htmlEsc(p.name)}</div></div>`).join('')}</div>` : ''}
@@ -10063,7 +10150,7 @@ function _admRenderActivity() {
       <span style="font-size:15px">${icons[e.type] || '•'}</span>
       <div class="adm-row-main">
         <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_htmlEsc(e.detail || e.type || '')}${e.siNum ? ` <span style="color:var(--accent);font-family:var(--mono);font-size:11px">${_htmlEsc(String(e.siNum).replace(/^SI\s+/, 'SI# '))}</span>` : ''}</div>
-        <div class="adm-row-sub">${_htmlEsc(e._pname)} · ${_htmlEsc(e.by || '?')} · ${e.at ? _timeAgo(e.at) : ''}</div>
+        <div class="adm-row-sub">${_htmlEsc(e._pname)} · ${_htmlEsc(e.by || '?')}${e.dev ? ' · 🪪 ' + _htmlEsc(e.dev) : ''} · ${e.at ? _timeAgo(e.at) : ''}</div>
       </div>
     </div>`).join('');
 
@@ -10183,6 +10270,20 @@ function _admRenderSystem() {
       <div class="adm-stat"><b>${photoCount}</b><span>photo entries</span></div>
       <div class="adm-stat"><b id="adm-sys-cache">…</b><span>app cache version</span></div>
       <div class="adm-stat"><b id="adm-sys-storage" style="font-size:13px">…</b><span>device storage used</span></div>
+    </div>
+    <div class="adm-section">
+      <div class="adm-section-title">🪪 Device identity</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px">
+        Every install carries a permanent secret ID, stamped on its edits, pushes and activity —
+        so a change can be traced to a specific device even while everyone shares one login.
+        Give this device a label so logs read like "Bruce's iPad" instead of a random code.
+      </div>
+      <div style="font-family:var(--mono);font-size:12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:8px;user-select:all;word-break:break-all">${_htmlEsc(_deviceId)}</div>
+      <div style="display:flex;gap:8px;max-width:380px">
+        <input id="adm-dev-label" placeholder="Device label (e.g. Bruce's iPad)" value="${_htmlEsc(_deviceLabel)}"
+          style="flex:1;min-width:0;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text1);font-size:13px;outline:none">
+        <button class="recovery-btn" onclick="setDeviceLabel(document.getElementById('adm-dev-label').value);showToast('✓ Device label saved','green')">Save</button>
+      </div>
     </div>
     <div class="adm-section">
       <div class="adm-section-title">🩺 Service health <button class="recovery-btn" style="font-size:10px;padding:4px 10px" onclick="_admSysHealth()">Run checks</button></div>
@@ -13310,7 +13411,7 @@ function _timeAgo(ts) {
 function _logActivity(pid,entry) {
   const proj=getProject(pid); if(!proj) return;
   if(!proj.activityLog) proj.activityLog=[];
-  proj.activityLog.unshift({...entry,at:Date.now()});
+  proj.activityLog.unshift({...entry,at:Date.now(),dev:_deviceTag()});
   if(proj.activityLog.length>300) proj.activityLog.length=300;
   markProjectDirty(pid);
 }
@@ -13329,7 +13430,9 @@ function _postChangeLog(pid, details) {
     projectName: proj?.name || '',
     ...details,
     by,
-    byId
+    byId,
+    deviceId:    _deviceId,
+    deviceLabel: _deviceLabel
   };
   fetch('/api/logChange', {
     method:  'POST',

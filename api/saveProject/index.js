@@ -75,11 +75,24 @@ function mergeItems(currentItems, incomingItems) {
 
   // Process incoming items
   incomingMap.forEach((incoming, id) => {
+    const cur = currentMap.get(id);
+
+    // Photo tombstones (url → deletedAt): union of both sides, newest wins,
+    // GC'd with the same TTL as item tombstones. A tombstoned URL is excluded
+    // from BOTH photo lists below — without this, the keep-cloud-photos
+    // safety net resurrects deliberately deleted photos on every push.
+    const tomb = Object.assign({}, (cur && cur.photoTombstones) || {});
+    Object.entries(incoming.photoTombstones || {}).forEach(([u, ts]) => {
+      if (!tomb[u] || ts > tomb[u]) tomb[u] = ts;
+    });
+    const tombCutoff = Date.now() - ITEM_TOMBSTONE_TTL_MS;
+    Object.keys(tomb).forEach(u => { if (tomb[u] < tombCutoff) delete tomb[u]; });
+
     // Always strip photos from what gets written to Cosmos —
     // photos live in IndexedDB on the client, Azure Blob for URLs.
     const incomingClean = Object.assign({}, incoming, {
       photos: (incoming.photos || [])
-        .filter(p => p.url)
+        .filter(p => p.url && !tomb[p.url])
         .map(p => ({ url: p.url, caption: p.caption || "", takenAt: p.takenAt || "" })),
       attachments: (incoming.attachments || [])
         .map(a => ({
@@ -87,16 +100,20 @@ function mergeItems(currentItems, incomingItems) {
           icon: a.icon, size: a.size, addedAt: a.addedAt, addedBy: a.addedBy
         }))
     });
+    if (Object.keys(tomb).length) incomingClean.photoTombstones = tomb;
+    else delete incomingClean.photoTombstones;
 
-    if (currentMap.has(id)) {
+    if (cur) {
       // Merge field by field — field timestamps resolve conflicts
-      const merged = mergeFields(currentMap.get(id), incomingClean);
+      const merged = mergeFields(cur, incomingClean);
       // Preserve any cloud-URL photos already on the current side
       // that the client didn't send back (it strips base64, keeps URLs)
-      const currentUrlPhotos = (currentMap.get(id).photos || []).filter(p => p.url);
+      const currentUrlPhotos = (cur.photos || []).filter(p => p.url && !tomb[p.url]);
       const incomingUrls = new Set((incomingClean.photos || []).map(p => p.url));
       const extraPhotos = currentUrlPhotos.filter(p => !incomingUrls.has(p.url));
       merged.photos = [...(incomingClean.photos || []), ...extraPhotos];
+      if (Object.keys(tomb).length) merged.photoTombstones = tomb;
+      else delete merged.photoTombstones;
       currentMap.set(id, merged);
     } else {
       // New item — just add it
@@ -251,7 +268,12 @@ module.exports = async function (context, req) {
 
       context.log(`[saveProject] ✓ ${incoming.id} (${incoming.name || "?"}) attempt=${attempt}`);
       context.res.status = 200;
-      context.res.body   = { ok: true, _ts: saved._ts, _savedAt: saved._savedAt };
+      // Return the merged document so the pushing device can adopt whatever
+      // the merge preserved from other devices (restored photos, newer
+      // fields). Without this, the pusher records the new _ts as "seen"
+      // without ever downloading the merged state — freezing it on its own
+      // stale view until some other device happens to write.
+      context.res.body   = { ok: true, _ts: saved._ts, _savedAt: saved._savedAt, project: saved };
       return;
 
     } catch (err) {
