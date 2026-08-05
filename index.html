@@ -3720,6 +3720,9 @@ function markProjectDirty(projectId) {
   store.lastUpdated = Date.now();
   save();
   _persistDirtyState();
+  // Push promptly — without this, structural changes (like a new SI) sat
+  // waiting for the 30s fallback timer before reaching other devices.
+  scheduleDirtySync();
 }
 
 /** Call when folders, contacts, or settings change. */
@@ -4135,12 +4138,17 @@ function _mergeProjectIntoLocal(cloudProj) {
   }
   delete mergedProj.projectId; // cleanup
 
-  const idx = store.projects.findIndex(p => p.id === localPid);
-  if (idx >= 0) store.projects[idx] = mergedProj;
-
   // localProj was never mutated (merge builds new objects), so comparing
   // it against mergedProj tells us whether anything actually changed.
-  return _projSnapshot(localProj) !== _projSnapshot(mergedProj);
+  const changed = _projSnapshot(localProj) !== _projSnapshot(mergedProj);
+
+  // Update the existing object IN PLACE — never swap it out of store.projects.
+  // Open modals and closures hold a reference to this object (e.g. the Add-SI
+  // modal's `proj.items.push(...)`); replacing the object would detach them,
+  // and anything they write afterwards would silently vanish.
+  delete localProj.projectId;
+  Object.assign(localProj, mergedProj);
+  return changed;
 }
 
 // ── Main sync function ────────────────────────────────────────────────────────
@@ -4234,10 +4242,21 @@ async function syncChanges(isAuto = false) {
     for (const proj of projectsToPush) {
       try {
         if (!proj._deleted) await _flushPendingPhotos(proj); // no uploads for tombstones
+        // Clear the dirty flag BEFORE the request: edits that land while the
+        // push is in flight re-add it, so they get picked up next cycle
+        // instead of being wiped by a post-push clear.
+        const builtAt = Date.now();
+        _dirtyProjectIds.delete(proj.id);
         const result = await _apiSaveProject(_buildProjectPayload(proj));
         if (result.ok) {
-          _dirtyProjectIds.delete(proj.id);
-          (proj.items || []).forEach(i => { i._dirty = false; });
+          // Only un-dirty items whose last edit made it into this payload —
+          // items edited while the push was in flight stay _dirty so the
+          // merge-back below skips them and the next cycle re-pushes them.
+          (proj.items || []).forEach(i => {
+            if (i._dirty && (!i._lastModified || new Date(i._lastModified).getTime() <= builtAt)) {
+              i._dirty = false;
+            }
+          });
           if (result.project) {
             // Merge the server's post-merge truth back in — it may hold data
             // this device never saw (photos restored elsewhere, fields another
@@ -4248,8 +4267,13 @@ async function syncChanges(isAuto = false) {
           }
           // No result.project (older API): leave _cloudTs untouched so the
           // next poll pulls and merges the server-side result.
+        } else {
+          _dirtyProjectIds.add(proj.id);
         }
-      } catch(err) { console.warn(`[Sync] Project ${proj.id} failed:`, err.message); }
+      } catch(err) {
+        _dirtyProjectIds.add(proj.id);
+        console.warn(`[Sync] Project ${proj.id} failed:`, err.message);
+      }
     }
 
     if (_dirtyIndex) {
@@ -4298,15 +4322,28 @@ async function _syncSingleProject(pid) {
   if (isOwned && _dirtyProjectIds.has(pid)) {
     try {
       if (!proj._deleted) await _flushPendingPhotos(proj);
+      // Same in-flight guard as syncChanges: clear dirty before the request
+      // so edits made during the push re-mark and survive to the next cycle.
+      const builtAt = Date.now();
+      _dirtyProjectIds.delete(pid);
       const result = await _apiSaveProject(_buildProjectPayload(proj));
       if (result.ok) {
-        _dirtyProjectIds.delete(pid);
-        (proj.items || []).forEach(i => { i._dirty = false; });
+        // Only un-dirty items whose last edit made it into this payload —
+        // mid-push edits stay _dirty so the pull below can't overwrite them.
+        (proj.items || []).forEach(i => {
+          if (i._dirty && (!i._lastModified || new Date(i._lastModified).getTime() <= builtAt)) {
+            i._dirty = false;
+          }
+        });
         // Don't record _ts here — the pull below fetches the server's merged
         // doc (which may hold data this device never saw) and records it then.
         await _persistDirtyState();
-      } else { anyError = true; }
+      } else {
+        _dirtyProjectIds.add(pid);
+        anyError = true;
+      }
     } catch(err) {
+      _dirtyProjectIds.add(pid);
       anyError = true;
       console.warn('[SyncProject] Push failed:', err.message);
     }
