@@ -4756,6 +4756,17 @@ async function _initStore() {
   // Migration: scrub the legacy synced flag so it also disappears from the
   // cloud index the next time this device pushes.
   if (store.settings.isAdmin !== undefined) { delete store.settings.isAdmin; markStoreDirty(); }
+  // One-time admin credential reset (v8.37, owner locked out): install the
+  // new hash pair, overriding any stale console-set pair still in the cloud
+  // (the server merges settings with Object.assign, so deleting keys locally
+  // would never clear the cloud copy — explicit overwrite is the only way).
+  // The flag syncs with settings so the reset applies exactly once fleet-wide.
+  if (!store.settings._credResetV837) {
+    store.settings.adminIdHash = '93a9acf5ae441342422dca274965fe952b7e6e86a3bcd79fe152d23e1da341cf';
+    store.settings.adminPwHash = '98b92b9878058a93ebdc49c202bef1304cc95faa82eb5a284b3da8a9e42b72c5';
+    store.settings._credResetV837 = true;
+    markStoreDirty();
+  }
   applyTheme(store.settings.theme);
 
   // Load section_rules (migrate from localStorage if present)
@@ -4988,9 +4999,13 @@ function showLoginModal() {
       crypto.subtle.digest('SHA-256', enc.encode(id)).then(hashHex),
       crypto.subtle.digest('SHA-256', enc.encode(pw)).then(hashHex),
     ]);
-    // Console-set credentials (System tab) override the built-in defaults
-    const ADMIN_ID = store.settings.adminIdHash || 'c7c1319276e936c8d64f1d5ed80cd8a0cf54e6dea7b0125533eb4163e03a2c11';
-    const ADMIN_PW = store.settings.adminPwHash || '6a21d6a9c4e10c951b1b15b0734cde6e257a31f63f5abe26b55073d42acf8167';
+    // Console-set credentials (System tab) override the built-in defaults —
+    // but only once the v8.37 credential reset has been applied. Before the
+    // flag lands, stale console-set hashes from the cloud are ignored so the
+    // owner can always get in with the reset credentials.
+    const _resetApplied = store.settings._credResetV837 === true;
+    const ADMIN_ID = (_resetApplied && store.settings.adminIdHash) || '93a9acf5ae441342422dca274965fe952b7e6e86a3bcd79fe152d23e1da341cf';
+    const ADMIN_PW = (_resetApplied && store.settings.adminPwHash) || '98b92b9878058a93ebdc49c202bef1304cc95faa82eb5a284b3da8a9e42b72c5';
     if (idHash === ADMIN_ID && pwHash === ADMIN_PW) {
       // Admin is a PER-DEVICE session. It must never touch store.settings —
       // settings sync through the shared cloud index, so a synced isAdmin flag
