@@ -3859,6 +3859,9 @@ function _buildIndexPayload() {
     // Deleted folder IDs — same rule: the folder map is merged on both sides,
     // so a tombstone is the only way a folder ever leaves the cloud index.
     folderTombstones: store.folderTombstones || {},
+    // Presence heartbeat for this install + user-to-user notifications
+    devices: { [_deviceId]: { user: _deviceUser || '', label: _deviceLabel || '', lastSeen: Date.now() } },
+    notifications: store.notifications || [],
     _savedAt:   Date.now(),
     _savedByDevice: _deviceId
   };
@@ -4077,6 +4080,27 @@ function _mergeIndexIntoLocal(cloudIndex) {
     store.folders.forEach(f => {
       if (f.projects) f.projects = f.projects.filter(id => !store.projectTombstones[id]);
     });
+  }
+
+  // Device presence: per-device newest lastSeen wins
+  if (cloudIndex.devices) {
+    store.devices = store.devices || {};
+    Object.entries(cloudIndex.devices).forEach(([id, d]) => {
+      const cur = store.devices[id];
+      if (!cur || (d.lastSeen || 0) >= (cur.lastSeen || 0)) store.devices[id] = d;
+    });
+  }
+
+  // Notifications: merge by id; read state is monotonic (once read, stays read)
+  if (cloudIndex.notifications) {
+    const byId = new Map((store.notifications || []).map(n => [n.id, n]));
+    cloudIndex.notifications.forEach(n => {
+      const cur = byId.get(n.id);
+      if (!cur || (n.readAt && !cur.readAt)) byId.set(n.id, n);
+      else if (!cur.readAt && !n.readAt) byId.set(n.id, n);
+    });
+    store.notifications = [...byId.values()];
+    _deliverMyNotifications();
   }
 }
 
@@ -4594,8 +4618,25 @@ setInterval(() => {
 let _pollIntervalId  = null;
 const POLL_MS        = 15000;
 
+let _lastHeartbeat = 0;
+const HEARTBEAT_MS = 3 * 60 * 1000;
+
 async function _pollForRemoteChanges() {
   if (!navigator.onLine) return;
+
+  // Presence heartbeat — a minimal saveIndex body is safe: every field the
+  // server merges treats an empty/absent value as a no-op, so only the
+  // devices entry lands. Fire-and-forget.
+  if (Date.now() - _lastHeartbeat > HEARTBEAT_MS) {
+    _lastHeartbeat = Date.now();
+    const me = { user: _deviceUser || '', label: _deviceLabel || '', lastSeen: Date.now() };
+    store.devices = store.devices || {};
+    store.devices[_deviceId] = me;   // visible in the Users tab even before the round-trip
+    _apiSaveIndex({
+      userId:  _currentUser?.userId || '',
+      devices: { [_deviceId]: me },
+    }).catch(() => {});
+  }
 
   try {
     // ── 1. Check index ──────────────────────────────────────────────────────
@@ -4698,6 +4739,8 @@ async function _initStore() {
   if (!store.contacts) store.contacts = [];
   if (!store.projectTombstones) store.projectTombstones = {};
   if (!store.folderTombstones)  store.folderTombstones  = {};
+  if (!store.notifications)     store.notifications     = [];
+  if (!store.devices)           store.devices           = {};
   store.folders.forEach(f => { if (f.parentId === undefined) f.parentId = null; });
   // Apply folder tombstones to whatever IDB loaded (covers data written by an
   // app version that had tombstones but crashed before filtering the array).
@@ -9848,6 +9891,7 @@ let _admTab = 'recovery';
 let _admBlobCache = null; // shared blob listing for Recovery / Dead Photos / Storage tabs
 
 const _ADM_TABS = [
+  ['users', '👥 Users'],
   ['recovery', '📷 Recovery'], ['sweeper', '🧹 Dead Photos'], ['cleanup', '🗄 Storage'],
   ['trash', '🗑 Trash'], ['sync', '⇅ Sync'], ['activity', '📜 Activity'],
   ['backup', '💾 Backup'], ['system', '⚙️ System'],
@@ -9891,6 +9935,7 @@ function _admSwitch(tab) {
   const crumb = document.getElementById('rec-crumb');
   if (crumb) crumb.textContent = '';
   const renderers = {
+    users: _admRenderUsers,
     recovery: _recEnter, sweeper: _admRenderSweeper, cleanup: _admRenderCleanup,
     trash: _admRenderTrash, sync: _admRenderSync, activity: _admRenderActivity,
     backup: _admRenderBackup, system: _admRenderSystem,
@@ -9922,6 +9967,101 @@ async function _admLoadBlobs() {
   _admBlobCache = { blobs, truncated: !!data.truncated };
   if (data.truncated) showToast('⚠️ Blob list truncated at ' + blobs.length, 'red');
   return _admBlobCache;
+}
+
+// ── Tab: Users (presence + notify) ──────────────────────────────────
+const _ADM_LIVE_MS   = 7  * 60 * 1000;   // heartbeats every 3 min → <7 min = online
+const _ADM_RECENT_MS = 60 * 60 * 1000;
+
+function _admUserDot(lastSeen) {
+  const age = Date.now() - (lastSeen || 0);
+  if (age < _ADM_LIVE_MS)   return ['#4ade80', 'online now'];
+  if (age < _ADM_RECENT_MS) return ['var(--yellow)', 'seen ' + Math.round(age / 60000) + ' min ago'];
+  return ['var(--text3)', 'last seen ' + new Date(lastSeen || 0).toLocaleString()];
+}
+
+async function _admRenderUsers() {
+  const body = document.getElementById('rec-body');
+  const crumb = document.getElementById('rec-crumb');
+  if (crumb) crumb.textContent = 'Registered devices, who is live, and direct messages';
+  if (body) body.innerHTML = `<div style="text-align:center;padding:40px 0;color:var(--text2)">Loading devices…</div>`;
+
+  // Freshest picture: pull the cloud index directly (falls back to local copy)
+  try {
+    const idx = await _apiGetIndex();
+    if (idx) _mergeIndexIntoLocal(idx);
+  } catch (e) {}
+
+  const devices = Object.entries(store.devices || {})
+    .map(([id, d]) => ({ id, ...d }))
+    .sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
+
+  const rows = devices.map(d => {
+    const [color, label] = _admUserDot(d.lastSeen);
+    const name = d.user || d.label || '(unnamed)';
+    const me = d.id === _deviceId ? ' <span style="font-size:10px;color:var(--accent)">(this device)</span>' : '';
+    const pending = (store.notifications || []).filter(n => !n.readAt && (n.to === d.id || n.to === '*')).length;
+    return `
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;background:var(--surface2)">
+        <span style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0" title="${_htmlEsc(label)}"></span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;color:var(--text1)">${_htmlEsc(name)}${me}</div>
+          <div style="font-size:11px;color:var(--text2)">${_htmlEsc(label)}${d.label && d.user ? ' · ' + _htmlEsc(d.label) : ''}</div>
+          <div style="font-size:10px;color:var(--text3);font-family:var(--mono)">${_htmlEsc(d.id.slice(0, 16))}${pending ? ` · ${pending} unread` : ''}</div>
+        </div>
+        <button class="recovery-btn" style="font-size:11px;padding:6px 12px" onclick="_admNotifyCompose('${d.id}','${_htmlEsc(name).replace(/'/g, '&#39;')}')">🔔 Notify</button>
+      </div>`;
+  }).join('');
+
+  const sent = (store.notifications || [])
+    .slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 20)
+    .map(n => `
+      <div style="display:flex;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
+        <span style="color:var(--text3);font-family:var(--mono);font-size:10px;flex-shrink:0">${new Date(n.createdAt).toLocaleString()}</span>
+        <span style="flex:1;color:var(--text1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_htmlEsc(n.msg)}">
+          <strong>${n.to === '*' ? 'Everyone' : _htmlEsc(n.toName || n.to.slice(0, 10))}</strong> — ${_htmlEsc(n.msg)}
+        </span>
+        <span style="flex-shrink:0;font-size:11px;color:${n.readAt ? 'var(--green)' : 'var(--text3)'}">${n.readAt ? '✓✓ read' : '• pending'}</span>
+      </div>`).join('');
+
+  if (body) body.innerHTML = `
+    <div class="adm-section">
+      <div class="adm-section-title">👥 Devices · ${devices.length}
+        <span style="float:right;display:flex;gap:8px">
+          <button class="recovery-btn" style="font-size:11px;padding:6px 12px" onclick="_admNotifyCompose('*','Everyone')">📢 Notify all</button>
+          <button class="recovery-btn" style="font-size:11px;padding:6px 12px" onclick="_admRenderUsers()">↻ Refresh</button>
+        </span>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Green = app open in the last 7 min · yellow = active in the last hour. Devices report in every 3 minutes while the app is open.</div>
+      ${rows || '<div style="color:var(--text2);font-size:12px;padding:12px">No devices have reported in yet — they appear as they update to this version and sync.</div>'}
+    </div>
+    <div class="adm-section">
+      <div class="adm-section-title">📨 Sent messages</div>
+      ${sent || '<div style="color:var(--text2);font-size:12px;padding:12px">Nothing sent yet.</div>'}
+    </div>`;
+}
+
+const _ADM_NOTIF_PRESETS = [
+  'Missing daily report — please submit today’s report.',
+  'Missing pre-task plan — fill it out before starting work.',
+  'Please open the app and let it sync — your device is behind.',
+];
+
+function _admNotifyCompose(devId, name) {
+  const chips = _ADM_NOTIF_PRESETS.map(p =>
+    `<div class="cond-tag" style="margin-bottom:4px" onclick="document.getElementById('adm-ntf-msg').value=this.textContent.trim()">${_htmlEsc(p)}</div>`).join('');
+  makeModal(`🔔 Notify ${_htmlEsc(name)}`, `
+    <div style="font-size:12px;color:var(--text2);margin-bottom:8px">
+      Delivers as a pop-up on ${devId === '*' ? '<strong>every device</strong>' : `<strong>${_htmlEsc(name)}</strong>'s device`} the next time the app syncs (usually within seconds if it's open).
+    </div>
+    <div class="condition-tags" style="margin-bottom:8px">${chips}</div>
+    <textarea class="field-input" id="adm-ntf-msg" maxlength="500" placeholder="Type a message…" style="min-height:80px"></textarea>
+  `, () => {
+    if (sendUserNotification(devId, name, document.getElementById('adm-ntf-msg')?.value)) {
+      closeModal();
+      if (_admTab === 'users') _admRenderUsers();
+    }
+  });
 }
 
 // ── Tab: Photo Recovery ─────────────────────────────────────────────
@@ -14046,6 +14186,77 @@ function _updateNotifUI(){
   btn.querySelector('.notif-badge')?.remove();
   if(_notifEnabled){ const b=document.createElement('div'); b.className='notif-badge'; btn.appendChild(b); }
 }
+// ── USER-TO-USER NOTIFICATIONS (admin → device) ───────────────────
+// Messages ride the cloud index (store.notifications, merged by id with
+// monotonic read state). Delivery: every index merge calls
+// _deliverMyNotifications(); unread messages addressed to this device
+// (or broadcast '*') pop a modal with per-message acknowledge.
+
+const _notifShownIds = new Set(); // don't re-pop the same modal every poll
+
+function _myUnreadNotifications() {
+  return (store.notifications || []).filter(n =>
+    !n.readAt && (n.to === _deviceId || n.to === '*'));
+}
+
+function _deliverMyNotifications() {
+  const mine = _myUnreadNotifications();
+  const fresh = mine.filter(n => !_notifShownIds.has(n.id));
+  if (!fresh.length) return;
+  // Native notification (if the user enabled them) — fires once per message
+  if (_notifEnabled && ('Notification' in window) && Notification.permission === 'granted') {
+    fresh.forEach(n => { try { new Notification('📣 ' + (n.from || 'Admin'), { body: n.msg, icon: 'icon-192.png', tag: n.id }); } catch (e) {} });
+  }
+  mine.forEach(n => _notifShownIds.add(n.id));
+  // Don't fight an open modal (mid-edit, camera, etc.) — next poll retries
+  if (document.getElementById('modal-overlay') || document.getElementById('device-user-overlay')) {
+    fresh.forEach(n => _notifShownIds.delete(n.id));
+    return;
+  }
+  _showNotificationsModal();
+}
+
+function _showNotificationsModal() {
+  const mine = _myUnreadNotifications();
+  if (!mine.length) return;
+  const rows = mine.map(n => `
+    <div id="ntf-${n.id}" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;background:var(--surface2)">
+      <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:4px">
+        <span style="font-size:11px;font-weight:700;color:var(--accent)">📣 ${_htmlEsc(n.from || 'Admin')}</span>
+        <span style="font-size:10px;color:var(--text3);font-family:var(--mono)">${new Date(n.createdAt).toLocaleString()}</span>
+      </div>
+      <div style="font-size:13px;color:var(--text1);margin-bottom:8px;white-space:pre-wrap">${_htmlEsc(n.msg)}</div>
+      <button class="bulk-btn" onclick="ackNotification('${n.id}')">✓ Got it</button>
+    </div>`).join('');
+  makeModal('🔔 Messages for you', rows, null, true);
+}
+
+window.ackNotification = function(id) {
+  const n = (store.notifications || []).find(x => x.id === id);
+  if (!n || n.readAt) return;
+  n.readAt = Date.now();
+  n.readBy = _whoAmI();
+  markStoreDirty(); save();
+  const row = document.getElementById('ntf-' + id);
+  if (row) row.style.display = 'none';
+  if (!_myUnreadNotifications().length) closeModal();
+};
+
+/** Admin: queue a message for one device ('*' = every device). */
+function sendUserNotification(toDeviceId, toName, msg) {
+  const m = (msg || '').trim();
+  if (!m) { showToast('Message required'); return false; }
+  store.notifications = store.notifications || [];
+  store.notifications.push({
+    id: 'ntf_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+    to: toDeviceId, toName: toName || '', msg: m.slice(0, 500),
+    from: _whoAmI(), createdAt: Date.now(),
+  });
+  markStoreDirty(); save();
+  showToast('📣 Message queued — delivers on their next sync', 'green');
+  return true;
+}
+
 function _maybeNotify(num,title,status){
   if(!_notifEnabled||Notification.permission!=='granted') return;
   const labels={'completed':'✅ Completed','not-ready':'❌ Not Ready','punch-ongoing':'◈ Punch Ongoing','in-progress':'◑ In Progress','on-hold':'⏸ On Hold'};

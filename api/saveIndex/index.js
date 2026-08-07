@@ -115,6 +115,37 @@ module.exports = async function (context, req) {
         return ts > tombstoneCutoff;
       });
 
+      // ── 6b. Merge device presence — per-device newest lastSeen wins ───────
+      // devices: { deviceId: { user, label, lastSeen } } — heartbeats from
+      // each install. GC devices silent for 90 days.
+      const devices = Object.assign({}, current.devices || {});
+      Object.entries(incoming.devices || {}).forEach(([id, d]) => {
+        const cur = devices[id];
+        if (!cur || (d.lastSeen || 0) >= (cur.lastSeen || 0)) devices[id] = d;
+      });
+      Object.keys(devices).forEach(id => {
+        if ((devices[id].lastSeen || 0) < tombstoneCutoff) delete devices[id];
+      });
+
+      // ── 6c. Merge notifications by id — read state is monotonic ───────────
+      // notifications: [{ id, to, toName, msg, from, createdAt, readAt, readBy }]
+      // GC: read >7 days ago, or unread but >30 days old.
+      const NOTIF_READ_TTL   = 7  * 24 * 60 * 60 * 1000;
+      const NOTIF_UNREAD_TTL = 30 * 24 * 60 * 60 * 1000;
+      const notifMap = new Map((current.notifications || []).map(n => [n.id, n]));
+      (incoming.notifications || []).forEach(n => {
+        const cur = notifMap.get(n.id);
+        if (!cur) { notifMap.set(n.id, n); return; }
+        // Once read, stays read (keep the earliest read receipt)
+        if (cur.readAt && !n.readAt) return;
+        if (n.readAt && !cur.readAt) { notifMap.set(n.id, n); return; }
+        notifMap.set(n.id, n);
+      });
+      const notifNow = Date.now();
+      const notifications = [...notifMap.values()].filter(n =>
+        n.readAt ? (notifNow - n.readAt) < NOTIF_READ_TTL
+                 : (notifNow - (n.createdAt || 0)) < NOTIF_UNREAD_TTL);
+
       // ── 7. Settings: incoming wins ────────────────────────────────────────
       const mergedSettings = Object.assign({}, current.settings || {}, incoming.settings || {});
 
@@ -127,6 +158,8 @@ module.exports = async function (context, req) {
         projectIds:        [...allProjectIds],
         projectTombstones: tombstones,
         folderTombstones:  folderTombstones,
+        devices:           devices,
+        notifications:     notifications,
         _savedAt:          incoming._savedAt || Date.now()
       };
 
