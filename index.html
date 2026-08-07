@@ -3441,7 +3441,7 @@ window.clearBulkSelection = function() {
 // DATA
 // ══════════════════════════════════════════
 const SEED = {
-  settings: { isAdmin: false, theme: 'light' },
+  settings: { theme: 'light' },
   folders:[
     {id:'fld_ast',name:'A.S.S.T',icon:`<img src='logos/asst.png' alt='A.S.S.T' class='folder-logo-img'>`, projects:[], parentId:null},
     {id:'fld_ami',name:'AMI',icon:`<img src='logos/ami.png' alt='AMI' class='folder-logo-img'>`, projects:[], parentId:null},
@@ -3841,11 +3841,14 @@ function _buildProjectPayload(proj) {
 /** Build the index payload. */
 function _buildIndexPayload() {
   const userId = _currentUser?.userId || '';
+  // Never push isAdmin — admin is a per-device session, and a synced flag
+  // would grant every device full admin (pre-v8.36 hole).
+  const { isAdmin: _dropAdmin, ...cleanSettings } = store.settings || {};
   return {
     userId,
     folders:    store.folders,
     contacts:   store.contacts,
-    settings:   store.settings,
+    settings:   cleanSettings,
     // Only register projects owned by this user in their index
     projectIds: store.projects
       .filter(p => !p._deleted && (!p.ownedBy || p.ownedBy === userId))
@@ -4041,9 +4044,11 @@ function _mergeIndexIntoLocal(cloudIndex) {
     });
   }
 
-  // Settings: cloud wins if we don't have unsaved local changes
+  // Settings: cloud wins if we don't have unsaved local changes.
+  // isAdmin never syncs — strip it in case an old client's push left it there.
   if (cloudIndex.settings && !_dirtyIndex) {
     store.settings = cloudIndex.settings;
+    delete store.settings.isAdmin;
   }
 
   // Project tombstones: merge (newest wins), then apply to local copies so a
@@ -4685,7 +4690,7 @@ async function _initStore() {
   }
 
   // ── Ensure required fields on migrated/old data ──────────────────────────
-  if (!store.settings) store.settings = { isAdmin: false, theme: 'light' };
+  if (!store.settings) store.settings = { theme: 'light' };
   if (store.settings.theme === undefined || store.settings.theme === 'default') store.settings.theme = 'light';
   if (!store.settings.displayName) store.settings.displayName = '';
   if (!store.folders)  store.folders  = [];
@@ -4745,7 +4750,12 @@ async function _initStore() {
   window.exportMenuOpen        = false;
   window.selectedContacts      = new Set();
 
-  isAdmin = store.settings.isAdmin;
+  // Admin is per-device (localStorage), never from synced settings — a synced
+  // isAdmin flag used to grant every device full admin after one login.
+  try { isAdmin = localStorage.getItem('adh_admin') === '1'; } catch(e) { isAdmin = false; }
+  // Migration: scrub the legacy synced flag so it also disappears from the
+  // cloud index the next time this device pushes.
+  if (store.settings.isAdmin !== undefined) { delete store.settings.isAdmin; markStoreDirty(); }
   applyTheme(store.settings.theme);
 
   // Load section_rules (migrate from localStorage if present)
@@ -4950,8 +4960,10 @@ function showLoginModal() {
         <div style="font-size:13px;color:var(--text2)">Log out of Admin?</div>
       </div>`, () => {
       isAdmin = false;
-      store.settings.isAdmin = false;
-      markStoreDirty(); save();
+      try { localStorage.removeItem('adh_admin'); } catch(e) {}
+      // Scrub any legacy synced flag while we're here
+      if (store.settings.isAdmin !== undefined) { delete store.settings.isAdmin; markStoreDirty(); }
+      save();
       render();
       closeModal();
       showToast('Logged out');
@@ -4980,9 +4992,12 @@ function showLoginModal() {
     const ADMIN_ID = store.settings.adminIdHash || 'c7c1319276e936c8d64f1d5ed80cd8a0cf54e6dea7b0125533eb4163e03a2c11';
     const ADMIN_PW = store.settings.adminPwHash || '6a21d6a9c4e10c951b1b15b0734cde6e257a31f63f5abe26b55073d42acf8167';
     if (idHash === ADMIN_ID && pwHash === ADMIN_PW) {
+      // Admin is a PER-DEVICE session. It must never touch store.settings —
+      // settings sync through the shared cloud index, so a synced isAdmin flag
+      // silently granted every device full admin (the pre-v8.36 hole).
       isAdmin = true;
-      store.settings.isAdmin = true;
-      markStoreDirty(); save(); closeModal(); render(); showToast('Admin Access Granted', 'green');
+      try { localStorage.setItem('adh_admin', '1'); } catch(e) {}
+      closeModal(); render(); showToast('Admin Access Granted', 'green');
     } else { showToast('Invalid credentials', 'red'); }
   });
 }
@@ -10588,9 +10603,10 @@ function _admImportBackup(input) {
         <div style="font-size:12px;color:var(--red);margin-top:10px">This replaces everything on this device and pushes it to the cloud.</div>
       </div>`, () => {
       store = incoming;
-      if (!store.settings) store.settings = { isAdmin: false, theme: 'light' };
-      store.settings.isAdmin = true; // keep the admin session that performed the restore
-      isAdmin = true;
+      if (!store.settings) store.settings = { theme: 'light' };
+      delete store.settings.isAdmin;  // admin is per-device, never synced
+      isAdmin = true;                 // keep the admin session that performed the restore
+      try { localStorage.setItem('adh_admin', '1'); } catch(e) {}
       store.lastUpdated = Date.now();
       save();
       closeModal();
