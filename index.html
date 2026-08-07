@@ -203,6 +203,33 @@ body.is-offline .offline-banner { display: block; }
 }
 .search-box input::placeholder { color:var(--text3); }
 .search-icon { color:var(--text3); font-size:13px; flex-shrink:0; }
+
+/* ── SI SORT ROW (project view only) ── */
+.si-sort-row {
+  display:flex; align-items:center; gap:5px;
+  margin-top:8px;
+}
+.si-sort-label {
+  font-size:10px; color:var(--text3); text-transform:uppercase;
+  letter-spacing:0.5px; margin-right:2px; flex-shrink:0;
+}
+.si-sort-btn {
+  flex:1; padding:4px 8px; font-size:11px; font-family:inherit;
+  border:1px solid var(--border); border-radius:7px;
+  background:var(--surface2); color:var(--text2);
+  cursor:pointer; white-space:nowrap; transition:all 0.12s;
+}
+.si-sort-btn:hover { color:var(--text1); border-color:var(--text3); }
+.si-sort-btn.active {
+  background:var(--accent); color:#fff; border-color:var(--accent);
+  font-weight:600;
+}
+.si-more-btn {
+  width:22px; height:22px; display:flex; align-items:center; justify-content:center;
+  border-radius:6px; color:var(--text3); font-size:15px; line-height:1;
+  cursor:pointer; flex-shrink:0; user-select:none;
+}
+.si-more-btn:hover { background:var(--surface2); color:var(--text1); }
 .list-scroll { overflow-y:auto; flex:1; padding:4px 0; }
 
 /* ── FOLDER ROWS ── */
@@ -3245,6 +3272,12 @@ html.dark .folder-logo-img.logo-dark-bg{ background:#1c1c1e !important; padding:
         <span class="search-icon">⌕</span>
         <input type="text" placeholder="Search..." id="search-input" oninput="handleSearch(this.value)" />
       </div>
+      <div class="si-sort-row" id="si-sort-row" style="display:none">
+        <span class="si-sort-label">Sort</span>
+        <button class="si-sort-btn" id="si-sort-manual" onclick="setSISort('manual')">Manual</button>
+        <button class="si-sort-btn" id="si-sort-num" onclick="setSISort('num')">SI #</button>
+        <button class="si-sort-btn" id="si-sort-name" onclick="setSISort('name')">Name</button>
+      </div>
     </div>
     <div class="list-scroll" id="list-scroll"></div>
     <div class="bulk-action-bar" id="bulk-bar">
@@ -5186,6 +5219,43 @@ function closeMobileDrawer() {
   document.getElementById('mbn-browse')?.classList.remove('active');
 }
 
+// ── SI SORT (project view) ───────────────
+// 'manual' = stored order (drag-to-reorder). 'num'/'name' are view-only
+// sorts — they never touch the stored order, so nothing gets marked dirty.
+let _siSort    = localStorage.getItem('adh_si_sort')     || 'manual';
+let _siSortDir = localStorage.getItem('adh_si_sort_dir') || 'asc';
+if (!['manual','num','name'].includes(_siSort)) _siSort = 'manual';
+
+function setSISort(mode) {
+  if (mode !== 'manual' && _siSort === mode) {
+    // Second tap on the active sort flips direction
+    _siSortDir = _siSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    _siSort = mode;
+    _siSortDir = 'asc';
+  }
+  localStorage.setItem('adh_si_sort', _siSort);
+  localStorage.setItem('adh_si_sort_dir', _siSortDir);
+  renderLeft(route());
+}
+
+function _updateSISortUI(visible) {
+  const row = document.getElementById('si-sort-row');
+  if (!row) return;
+  row.style.display = visible ? 'flex' : 'none';
+  if (!visible) return;
+  const arrow = _siSortDir === 'desc' ? ' ▼' : ' ▲';
+  const btns = { manual:'si-sort-manual', num:'si-sort-num', name:'si-sort-name' };
+  const labels = { manual:'Manual', num:'SI #', name:'Name' };
+  Object.keys(btns).forEach(k => {
+    const b = document.getElementById(btns[k]);
+    if (!b) return;
+    const active = _siSort === k;
+    b.classList.toggle('active', active);
+    b.textContent = labels[k] + (active && k !== 'manual' ? arrow : '');
+  });
+}
+
 // ── LEFT PANEL ───────────────────────────
 function renderLeft(r) {
   // Hide left panel on root home screen (option C) — folders shown in main grid instead
@@ -5208,10 +5278,17 @@ function renderLeft(r) {
   const title = document.getElementById('left-panel-title');
   const scroll = document.getElementById('list-scroll');
 
+  // Search scope: inside a project the panel search is LOCAL to that
+  // project (handled by the SCOPE ITEMS branch below). Everywhere else a
+  // query triggers the global search across folders, projects and SIs.
+  const searchInput = document.getElementById('search-input');
+  if (searchInput) searchInput.placeholder = r.projectId ? 'Search this project…' : 'Search…';
+  _updateSISortUI(!!r.projectId);
+
   // ── GLOBAL SEARCH ─────────────────────────────────────────────
   // When a query is present, search across ALL folders, projects, and SIs
   // regardless of current navigation context.
-  if (q) {
+  if (q && !r.projectId) {
     title.textContent = 'SEARCH RESULTS';
     let html = '';
 
@@ -5359,6 +5436,7 @@ function renderLeft(r) {
     const proj = getProject(r.projectId);
     if (!proj) { scroll.innerHTML = emptyMsg('Project not found'); return; }
     let html='';
+    const sortActive = _siSort !== 'manual';
     proj.sections.forEach(sec=>{
       const items=proj.items.filter(i=>!i._deleted&&i.sectionId===sec.id&&(!q||
         i.title.toLowerCase().includes(q)||
@@ -5368,6 +5446,11 @@ function renderLeft(r) {
         (i._updatedBy||'').toLowerCase().includes(q)||
         (Array.isArray(i.conditions)?i.conditions.join(' ').toLowerCase().includes(q):false)
       ));
+      if (sortActive) {
+        const dir = _siSortDir === 'desc' ? -1 : 1;
+        items.sort((a,b) => dir * String(_siSort==='num'?a.num:a.title)
+          .localeCompare(String(_siSort==='num'?b.num:b.title), undefined, {numeric:true, sensitivity:'base'}));
+      }
       if(!items.length&&q) return;
       html+=`<div class="section-group">${sec.name}<span class="section-count">${items.length}</span></div>`;
       items.forEach(item=>{
@@ -5380,9 +5463,9 @@ function renderLeft(r) {
         const twAllDone = twEnabled && twDone === twTotal;
         html+=`<div class="si-row ${r.siId===item.id?'active':''}"
           data-sid="${item.id}" data-pid="${proj.id}" data-secid="${item.sectionId}"
-          draggable="true"
+          ${sortActive?'':'draggable="true"'}
           onclick="navToSI('${proj.id}','${item.id}')">
-          <div class="si-drag-handle" title="Drag to reorder">⠿</div>
+          ${sortActive?'':'<div class="si-drag-handle" title="Drag to reorder">⠿</div>'}
           <div class="si-row-check ${window._bulkSelected?.has(item.id)?'checked':''}"
             onclick="toggleBulkSelect('${proj.id}','${item.id}',event)">${window._bulkSelected?.has(item.id)?'✓':''}</div>
           <div class="si-thumb">${thumb}</div>
@@ -5396,6 +5479,8 @@ function renderLeft(r) {
           </div>
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
             <div class="si-status ${item.status}"></div>
+            <div class="si-more-btn" title="Move / duplicate"
+              onclick="event.stopPropagation();showSIMenu(event,'${proj.id}','${item.id}')">⋯</div>
           </div>
         </div>`;
       });
@@ -11317,6 +11402,135 @@ function showPhotoMenu(e,pid,sid,idx) {
   if(top+110>window.innerHeight) top=rect.top-110;
   menu.style.left=left+'px';
   menu.style.top=top+'px';
+}
+
+// ══════════════════════════════════════════
+// SI ROW CONTEXT MENU (left bar ⋯ button)
+// ══════════════════════════════════════════
+function showSIMenu(e,pid,sid) {
+  closeCtxMenu();
+  const proj=getProject(pid); if(!proj) return;
+  const btn=e.currentTarget||e.target;
+  const rect=btn.getBoundingClientRect();
+
+  const backdrop=document.createElement('div');
+  backdrop.className='ctx-backdrop';
+  backdrop.onclick=closeCtxMenu;
+  document.body.appendChild(backdrop);
+
+  const manual=_siSort==='manual';
+  const multiSec=proj.sections.length>1;
+  const menu=document.createElement('div');
+  menu.className='ctx-menu'; menu.id='ctx-menu';
+  menu.innerHTML=`
+    ${manual?`
+    <div class="ctx-item" onclick="closeCtxMenu();moveSI('${pid}','${sid}','up')"><span class="ctx-icon">⬆️</span> Move Up</div>
+    <div class="ctx-item" onclick="closeCtxMenu();moveSI('${pid}','${sid}','down')"><span class="ctx-icon">⬇️</span> Move Down</div>
+    <div class="ctx-item" onclick="closeCtxMenu();moveSI('${pid}','${sid}','top')"><span class="ctx-icon">⏫</span> Move to Top</div>
+    <div class="ctx-item" onclick="closeCtxMenu();moveSI('${pid}','${sid}','bottom')"><span class="ctx-icon">⏬</span> Move to Bottom</div>`:`
+    <div class="ctx-item" style="pointer-events:none;opacity:0.55"><span class="ctx-icon">↕️</span> Switch to Manual sort to reorder</div>`}
+    ${multiSec?`<div class="ctx-item" onclick="closeCtxMenu();showMoveSISectionModal('${pid}','${sid}')"><span class="ctx-icon">📂</span> Move to Section…</div>`:''}
+    <div class="ctx-divider"></div>
+    <div class="ctx-item" onclick="closeCtxMenu();duplicateSI('${pid}','${sid}')"><span class="ctx-icon">📋</span> Duplicate</div>`;
+
+  document.body.appendChild(menu);
+
+  const mw=220;
+  const mh=menu.offsetHeight||230;
+  let left=rect.right-mw;
+  let top=rect.bottom+6;
+  if(left<8) left=8;
+  if(top+mh>window.innerHeight-8) top=Math.max(8,rect.top-mh-6);
+  menu.style.left=left+'px';
+  menu.style.top=top+'px';
+}
+
+// ── MOVE SI WITHIN ITS SECTION ────────────
+// Operates on the visible (non-tombstoned) ordering; tombstones are appended
+// at the end of the section so removal propagation is unaffected.
+function moveSI(pid,sid,dir) {
+  const proj=getProject(pid); if(!proj) return;
+  const item=proj.items.find(i=>i.id===sid); if(!item||item._deleted) return;
+  const secId=item.sectionId;
+  const vis =proj.items.filter(i=>i.sectionId===secId&&!i._deleted);
+  const dead=proj.items.filter(i=>i.sectionId===secId&&i._deleted);
+  const idx=vis.findIndex(i=>i.id===sid);
+  let to=idx;
+  if(dir==='up') to=idx-1;
+  else if(dir==='down') to=idx+1;
+  else if(dir==='top') to=0;
+  else if(dir==='bottom') to=vis.length-1;
+  if(to===idx||to<0||to>vis.length-1){
+    showToast(dir==='up'||dir==='top'?'Already at top':'Already at bottom');
+    return;
+  }
+  vis.splice(idx,1); vis.splice(to,0,item);
+
+  const known=new Set(proj.sections.map(s=>s.id));
+  const bySec={};
+  proj.sections.forEach(s=>{ bySec[s.id]=proj.items.filter(i=>i.sectionId===s.id); });
+  bySec[secId]=vis.concat(dead);
+  // Items whose section no longer exists must survive the rebuild
+  const orphans=proj.items.filter(i=>!known.has(i.sectionId));
+  proj.items=proj.sections.flatMap(s=>bySec[s.id]||[]).concat(orphans);
+
+  markProjectDirty(pid); save();
+  renderLeft(route());
+  if(navigator.vibrate) navigator.vibrate(12);
+  showToast('✓ Moved','green');
+}
+
+// ── MOVE SI TO ANOTHER SECTION ────────────
+function showMoveSISectionModal(pid,sid) {
+  const proj=getProject(pid); if(!proj) return;
+  const item=proj.items.find(i=>i.id===sid); if(!item) return;
+  const opts=proj.sections.map(s=>
+    `<option value="${s.id}" ${s.id===item.sectionId?'selected':''}>${_htmlEsc(s.name)}${s.id===item.sectionId?' (current)':''}</option>`
+  ).join('');
+  makeModal('Move to Section',`
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px">${_htmlEsc(item.num)}${item.title?' — '+_htmlEsc(item.title):''}</div>
+    <div class="field-group"><div class="field-label">Section</div>
+      <select class="field-input" id="m-move-sec">${opts}</select>
+    </div>
+    <div style="font-size:11px;color:var(--text3)">The item lands at the bottom of the chosen section.</div>
+  `,()=>{
+    const newSec=document.getElementById('m-move-sec')?.value;
+    if(!newSec||newSec===item.sectionId){ closeModal(); return; }
+    // Pull out of the array and re-append so it lands at the bottom of its
+    // new section in every render path (order = position in proj.items).
+    proj.items=proj.items.filter(i=>i.id!==sid);
+    item.sectionId=newSec;
+    item._fieldTs=item._fieldTs||{};
+    item._fieldTs.sectionId=Date.now();
+    item._dirty=true;
+    item._lastModified=new Date().toISOString();
+    proj.items.push(item);
+    markProjectDirty(pid); save(); closeModal();
+    renderLeft(route());
+    showToast('✓ Moved to section','green');
+  });
+}
+
+// ── DUPLICATE SI ──────────────────────────
+function duplicateSI(pid,sid) {
+  const proj=getProject(pid); if(!proj) return;
+  const src=proj.items.find(i=>i.id===sid); if(!src||src._deleted) return;
+  const copy=JSON.parse(JSON.stringify(src));
+  copy.id='si_'+Date.now();
+  copy.title=(src.title||'')+' (Copy)';
+  // Photos stay with the original — a copied reference would point two SIs at
+  // the same cloud blobs, and deleting either one would break the other.
+  copy.photos=[];
+  delete copy._deleted; delete copy._deletedAt;
+  copy._fieldTs={};
+  copy._dirty=true;
+  copy._lastModified=new Date().toISOString();
+  copy._updatedBy=_whoAmI();
+  const at=proj.items.findIndex(i=>i.id===sid);
+  proj.items.splice(at+1,0,copy);
+  markProjectDirty(pid); save();
+  renderLeft(route());
+  showToast('✓ Scope item duplicated','green');
 }
 
 // ── DUPLICATE OPTIONS MODAL ───────────────
