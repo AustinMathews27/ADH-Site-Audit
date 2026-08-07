@@ -5516,6 +5516,8 @@ function renderLeft(r) {
             ${_updatedByBadge(item)}
           </div>
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+            ${(() => { const pv = _siEffProgress(item); return pv == null ? '' :
+              `<span style="font-family:var(--mono);font-size:10px;font-weight:700;color:${pv >= 100 ? 'var(--green)' : 'var(--text2)'}">${pv}%</span>`; })()}
             <div class="si-status ${item.status}"></div>
             <div class="si-more-btn" title="Move / duplicate"
               onclick="event.stopPropagation();showSIMenu(event,'${proj.id}','${item.id}')">⋯</div>
@@ -7133,6 +7135,7 @@ function buildSIEditor(pid,sid) {
       </div>
     </div>
     <div class="edit-body" id="edit-body">
+      <div class="field-group" id="si-progress-group">${_siProgressHTML(pid, sid)}</div>
       <div class="field-group">
         <div class="field-label">Field Photos (${item.photos.length})</div>
         <div class="photo-actions">
@@ -8760,6 +8763,110 @@ window.updateSIField = function(pid, sid, field, value) {
   markDirtyAndSave(item, { [field]: value });
   scheduleAutoSave(pid, sid);
 };
+
+// ══════════════════════════════════════════
+// SI COMPLETION % + OPTIONAL BREAKDOWN
+// progressPct: manual overall % (null/undefined = not tracked).
+// progressItems: [{id,name,pct}] — when present, the overall % is their
+// average and the manual slider is disabled (auto mode).
+// ══════════════════════════════════════════
+
+/** Effective completion % for an SI — null when progress isn't tracked. */
+function _siEffProgress(item) {
+  const rows = item.progressItems || [];
+  if (rows.length) return Math.round(rows.reduce((s, r) => s + (+r.pct || 0), 0) / rows.length);
+  return (item.progressPct == null) ? null : Math.round(+item.progressPct || 0);
+}
+
+function _siProgressHTML(pid, sid) {
+  const item = getSI(pid, sid); if (!item) return '';
+  const rows = item.progressItems || [];
+  const eff  = _siEffProgress(item);
+  const auto = rows.length > 0;
+  const barColor = v => v >= 100 ? 'var(--green)' : (v >= 50 ? 'var(--accent)' : 'var(--yellow)');
+
+  const rowsHTML = rows.map(r => `
+    <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+      <span style="flex:0 0 auto;min-width:90px;max-width:150px;font-size:12px;color:var(--text1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_htmlEsc(r.name)}</span>
+      <input type="range" min="0" max="100" step="5" value="${+r.pct || 0}"
+        style="flex:1;accent-color:var(--accent);min-width:60px"
+        oninput="document.getElementById('pgi-val-${r.id}').textContent=this.value+'%';"
+        onchange="setSIProgressItemPct('${pid}','${sid}','${r.id}',+this.value)" />
+      <span id="pgi-val-${r.id}" style="font-family:var(--mono);font-size:11px;color:var(--text2);min-width:36px;text-align:right">${+r.pct || 0}%</span>
+      <span style="color:var(--text3);cursor:pointer;font-size:12px;padding:2px 4px" title="Remove line"
+        onclick="removeSIProgressItem('${pid}','${sid}','${r.id}')">✕</span>
+    </div>`).join('');
+
+  return `
+    <div class="field-label" style="display:flex;align-items:center;justify-content:space-between">
+      Completion
+      <span id="si-prog-val" style="font-family:var(--mono);font-size:12px;font-weight:700;color:${eff == null ? 'var(--text3)' : barColor(eff)}">
+        ${eff == null ? 'not tracked' : eff + '%' + (auto ? ' · auto' : '')}
+      </span>
+    </div>
+    <input type="range" min="0" max="100" step="5" value="${eff == null ? 0 : eff}" ${auto ? 'disabled' : ''}
+      style="width:100%;accent-color:var(--accent);${auto ? 'opacity:0.45' : ''}"
+      oninput="document.getElementById('si-prog-val').textContent=this.value+'%';"
+      onchange="setSIProgress('${pid}','${sid}',+this.value)" />
+    ${auto ? `<div style="font-size:10px;color:var(--text3);margin-top:2px">Overall % is the average of the lines below</div>` : ''}
+    ${rowsHTML}
+    <div style="display:flex;gap:6px;margin-top:8px">
+      <input class="field-input" id="si-prog-new" type="text" maxlength="40" placeholder="Add line — e.g. Casework, Metal trim…"
+        style="flex:1;padding:6px 10px;font-size:12px"
+        onkeydown="if(event.key==='Enter')addSIProgressItem('${pid}','${sid}')" />
+      <button class="custom-tag-add-btn" onclick="addSIProgressItem('${pid}','${sid}')">＋ Add</button>
+    </div>`;
+}
+
+function _siProgressRerender(pid, sid) {
+  const wrap = document.getElementById('si-progress-group');
+  if (wrap) wrap.innerHTML = _siProgressHTML(pid, sid);
+  renderLeft(route()); // keep the % badge on the left bar in step
+}
+
+function setSIProgress(pid, sid, val) {
+  const item = getSI(pid, sid); if (!item) return;
+  const prev = _siEffProgress(item);
+  item.progressPct = Math.max(0, Math.min(100, val));
+  item._updatedBy = _whoAmI();
+  markAsDirty(sid); save();
+  markDirtyAndSave(item, { progressPct: item.progressPct });
+  _logActivity(pid, { type: 'progress', siId: sid, siNum: item.num, detail: `${prev == null ? '—' : prev + '%'}→${item.progressPct}%`, by: item._updatedBy });
+  _siProgressRerender(pid, sid);
+}
+
+function addSIProgressItem(pid, sid) {
+  const item = getSI(pid, sid); if (!item) return;
+  const inp = document.getElementById('si-prog-new');
+  const name = (inp?.value || '').trim();
+  if (!name) return showToast('Line name required');
+  item.progressItems = item.progressItems || [];
+  item.progressItems.push({ id: 'pgi_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), name, pct: 0 });
+  item._updatedBy = _whoAmI();
+  markAsDirty(sid); save();
+  markDirtyAndSave(item, { progressItems: item.progressItems });
+  _siProgressRerender(pid, sid);
+}
+
+function setSIProgressItemPct(pid, sid, rowId, val) {
+  const item = getSI(pid, sid); if (!item) return;
+  const row = (item.progressItems || []).find(r => r.id === rowId); if (!row) return;
+  row.pct = Math.max(0, Math.min(100, val));
+  item._updatedBy = _whoAmI();
+  markAsDirty(sid); save();
+  markDirtyAndSave(item, { progressItems: item.progressItems });
+  _logActivity(pid, { type: 'progress', siId: sid, siNum: item.num, detail: `${row.name}: ${row.pct}%`, by: item._updatedBy });
+  _siProgressRerender(pid, sid);
+}
+
+function removeSIProgressItem(pid, sid, rowId) {
+  const item = getSI(pid, sid); if (!item) return;
+  item.progressItems = (item.progressItems || []).filter(r => r.id !== rowId);
+  item._updatedBy = _whoAmI();
+  markAsDirty(sid); save();
+  markDirtyAndSave(item, { progressItems: item.progressItems });
+  _siProgressRerender(pid, sid);
+}
 
 // AI note-polishing was removed (it shipped a hard-coded Gemini API key in the
 // client and targeted a retired model). When AI assist returns, route it through
