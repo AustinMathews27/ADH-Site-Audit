@@ -1,6 +1,6 @@
 // api/saveIndex/index.js
 // POST /api/saveIndex
-// Body: { userId, folders, contacts, settings, projectIds, projectTombstones, _savedAt }
+// Body: { userId, folders, contacts, settings, projectIds, projectTombstones, folderTombstones, _savedAt }
 //
 // Saves the per-user index document — adh-index-{userId}.
 // ETag-based optimistic concurrency with up to 5 retries.
@@ -53,9 +53,28 @@ module.exports = async function (context, req) {
         else throw e;
       }
 
-      // ── 2. Merge folders by ID — incoming wins on conflict ────────────────
+      // ── 2a. Merge folder tombstones (newest timestamp wins), then GC ──────
+      // Folders are merged as a map on both sides, so — exactly like
+      // projectIds — a tombstone is the ONLY way a folder ever leaves the
+      // cloud index. Without this, deleting a folder can never propagate.
+      const folderTombstones = Object.assign({}, current.folderTombstones || {});
+      Object.entries(incoming.folderTombstones || {}).forEach(([id, ts]) => {
+        if (!folderTombstones[id] || ts > folderTombstones[id]) folderTombstones[id] = ts;
+      });
+      const gcCutoff = Date.now() - TOMBSTONE_TTL_MS;
+      Object.keys(folderTombstones).forEach(id => {
+        if (folderTombstones[id] < gcCutoff) delete folderTombstones[id];
+      });
+
+      // ── 2b. Merge folders by ID — per-folder newest-wins via _modified ────
+      // (legacy folders without a stamp keep the old incoming-wins behavior),
+      // then drop tombstoned folders.
       const folderMap = new Map((current.folders || []).map(f => [f.id, f]));
-      (incoming.folders || []).forEach(f => folderMap.set(f.id, f));
+      (incoming.folders || []).forEach(f => {
+        const cur = folderMap.get(f.id);
+        if (!cur || (f._modified || 0) >= (cur._modified || 0)) folderMap.set(f.id, f);
+      });
+      Object.keys(folderTombstones).forEach(id => folderMap.delete(id));
 
       // ── 3. Merge contacts with tombstone respect ──────────────────────────
       const contactMap = new Map((current.contacts || []).map(c => [c.id, c]));
@@ -107,6 +126,7 @@ module.exports = async function (context, req) {
         settings:          mergedSettings,
         projectIds:        [...allProjectIds],
         projectTombstones: tombstones,
+        folderTombstones:  folderTombstones,
         _savedAt:          incoming._savedAt || Date.now()
       };
 

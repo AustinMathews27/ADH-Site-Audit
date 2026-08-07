@@ -3764,7 +3764,18 @@ function markStoreDirty() {
   store.lastUpdated = Date.now();
   save();
   _persistDirtyState();
+  // Push promptly (2s debounce) — index changes (folder create/delete, moves,
+  // contacts) used to wait for the 30s fallback timer, a long window in which
+  // another device could push stale state over them.
+  scheduleDirtySync();
 }
+
+/**
+ * Stamp a folder as just-modified. The index merge (client and server) is
+ * newest-wins per folder — without a fresh stamp, a stale device's copy of
+ * this folder could overwrite the change on its next push.
+ */
+function _touchFolder(f) { if (f) f._modified = Date.now(); }
 
 /**
  * Central save helper for SI field changes.
@@ -3842,6 +3853,9 @@ function _buildIndexPayload() {
     // Deleted project IDs — the server unions projectIds from both sides, so
     // tombstones are the only way an ID ever leaves the cloud index.
     projectTombstones: store.projectTombstones || {},
+    // Deleted folder IDs — same rule: the folder map is merged on both sides,
+    // so a tombstone is the only way a folder ever leaves the cloud index.
+    folderTombstones: store.folderTombstones || {},
     _savedAt:   Date.now(),
     _savedByDevice: _deviceId
   };
@@ -3980,13 +3994,30 @@ function _fixFolderIcons() {
  * Called on startup and during poll when index _ts changes.
  */
 function _mergeIndexIntoLocal(cloudIndex) {
-  // Folders: union by ID, incoming wins on conflict
+  // Folder tombstones FIRST (newest ts wins) — the folder union below must
+  // know which IDs are dead, or a deleted folder resurrects on every pull.
+  if (cloudIndex.folderTombstones) {
+    store.folderTombstones = store.folderTombstones || {};
+    Object.entries(cloudIndex.folderTombstones).forEach(([id, ts]) => {
+      if (!store.folderTombstones[id] || ts > store.folderTombstones[id]) {
+        store.folderTombstones[id] = ts;
+      }
+    });
+  }
+
+  // Folders: union by ID. Per-folder newest-wins via _modified so a stale
+  // device's copy can't overwrite a fresh rename/membership change; when
+  // neither side is stamped (legacy data), cloud wins as before.
   if (cloudIndex.folders) {
     const localById = new Map((store.folders || []).map(f => [f.id, f]));
-    const cloudById = new Map((cloudIndex.folders || []).map(f => [f.id, f]));
-    // Keep local-only folders (created offline), accept all cloud folders
-    cloudById.forEach((f, id) => localById.set(id, f));
-    store.folders = [...localById.values()];
+    (cloudIndex.folders || []).forEach(cf => {
+      const lf = localById.get(cf.id);
+      if (!lf || (cf._modified || 0) >= (lf._modified || 0)) localById.set(cf.id, cf);
+    });
+    const tombs = store.folderTombstones || {};
+    // MAIN seed folders can never be deleted — ignore any bogus tombstone.
+    const seedIds = new Set(['fld_ast','fld_ami','fld_acd','fld_acs','fld_adh','fld_acm']);
+    store.folders = [...localById.values()].filter(f => seedIds.has(f.id) || !tombs[f.id]);
     // Always restore logo icons from SEED so cloud never overwrites the img tags
     _fixFolderIcons();
   }
@@ -4661,7 +4692,11 @@ async function _initStore() {
   if (!store.projects) store.projects = [];
   if (!store.contacts) store.contacts = [];
   if (!store.projectTombstones) store.projectTombstones = {};
+  if (!store.folderTombstones)  store.folderTombstones  = {};
   store.folders.forEach(f => { if (f.parentId === undefined) f.parentId = null; });
+  // Apply folder tombstones to whatever IDB loaded (covers data written by an
+  // app version that had tombstones but crashed before filtering the array).
+  store.folders = store.folders.filter(f => !store.folderTombstones[f.id]);
   store.contacts.forEach(c => { if (!c.project) c.project = 'Office'; });
 
   // ── GC old tombstones ──────────────────────────────────────────────────
@@ -4680,6 +4715,9 @@ async function _initStore() {
   store.contacts = store.contacts.filter(c => !c._deleted || (_gcNow - _tombTs(c)) < _gcTombTTL);
   Object.keys(store.projectTombstones).forEach(id => {
     if ((_gcNow - store.projectTombstones[id]) > _gcMapTTL) delete store.projectTombstones[id];
+  });
+  Object.keys(store.folderTombstones).forEach(id => {
+    if ((_gcNow - store.folderTombstones[id]) > _gcMapTTL) delete store.folderTombstones[id];
   });
 
   // Restore logo icons from SEED (cloud data must never overwrite them)
@@ -6876,6 +6914,8 @@ function projCardHTML(p,fid) {
 // PROJECT SUMMARY
 function buildProjectView(pid) {
   const proj=getProject(pid); if(!proj) return;
+  // Weekly Innergy drift check — async and self-gated, never blocks the render
+  _innergyDriftCheck(pid);
   const _act       =activeItems(proj);
   const total      =_act.length;
   const completed  =_act.filter(i=>i.status==='completed').length;
@@ -10603,7 +10643,7 @@ function showNewFolderModal(parentId = null) {
     const name=document.getElementById('m-fname').value.trim();
     if(!name) return showToast('Folder name required');
     const id = 'fld_'+Date.now();
-    store.folders.push({id, name, icon:document.getElementById('m-ficon').value||'📁', projects:[], parentId});
+    store.folders.push({id, name, icon:document.getElementById('m-ficon').value||'📁', projects:[], parentId, _modified:Date.now()});
     markStoreDirty(); save(); closeModal(); 
     if(parentId) navToFolder(parentId); else navToRoot();
     showToast('✓ Folder created','green');
@@ -10651,7 +10691,7 @@ function showNewProjectModal(fid) {
       items:[]
     };
     store.projects.push(proj);
-    if(fid){ const f=getFolder(fid); if(f&&!f.projects.includes(proj.id)) f.projects.push(proj.id); }
+    if(fid){ const f=getFolder(fid); if(f&&!f.projects.includes(proj.id)){ f.projects.push(proj.id); _touchFolder(f); } }
     // Mark BOTH dirty: the doc must reach Cosmos, not just the index entry —
     // an index ID without a doc is an orphan that 404s on every device.
     markProjectDirty(proj.id);
@@ -11343,6 +11383,9 @@ function showProjMenu(e,pid,fid) {
     <div class="ctx-item" onclick="closeCtxMenu();showDuplicateOptionsModal('${pid}','${fid}')">
       <span class="ctx-icon">⚙️</span> Duplicate Options…
     </div>
+    ${getProject(pid)?.innergyId ? `<div class="ctx-item" onclick="closeCtxMenu();_innergyDriftCheck('${pid}',true)">
+      <span class="ctx-icon">⚡</span> Compare with Innergy
+    </div>` : ''}
     <div class="ctx-divider"></div>
     <div class="ctx-item" onclick="closeCtxMenu();toggleArchiveProject('${pid}','${fid}')">
       <span class="ctx-icon">${getProject('${pid}')?.archived?'📤':'🗄️'}</span> ${getProject('${pid}')?.archived?'Unarchive':'Archive'}
@@ -11521,6 +11564,9 @@ function duplicateSI(pid,sid) {
   // Photos stay with the original — a copied reference would point two SIs at
   // the same cloud blobs, and deleting either one would break the other.
   copy.photos=[];
+  // The copy is app-local — it must not share the original's Innergy identity
+  // or the weekly drift check would treat them as the same work order.
+  delete copy.innergyWONumber;
   delete copy._deleted; delete copy._deletedAt;
   copy._fieldTs={};
   copy._dirty=true;
@@ -11605,7 +11651,7 @@ function duplicateProject(pid,fid,opts) {
   newProj.items = newProj.items.filter(i => !i._deleted);
   store.projects.push(newProj);
   // Add to same folder
-  if(fid){ const f=getFolder(fid); if(f) f.projects.push(newProj.id); }
+  if(fid){ const f=getFolder(fid); if(f){ f.projects.push(newProj.id); _touchFolder(f); } }
   markProjectDirty(newProj.id);  // push the doc, not just the index entry
   markStoreDirty(); save(); closeModal();
   scheduleDirtySync();
@@ -11656,7 +11702,9 @@ function confirmDeleteProject(pid,fid) {
       <div style="font-size:12px;color:var(--text2)">This will permanently delete the project and all its items and photos. This cannot be undone.</div>
     </div>`,()=>{
     // Remove from all folders
-    store.folders.forEach(f=>{ f.projects=f.projects.filter(id=>id!==pid); });
+    store.folders.forEach(f=>{
+      if (f.projects.includes(pid)) { f.projects=f.projects.filter(id=>id!==pid); _touchFolder(f); }
+    });
     // Tombstone the project — kept in the array with _deleted flag so the
     // deletion propagates to other devices even if they were offline.
     // Render paths filter out _deleted projects. Garbage-collected later.
@@ -11718,6 +11766,12 @@ window.confirmDeleteFolder = function(fid) {
     };
     findChildren(fid);
     store.folders = store.folders.filter(f => !toDelete.includes(f.id));
+    // Tombstone every removed folder — the index folder map is merged on both
+    // client and server, so without a tombstone a deleted folder resurrects
+    // from the cloud (or from any device that still has it) on the next sync.
+    store.folderTombstones = store.folderTombstones || {};
+    const _delTs = Date.now();
+    toDelete.forEach(id => { store.folderTombstones[id] = _delTs; });
     markStoreDirty(); save();
     closeModal();
     if (parentId) navToFolder(parentId); else navToRoot();
@@ -11756,11 +11810,11 @@ window.moveProject = function(pid, oldFid, newFid) {
   if (oldFid === newFid) return closeModal();
   if (oldFid) {
     const f = getFolder(oldFid);
-    if (f) f.projects = f.projects.filter(id => id !== pid);
+    if (f) { f.projects = f.projects.filter(id => id !== pid); _touchFolder(f); }
   }
   if (newFid) {
     const f = getFolder(newFid);
-    if (f && !f.projects.includes(pid)) f.projects.push(pid);
+    if (f && !f.projects.includes(pid)) { f.projects.push(pid); _touchFolder(f); }
   }
   markStoreDirty(); save(); closeModal(); render(); _patchFolderCardCounts();
   showToast('✓ Project moved', 'green');
@@ -12185,7 +12239,7 @@ function createProjectFromImport(items, folderId) {
   store.projects.push(project);
   if (folderId) {
     const f = getFolder(folderId);
-    if (f && !f.projects.includes(pid)) f.projects.push(pid);
+    if (f && !f.projects.includes(pid)) { f.projects.push(pid); _touchFolder(f); }
   }
 
   // Both the doc and the index entry must sync (doc first — see syncChanges)
@@ -13652,7 +13706,7 @@ function createProjectFromWorkOrders(items, projectName, folderId) {
   };
   const populated = _woPopulateSchedule(project, siItems);
   store.projects.push(project);
-  if (folderId) { const f = getFolder(folderId); if (f && !f.projects.includes(pid)) f.projects.push(pid); }
+  if (folderId) { const f = getFolder(folderId); if (f && !f.projects.includes(pid)) { f.projects.push(pid); _touchFolder(f); } }
   project.importLog.push({ date: new Date().toISOString(), summary: { added: siItems.length, modified: 0, removed: 0, conflicts: 0, scheduled: populated }, source: 'work-orders-xlsx' });
   // Both the doc and the index entry must sync (doc first — see syncChanges)
   markProjectDirty(pid);
@@ -14845,7 +14899,7 @@ function _innergyCreateProject() {
     };
     _woPopulateSchedule(proj, items.filter(i => i.plannedStart));
     store.projects.push(proj);
-    if (fid) { const f = getFolder(fid); if (f && !f.projects.includes(proj.id)) f.projects.push(proj.id); }
+    if (fid) { const f = getFolder(fid); if (f && !f.projects.includes(proj.id)) { f.projects.push(proj.id); _touchFolder(f); } }
     markProjectDirty(proj.id);  // push the doc, not just the index entry
     markStoreDirty(); save(); closeModal();
     scheduleDirtySync();
@@ -14860,6 +14914,178 @@ function _innergyCreateProject() {
       document.querySelectorAll('.innergy-wo-check').forEach(c => c.checked = allCb.checked);
     });
   }, 50);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INNERGY DRIFT CHECK
+// Weekly comparison of a project's SIs against its Innergy work orders.
+// Runs silently when an Innergy-linked project is opened (7-day gate, synced
+// on the project doc so one device's check covers the whole team's week).
+// If work orders were added or removed/cancelled in Innergy, a warning modal
+// lists them with per-item Add / Delete / Ignore actions.
+// ══════════════════════════════════════════════════════════════════════════════
+
+const _INNERGY_CHECK_MS = 7 * 24 * 60 * 60 * 1000; // weekly
+const _innergyDriftInFlight = new Set();
+let _innergyDrift = null; // { pid, added:[wo…], removed:[item…] }
+
+async function _innergyDriftCheck(pid, force = false) {
+  const proj = getProject(pid);
+  if (!proj || proj._deleted || !proj.innergyId) {
+    if (force) showToast('This project is not linked to Innergy');
+    return;
+  }
+  if (!navigator.onLine) { if (force) showToast('Offline — cannot reach Innergy'); return; }
+  if (_innergyDriftInFlight.has(pid)) return;
+  if (!force && proj.innergyLastCheck && (Date.now() - proj.innergyLastCheck) < _INNERGY_CHECK_MS) return;
+
+  _innergyDriftInFlight.add(pid);
+  if (force) showToast('⚡ Checking Innergy…');
+  try {
+    const woData = await _innergyFetch(`/api/projects/${proj.innergyId}/workOrders`);
+    const allWOs = Array.isArray(woData) ? woData
+      : Array.isArray(woData?.Items) ? woData.Items
+      : Array.isArray(woData?.items) ? woData.items : [];
+
+    // Only compare WO types this project actually tracks: Installation plus
+    // any type that matches one of the project's section names.
+    const secNames = new Set(proj.sections.map(s => (s.name || '').toLowerCase()));
+    const relevant = allWOs.filter(w => {
+      const t = (w.Type || w.type || '').toLowerCase();
+      return t === 'installation' || secNames.has(t);
+    });
+    const isCancelled = w => ((w.Status || w.status || '') + '').toLowerCase().includes('cancel');
+
+    const ignored = new Set(proj.innergyIgnoredWOs || []);
+    const appItems = proj.items.filter(i => !i._deleted && i.innergyWONumber);
+    const appWONums = new Set(appItems.map(i => String(i.innergyWONumber)));
+    // Cancelled WOs count as gone from Innergy: they never show as "added",
+    // and an app SI still pointing at one is flagged as removed.
+    const liveWONums = new Set(relevant.filter(w => !isCancelled(w)).map(w => String(w.Number || w.number || '')));
+
+    const added = relevant.filter(w => {
+      const n = String(w.Number || w.number || '');
+      return n && !isCancelled(w) && !appWONums.has(n) && !ignored.has(n);
+    });
+    const removed = appItems.filter(i => !liveWONums.has(String(i.innergyWONumber)) && !ignored.has(String(i.innergyWONumber)));
+
+    // Successful check — stamp the weekly gate (syncs with the project doc).
+    proj.innergyLastCheck = Date.now();
+    markProjectDirty(pid);
+
+    if (!added.length && !removed.length) {
+      if (force) showToast('✓ In sync with Innergy', 'green');
+      return;
+    }
+    _innergyDrift = { pid, added, removed };
+    _innergyShowDriftModal();
+  } catch (e) {
+    console.warn('[InnergyDrift]', e.message);
+    if (force) showToast('⚠️ Innergy check failed: ' + e.message, 'red');
+  } finally {
+    _innergyDriftInFlight.delete(pid);
+  }
+}
+
+function _innergyShowDriftModal() {
+  const { pid, added, removed } = _innergyDrift;
+  const proj = getProject(pid); if (!proj) return;
+
+  const addedRows = added.map((w, i) => {
+    const { si, title } = _woParseName(w.Name || w.name || '');
+    const hrs = _innergyParseHours(w.EstimatedHours || w.estimatedHours);
+    return `<div class="innergy-labor-row" id="idrift-add-${i}">
+      <span style="font-family:var(--mono);font-size:11px;color:#4ade80;flex-shrink:0">SI ${si || '?'}</span>
+      <span style="flex:1;margin:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_htmlEsc(title)}${hrs ? ` · ${hrs}h` : ''}</span>
+      <button class="bulk-btn" onclick="_innergyDriftAdd(${i})">＋ Add</button>
+      <button class="bulk-btn" onclick="_innergyDriftIgnore('add',${i})">Ignore</button>
+    </div>`;
+  }).join('');
+
+  const removedRows = removed.map((it, i) => {
+    const pc = (it.photos || []).length;
+    return `<div class="innergy-labor-row" id="idrift-del-${i}">
+      <span style="font-family:var(--mono);font-size:11px;color:var(--red);flex-shrink:0">${_htmlEsc(it.num)}</span>
+      <span style="flex:1;margin:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_htmlEsc(it.title)}${pc ? ` · ${pc} photo${pc !== 1 ? 's' : ''}` : ''}</span>
+      <button class="bulk-btn danger" onclick="_innergyDriftDelete(${i})">🗑 Delete</button>
+      <button class="bulk-btn" onclick="_innergyDriftIgnore('del',${i})">Keep</button>
+    </div>`;
+  }).join('');
+
+  makeModal('⚡ Innergy Changes Detected', `
+    <div style="font-size:12px;color:var(--text2);margin-bottom:12px">
+      Innergy's work orders for <strong style="color:var(--text1)">${_htmlEsc(proj.name)}</strong> no longer match this project's scope items.
+    </div>
+    ${added.length ? `
+      <div class="innergy-section-title" style="color:#4ade80">Added in Innergy · ${added.length}
+        ${added.length > 1 ? `<button class="bulk-btn" style="float:right" onclick="_innergyDriftAddAll()">＋ Add All</button>` : ''}
+      </div>
+      <div style="margin-bottom:12px">${addedRows}</div>` : ''}
+    ${removed.length ? `
+      <div class="innergy-section-title" style="color:var(--red)">Deleted / cancelled in Innergy · ${removed.length}</div>
+      <div style="margin-bottom:4px">${removedRows}</div>
+      <div style="font-size:11px;color:var(--text3)">Delete removes the scope item and its photos. Keep leaves it in the app and stops flagging it.</div>` : ''}
+    <div style="font-size:11px;color:var(--text3);margin-top:10px">Checked ${new Date().toLocaleDateString()} · runs weekly on open · force with the project card menu → Compare with Innergy</div>
+  `, null, true);
+}
+
+function _innergyDriftRowDone(rowId, label, color) {
+  const row = document.getElementById(rowId);
+  if (row) row.innerHTML = `<span style="font-size:12px;color:${color}">${label}</span>`;
+}
+
+function _innergyDriftAdd(i) {
+  const { pid, added } = _innergyDrift;
+  const proj = getProject(pid); const wo = added[i];
+  if (!proj || !wo || wo._done) return;
+  wo._done = true;
+  const type = wo.Type || wo.type || 'Installation';
+  let sec = proj.sections.find(s => (s.name || '').toLowerCase() === type.toLowerCase());
+  if (!sec) {
+    sec = { id: 'sec_' + type.toLowerCase().replace(/\W/g, '') + '_' + Date.now(), name: type };
+    proj.sections.push(sec);
+  }
+  const item = _innergyWOtoSIItem(wo, sec.id, true, true);
+  item._dirty = true;
+  item._lastModified = new Date().toISOString();
+  item._updatedBy = _whoAmI();
+  proj.items.push(item);
+  markProjectDirty(pid);
+  renderLeft(route());
+  _innergyDriftRowDone(`idrift-add-${i}`, `✓ Added ${item.num}`, '#4ade80');
+}
+
+function _innergyDriftAddAll() {
+  (_innergyDrift?.added || []).forEach((w, i) => _innergyDriftAdd(i));
+  showToast('✓ All Innergy items added', 'green');
+}
+
+function _innergyDriftDelete(i) {
+  const { pid, removed } = _innergyDrift;
+  const proj = getProject(pid); const item = removed[i];
+  if (!proj || !item || item._deleted) return;
+  item._deleted   = true;
+  item._deletedAt = Date.now();
+  item._fieldTs   = item._fieldTs || {};
+  item._fieldTs._deleted = item._deletedAt;
+  item._dirty     = true;
+  _deleteBlobUrls((item.photos || []).map(p => p.url));
+  markProjectDirty(pid);
+  renderLeft(route());
+  _innergyDriftRowDone(`idrift-del-${i}`, `✓ Deleted ${_htmlEsc(item.num)}`, 'var(--red)');
+}
+
+function _innergyDriftIgnore(kind, i) {
+  const { pid, added, removed } = _innergyDrift;
+  const proj = getProject(pid); if (!proj) return;
+  const num = kind === 'add'
+    ? String(added[i]?.Number || added[i]?.number || '')
+    : String(removed[i]?.innergyWONumber || '');
+  if (!num) return;
+  proj.innergyIgnoredWOs = proj.innergyIgnoredWOs || [];
+  if (!proj.innergyIgnoredWOs.includes(num)) proj.innergyIgnoredWOs.push(num);
+  markProjectDirty(pid);
+  _innergyDriftRowDone(`idrift-${kind}-${i}`, kind === 'add' ? 'Ignored' : '✓ Kept in app', 'var(--text3)');
 }
 </script>
 </body>
