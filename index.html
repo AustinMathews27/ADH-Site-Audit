@@ -14173,13 +14173,56 @@ renderRight=function(r){
 let _notifEnabled=localStorage.getItem('adh_notif')==='1';
 function toggleNotifications(){
   if(!('Notification' in window)){ showToast('Notifications not supported'); return; }
-  if(_notifEnabled){ _notifEnabled=false; localStorage.setItem('adh_notif','0'); showToast('Notifications off'); _updateNotifUI(); return; }
+  if(_notifEnabled){ _notifEnabled=false; localStorage.setItem('adh_notif','0'); showToast('Notifications off'); _removePushSubscription(); _updateNotifUI(); return; }
   Notification.requestPermission().then(p=>{
-    if(p==='granted'){ _notifEnabled=true; localStorage.setItem('adh_notif','1'); showToast('🔔 Notifications on','green'); new Notification('ADH Audit',{body:'You will be notified on status changes.',icon:'icon-192.png'}); }
+    if(p==='granted'){ _notifEnabled=true; localStorage.setItem('adh_notif','1'); showToast('🔔 Notifications on','green'); new Notification('ADH Audit',{body:'You will be notified on status changes.',icon:'icon-192.png'}); _ensurePushSubscription(); }
     else showToast('Permission denied');
     _updateNotifUI();
   });
 }
+
+// ── WEB PUSH SUBSCRIPTION (closed-app delivery) ───────────────────
+// The poll only runs while the app is open; Web Push is what reaches an
+// iPad with the PWA backgrounded or closed. sw.js shows the notification
+// (push/notificationclick handlers); /api/sendPush fires it; the
+// subscription lives in Cosmos as adh-push-{deviceId}.
+const _VAPID_PUBLIC_KEY='BIQ1puaCqO_nwUIVMG5QRg_iHBsZvPY1b8g-R0-Y1Z1YFrWAVFld-K41iEViuRh4uofDPCaJrrR-X7SrzFHjrj8';
+
+function _b64UrlToUint8(s){
+  const pad='='.repeat((4-s.length%4)%4);
+  const raw=atob((s+pad).replace(/-/g,'+').replace(/_/g,'/'));
+  return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)));
+}
+
+async function _ensurePushSubscription(){
+  try{
+    if(!_notifEnabled) return;
+    if(!('serviceWorker' in navigator)||!('PushManager' in window)) return;
+    if(!('Notification' in window)||Notification.permission!=='granted') return;
+    const reg=await navigator.serviceWorker.ready;
+    let sub=await reg.pushManager.getSubscription();
+    if(!sub){
+      sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:_b64UrlToUint8(_VAPID_PUBLIC_KEY)});
+    }
+    // Re-posted every launch on purpose — iOS silently revokes subscriptions
+    // (ignored notifications, reinstall); the upsert keeps Cosmos current.
+    await fetch('/api/savePushSub',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({deviceId:_deviceId,user:_whoAmI(),label:_deviceLabel,subscription:sub.toJSON()})});
+  }catch(e){ console.warn('[ADH] push subscribe skipped:',e.message); }
+}
+
+async function _removePushSubscription(){
+  try{
+    const reg=await navigator.serviceWorker.ready;
+    const sub=await reg.pushManager.getSubscription();
+    if(sub) await sub.unsubscribe();
+  }catch(e){}
+  fetch('/api/savePushSub',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({deviceId:_deviceId,remove:true})}).catch(()=>{});
+}
+
+// Re-verify on every launch (after SW registration settles)
+window.addEventListener('load',()=>setTimeout(_ensurePushSubscription,3000));
 function _updateNotifUI(){
   const btn=document.getElementById('notif-btn');
   if(!btn) return;
@@ -14247,12 +14290,19 @@ function sendUserNotification(toDeviceId, toName, msg) {
   const m = (msg || '').trim();
   if (!m) { showToast('Message required'); return false; }
   store.notifications = store.notifications || [];
-  store.notifications.push({
+  const ntf = {
     id: 'ntf_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
     to: toDeviceId, toName: toName || '', msg: m.slice(0, 500),
     from: _whoAmI(), createdAt: Date.now(),
-  });
+  };
+  store.notifications.push(ntf);
   markStoreDirty(); save();
+  // Web Push wakes the target even with the app closed; the poll modal
+  // (above) remains the read-receipt path once they open it.
+  fetch('/api/sendPush', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: ntf.id, to: toDeviceId, msg: ntf.msg, from: ntf.from, fromDeviceId: _deviceId })
+  }).catch(() => {/* offline — delivers via poll instead */});
   showToast('📣 Message queued — delivers on their next sync', 'green');
   return true;
 }

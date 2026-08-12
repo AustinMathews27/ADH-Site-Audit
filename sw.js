@@ -1,6 +1,6 @@
 // ADH Field Audit Tool — Service Worker
 // Cache version — bump this string to force update
-const CACHE_VERSION = 'adh-audit-v8.38';
+const CACHE_VERSION = 'adh-audit-v8.39';
 
 // Resources to pre-cache on install
 const PRECACHE = [
@@ -27,6 +27,35 @@ self.addEventListener('message', event => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
+});
+
+// ── PUSH (Web Push — delivery with the app closed) ───────────────
+// iOS wakes this worker for pushes only when the PWA is installed to
+// the Home Screen (iOS 16.4+). Payload comes from /api/sendPush.
+self.addEventListener('push', event => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) {}
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'ADH Audit', {
+      body:  data.body || '',
+      icon:  '/icon-192.png',
+      badge: '/icon-192.png',
+      tag:   data.tag || undefined,
+      data:  { url: data.url || '/' },
+    })
+  );
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      for (const c of list) {
+        if ('focus' in c) return c.focus();
+      }
+      return self.clients.openWindow((event.notification.data && event.notification.data.url) || '/');
+    })
+  );
 });
 
 // ── INSTALL ──────────────────────────────────────────────────────
