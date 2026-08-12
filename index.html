@@ -14275,12 +14275,14 @@ function _showNotificationsModal() {
     </div>`).join('');
   // Own overlay (NOT makeModal): makeModal owns #modal-overlay and would
   // close whatever is open (admin console, editors). This one stacks on
-  // its own layer above z-index:500 modals and closes independently.
+  // its own layer and closes independently. z-index must clear the OPAQUE
+  // admin console (.recovery-overlay, 940) and annotation editor (950),
+  // staying under the first-run identity prompt (960, defers delivery).
   let ov = document.getElementById('notif-overlay');
   if (ov) { ov.querySelector('.modal-body').innerHTML = rows; return; }
   ov = document.createElement('div');
   ov.className = 'modal-overlay'; ov.id = 'notif-overlay';
-  ov.style.zIndex = '900';
+  ov.style.zIndex = '955';
   ov.onclick = e => { if (e.target === ov) _closeNotifModal(); };
   ov.innerHTML = `
     <div class="modal">
