@@ -14174,10 +14174,35 @@ function toggleNotifications(){
   if(!('Notification' in window)){ showToast('Notifications not supported'); return; }
   if(_notifEnabled){ _notifEnabled=false; localStorage.setItem('adh_notif','0'); showToast('Notifications off'); _removePushSubscription(); _updateNotifUI(); return; }
   Notification.requestPermission().then(p=>{
-    if(p==='granted'){ _notifEnabled=true; localStorage.setItem('adh_notif','1'); showToast('🔔 Notifications on','green'); new Notification('ADH Audit',{body:'You will be notified when a message is sent to this device.',icon:'icon-192.png'}); _ensurePushSubscription(); }
+    if(p==='granted'){
+      _notifEnabled=true; localStorage.setItem('adh_notif','1');
+      // Subscribe FIRST and report the outcome — this used to run after a
+      // `new Notification()` call that THROWS on iOS (no page-context
+      // constructor there), which silently killed push registration on
+      // every iPad. _localNotify goes through the SW instead.
+      _ensurePushSubscription().then(st=>{
+        if(st==='ok') showToast('🔔 Notifications on — push registered','green');
+        else if(st==='unsupported') showToast('🔔 On (in-app only — push needs the Home Screen app)');
+        else showToast('🔔 On, but push setup failed — '+st,'red');
+      });
+      _localNotify('ADH Audit','You will be notified when a message is sent to this device.');
+    }
     else showToast('Permission denied');
     _updateNotifUI();
   });
+}
+
+/** Show a native notification. iOS PWAs have no page-context Notification
+ *  constructor (`new Notification()` throws) — route through the service
+ *  worker, falling back to the constructor on desktop browsers. */
+function _localNotify(title,body,tag){
+  if(!('Notification' in window)||Notification.permission!=='granted') return;
+  const fallback=()=>{ try{ new Notification(title,{body,icon:'icon-192.png',tag}); }catch(e){} };
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.ready
+      .then(reg=>reg.showNotification(title,{body,icon:'icon-192.png',tag}))
+      .catch(fallback);
+  } else fallback();
 }
 
 // ── WEB PUSH SUBSCRIPTION (closed-app delivery) ───────────────────
@@ -14195,9 +14220,9 @@ function _b64UrlToUint8(s){
 
 async function _ensurePushSubscription(){
   try{
-    if(!_notifEnabled) return;
-    if(!('serviceWorker' in navigator)||!('PushManager' in window)) return;
-    if(!('Notification' in window)||Notification.permission!=='granted') return;
+    if(!_notifEnabled) return 'disabled';
+    if(!('serviceWorker' in navigator)||!('PushManager' in window)) return 'unsupported';
+    if(!('Notification' in window)||Notification.permission!=='granted') return 'no-permission';
     const reg=await navigator.serviceWorker.ready;
     let sub=await reg.pushManager.getSubscription();
     if(!sub){
@@ -14205,9 +14230,12 @@ async function _ensurePushSubscription(){
     }
     // Re-posted every launch on purpose — iOS silently revokes subscriptions
     // (ignored notifications, reinstall); the upsert keeps Cosmos current.
-    await fetch('/api/savePushSub',{method:'POST',headers:{'Content-Type':'application/json'},
+    const res=await fetch('/api/savePushSub',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({deviceId:_deviceId,user:_whoAmI(),label:_deviceLabel,subscription:sub.toJSON()})});
-  }catch(e){ console.warn('[ADH] push subscribe skipped:',e.message); }
+    if(!res.ok) return 'save-failed';
+    console.log('[ADH] push subscription registered');
+    return 'ok';
+  }catch(e){ console.warn('[ADH] push subscribe failed:',e.message); return e.message||'error'; }
 }
 
 async function _removePushSubscription(){
@@ -14245,9 +14273,10 @@ function _deliverMyNotifications() {
   const mine = _myUnreadNotifications();
   const fresh = mine.filter(n => !_notifShownIds.has(n.id));
   if (!fresh.length) return;
-  // Native notification (if the user enabled them) — fires once per message
-  if (_notifEnabled && ('Notification' in window) && Notification.permission === 'granted') {
-    fresh.forEach(n => { try { new Notification('📣 ' + (n.from || 'Admin'), { body: n.msg, icon: 'icon-192.png', tag: n.id }); } catch (e) {} });
+  // Native notification (if the user enabled them) — fires once per message.
+  // _localNotify routes through the SW so this works on iOS too.
+  if (_notifEnabled) {
+    fresh.forEach(n => _localNotify('📣 ' + (n.from || 'Admin'), n.msg, n.id));
   }
   mine.forEach(n => _notifShownIds.add(n.id));
   // Only the blocking first-run identity prompt defers delivery — acking
@@ -14328,6 +14357,11 @@ function sendUserNotification(toDeviceId, toName, msg) {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id: ntf.id, to: toDeviceId, msg: ntf.msg, from: ntf.from, fromDeviceId: _deviceId })
   }).catch(() => {/* offline — delivers via poll instead */});
+  // Deliver locally NOW if addressed to this device (self-test or '*').
+  // The poll can't do it: our own save advances _cloudTs.index, so the
+  // next poll sees "no change" and never runs the notification merge —
+  // self-sent messages only surfaced when ANOTHER device bumped the index.
+  _deliverMyNotifications();
   showToast('📣 Message queued — delivers on their next sync', 'green');
   return true;
 }
