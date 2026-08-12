@@ -3503,6 +3503,10 @@ let store = JSON.parse(JSON.stringify(SEED));
 // No MSAL.js needed. SWA handles the OAuth flow automatically.
 // ══════════════════════════════════════════════════════════════════════════════
 
+// Keep in lockstep with CACHE_VERSION in sw.js — shown in the Admin
+// Console header so a stale cached client is diagnosable at a glance.
+const APP_VERSION = '8.43';
+
 let _currentUser = null; // { userId, userDetails, userRoles }
 
 /**
@@ -9905,6 +9909,7 @@ function showAdminConsole(tab) {
   ov.innerHTML = `
     <div class="recovery-header">
       <span style="font-size:15px;font-weight:700">🛠 Admin Console</span>
+      <span style="font-size:10px;color:var(--text3);font-family:var(--mono)">v${APP_VERSION}</span>
       <span id="rec-crumb" style="font-size:12px;color:var(--text2);flex:1;min-width:120px"></span>
       <button class="recovery-btn" onclick="_admRefresh()">↻ Refresh</button>
       <button class="recovery-btn" onclick="_admClose()">✕ Close</button>
@@ -14304,14 +14309,19 @@ function _showNotificationsModal() {
     </div>`).join('');
   // Own overlay (NOT makeModal): makeModal owns #modal-overlay and would
   // close whatever is open (admin console, editors). This one stacks on
-  // its own layer and closes independently. z-index must clear the OPAQUE
-  // admin console (.recovery-overlay, 940) and annotation editor (950),
-  // staying under the first-run identity prompt (960, defers delivery).
+  // its own layer and closes independently. z-index 9000 clears every
+  // persistent layer in the app (admin console 940, annotation 950,
+  // photo viewer 999, install hint 1000); the identity prompt (960)
+  // never conflicts because delivery defers while it is open.
   let ov = document.getElementById('notif-overlay');
-  if (ov) { ov.querySelector('.modal-body').innerHTML = rows; return; }
+  if (ov) {
+    ov.querySelector('.modal-body').innerHTML = rows;
+    document.body.appendChild(ov); // re-hoist above anything opened since
+    return;
+  }
   ov = document.createElement('div');
   ov.className = 'modal-overlay'; ov.id = 'notif-overlay';
-  ov.style.zIndex = '955';
+  ov.style.zIndex = '9000';
   ov.onclick = e => { if (e.target === ov) _closeNotifModal(); };
   ov.innerHTML = `
     <div class="modal">
@@ -14327,6 +14337,15 @@ function _showNotificationsModal() {
 window._closeNotifModal = function() {
   document.getElementById('notif-overlay')?.remove();
 };
+
+// z-index alone lost this fight twice (console at 940, then stale cached
+// clients) — so ALSO pin the popup to the end of <body>: whenever any
+// overlay is appended after it, move it back to last. Last-in-DOM wins
+// every z-index tie and beats any future layer regardless of its z.
+new MutationObserver(() => {
+  const ov = document.getElementById('notif-overlay');
+  if (ov && document.body.lastElementChild !== ov) document.body.appendChild(ov);
+}).observe(document.body, { childList: true });
 
 window.ackNotification = function(id) {
   const n = (store.notifications || []).find(x => x.id === id);
