@@ -8815,7 +8815,6 @@ function setStatus(pid,sid,status) {
   // Persist to server-side audit history (fire-and-forget)
   _postChangeLog(pid,{siId:sid,siNum:item.num,siTitle:item.title,field:'status',oldValue:prev,newValue:status});
   markAsDirty(sid); save();
-  _maybeNotify(item.num,item.title,status);
   buildSIEditor(pid,sid);
   renderLeft(route());
 }
@@ -14175,7 +14174,7 @@ function toggleNotifications(){
   if(!('Notification' in window)){ showToast('Notifications not supported'); return; }
   if(_notifEnabled){ _notifEnabled=false; localStorage.setItem('adh_notif','0'); showToast('Notifications off'); _removePushSubscription(); _updateNotifUI(); return; }
   Notification.requestPermission().then(p=>{
-    if(p==='granted'){ _notifEnabled=true; localStorage.setItem('adh_notif','1'); showToast('🔔 Notifications on','green'); new Notification('ADH Audit',{body:'You will be notified on status changes.',icon:'icon-192.png'}); _ensurePushSubscription(); }
+    if(p==='granted'){ _notifEnabled=true; localStorage.setItem('adh_notif','1'); showToast('🔔 Notifications on','green'); new Notification('ADH Audit',{body:'You will be notified when a message is sent to this device.',icon:'icon-192.png'}); _ensurePushSubscription(); }
     else showToast('Permission denied');
     _updateNotifUI();
   });
@@ -14251,8 +14250,11 @@ function _deliverMyNotifications() {
     fresh.forEach(n => { try { new Notification('📣 ' + (n.from || 'Admin'), { body: n.msg, icon: 'icon-192.png', tag: n.id }); } catch (e) {} });
   }
   mine.forEach(n => _notifShownIds.add(n.id));
-  // Don't fight an open modal (mid-edit, camera, etc.) — next poll retries
-  if (document.getElementById('modal-overlay') || document.getElementById('device-user-overlay')) {
+  // Only the blocking first-run identity prompt defers delivery — acking
+  // stamps readBy, so we need to know who this is first. Any other open
+  // modal (admin console, mid-edit, camera) is fine: the messages overlay
+  // stacks ABOVE it on its own layer instead of replacing it.
+  if (document.getElementById('device-user-overlay')) {
     fresh.forEach(n => _notifShownIds.delete(n.id));
     return;
   }
@@ -14271,8 +14273,29 @@ function _showNotificationsModal() {
       <div style="font-size:13px;color:var(--text1);margin-bottom:8px;white-space:pre-wrap">${_htmlEsc(n.msg)}</div>
       <button class="bulk-btn" onclick="ackNotification('${n.id}')">✓ Got it</button>
     </div>`).join('');
-  makeModal('🔔 Messages for you', rows, null, true);
+  // Own overlay (NOT makeModal): makeModal owns #modal-overlay and would
+  // close whatever is open (admin console, editors). This one stacks on
+  // its own layer above z-index:500 modals and closes independently.
+  let ov = document.getElementById('notif-overlay');
+  if (ov) { ov.querySelector('.modal-body').innerHTML = rows; return; }
+  ov = document.createElement('div');
+  ov.className = 'modal-overlay'; ov.id = 'notif-overlay';
+  ov.style.zIndex = '900';
+  ov.onclick = e => { if (e.target === ov) _closeNotifModal(); };
+  ov.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">🔔 Messages for you</span>
+        <div class="btn-icon" onclick="_closeNotifModal()">✕</div>
+      </div>
+      <div class="modal-body">${rows}</div>
+    </div>`;
+  document.body.appendChild(ov);
 }
+
+window._closeNotifModal = function() {
+  document.getElementById('notif-overlay')?.remove();
+};
 
 window.ackNotification = function(id) {
   const n = (store.notifications || []).find(x => x.id === id);
@@ -14282,7 +14305,7 @@ window.ackNotification = function(id) {
   markStoreDirty(); save();
   const row = document.getElementById('ntf-' + id);
   if (row) row.style.display = 'none';
-  if (!_myUnreadNotifications().length) closeModal();
+  if (!_myUnreadNotifications().length) _closeNotifModal();
 };
 
 /** Admin: queue a message for one device ('*' = every device). */
@@ -14307,12 +14330,9 @@ function sendUserNotification(toDeviceId, toName, msg) {
   return true;
 }
 
-function _maybeNotify(num,title,status){
-  if(!_notifEnabled||Notification.permission!=='granted') return;
-  const labels={'completed':'✅ Completed','not-ready':'❌ Not Ready','punch-ongoing':'◈ Punch Ongoing','in-progress':'◑ In Progress','on-hold':'⏸ On Hold'};
-  if(!labels[status]) return;
-  try{ new Notification(`${num} — ${labels[status]}`,{body:title,icon:'icon-192.png',tag:num}); }catch(e){}
-}
+// Status changes deliberately do NOT notify (v8.40) — they stay in the
+// activity log / change history. Notifications are for direct messages
+// (VP of ops reminding supers to do their site audit).
 // Init notif badge on load
 document.addEventListener('DOMContentLoaded',_updateNotifUI);
 setTimeout(_updateNotifUI,500);
