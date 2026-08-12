@@ -3505,7 +3505,7 @@ let store = JSON.parse(JSON.stringify(SEED));
 
 // Keep in lockstep with CACHE_VERSION in sw.js — shown in the Admin
 // Console header so a stale cached client is diagnosable at a glance.
-const APP_VERSION = '8.43';
+const APP_VERSION = '8.44';
 
 let _currentUser = null; // { userId, userDetails, userRoles }
 
@@ -4633,7 +4633,8 @@ async function _pollForRemoteChanges() {
   // devices entry lands. Fire-and-forget.
   if (Date.now() - _lastHeartbeat > HEARTBEAT_MS) {
     _lastHeartbeat = Date.now();
-    const me = { user: _deviceUser || '', label: _deviceLabel || '', lastSeen: Date.now() };
+    const me = { user: _deviceUser || '', label: _deviceLabel || '', lastSeen: Date.now(),
+                 v: APP_VERSION, host: location.host };
     store.devices = store.devices || {};
     store.devices[_deviceId] = me;   // visible in the Users tab even before the round-trip
     _apiSaveIndex({
@@ -10011,7 +10012,7 @@ async function _admRenderUsers() {
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:600;color:var(--text1)">${_htmlEsc(name)}${me}</div>
           <div style="font-size:11px;color:var(--text2)">${_htmlEsc(label)}${d.label && d.user ? ' · ' + _htmlEsc(d.label) : ''}</div>
-          <div style="font-size:10px;color:var(--text3);font-family:var(--mono)">${_htmlEsc(d.id.slice(0, 16))}${pending ? ` · ${pending} unread` : ''}</div>
+          <div style="font-size:10px;color:var(--text3);font-family:var(--mono)">${_htmlEsc(d.id.slice(0, 16))}${pending ? ` · ${pending} unread` : ''}${d.v ? ` · <span style="color:${d.v === APP_VERSION ? 'var(--text3)' : 'var(--orange, #f59e0b)'}">v${_htmlEsc(d.v)}</span>` : ' · <span style="color:var(--orange, #f59e0b)">v?</span>'}${d.host ? ' · ' + _htmlEsc(d.host) : ''}</div>
         </div>
         <button class="recovery-btn" style="font-size:11px;padding:6px 12px" onclick="_admNotifyCompose('${d.id}','${_htmlEsc(name).replace(/'/g, '&#39;')}')">🔔 Notify</button>
       </div>`;
@@ -14255,6 +14256,32 @@ async function _removePushSubscription(){
 
 // Re-verify on every launch (after SW registration settles)
 window.addEventListener('load',()=>setTimeout(_ensurePushSubscription,3000));
+
+// ── STALE-CLIENT SELF-CHECK ───────────────────────────────────────
+// Fetches our own index.html straight from the network. cache:'no-store'
+// plus the cache-busting query bypasses the HTTP cache AND the service
+// worker's cache fallback, so this works even when the SW update cycle
+// is wedged (the failure mode where devices sat on old builds for hours
+// while the server had new code). On mismatch: kick the SW update and
+// show the update banner.
+let _lastVerCheck=0;
+async function _checkAppVersion(){
+  if(Date.now()-_lastVerCheck<5*60*1000) return;
+  _lastVerCheck=Date.now();
+  try{
+    const res=await fetch('index.html?vercheck='+Date.now(),{cache:'no-store'});
+    if(!res.ok) return;
+    const m=(await res.text()).match(/APP_VERSION = '([\d.]+)'/);
+    if(m&&m[1]!==APP_VERSION){
+      console.log('[ADH] stale client — running v'+APP_VERSION+', server has v'+m[1]);
+      try{ (await navigator.serviceWorker?.getRegistration?.())?.update(); }catch(e){}
+      const el=document.getElementById('update-banner');
+      if(el) el.classList.add('visible');
+    }
+  }catch(e){/* offline — fine */}
+}
+window.addEventListener('load',()=>setTimeout(_checkAppVersion,8000));
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) setTimeout(_checkAppVersion,2000); });
 function _updateNotifUI(){
   const btn=document.getElementById('notif-btn');
   if(!btn) return;
