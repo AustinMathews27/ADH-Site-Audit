@@ -3513,7 +3513,7 @@ let store = JSON.parse(JSON.stringify(SEED));
 
 // Keep in lockstep with CACHE_VERSION in sw.js — shown in the Admin
 // Console header so a stale cached client is diagnosable at a glance.
-const APP_VERSION = '8.46';
+const APP_VERSION = '8.47';
 
 let _currentUser = null; // { userId, userDetails, userRoles }
 
@@ -11138,6 +11138,11 @@ function showShareModal() {
   let _rgReportTitle = 'Site Conditions Report';
   let _rgFooterText  = '';
   let _rgWhiteLabel  = false;
+  let _rgInclProgress  = true;
+  let _rgInclTower     = true;
+  let _rgInclLabor     = true;
+  let _rgInclAttach    = true;
+  let _rgInclFloorPlan = true;
 
   // Section collapse state
   const _sec = { style:true, cover:true, images:false, include:false, branding:false };
@@ -11170,6 +11175,11 @@ function showShareModal() {
     get reportTitle()  { return _rgReportTitle; },
     get footerText()   { return _rgFooterText; },
     get whiteLabel()   { return _rgWhiteLabel; },
+    get inclProgress() { return _rgInclProgress; },
+    get inclTower()    { return _rgInclTower; },
+    get inclLabor()    { return _rgInclLabor; },
+    get inclAttach()   { return _rgInclAttach; },
+    get inclFloorPlan(){ return _rgInclFloorPlan; },
   };
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -11199,6 +11209,11 @@ function showShareModal() {
       inclTags:    _rgInclTags,
       inclTS:      _rgInclTS,
       inclEnv:     _rgInclEnv,
+      inclProgress:  _rgInclProgress,
+      inclTower:     _rgInclTower,
+      inclLabor:     _rgInclLabor,
+      inclAttach:    _rgInclAttach,
+      inclFloorPlan: _rgInclFloorPlan,
       reportTitle: _rgReportTitle,
       whiteLabel:  _rgWhiteLabel,
       square:      _rgSquare,
@@ -11460,6 +11475,11 @@ function showShareModal() {
           <label class="rg-check-row"><input type="checkbox" ${_rgInclTS?'checked':''}     onchange="window._rgToggle('ts')">     Timestamps on Photos</label>
           <label class="rg-check-row"><input type="checkbox" ${_rgInclNotes?'checked':''}  onchange="window._rgToggle('notes')">  Field Notes</label>
           <label class="rg-check-row"><input type="checkbox" ${_rgInclTags?'checked':''}   onchange="window._rgToggle('tags')">   Condition Tags</label>
+          <label class="rg-check-row"><input type="checkbox" ${_rgInclProgress?'checked':''}  onchange="window._rgToggle('progress')">  Completion %</label>
+          <label class="rg-check-row"><input type="checkbox" ${_rgInclTower?'checked':''}     onchange="window._rgToggle('tower')">     Tower Work Rooms</label>
+          <label class="rg-check-row"><input type="checkbox" ${_rgInclLabor?'checked':''}     onchange="window._rgToggle('labor')">     Labor Log</label>
+          <label class="rg-check-row"><input type="checkbox" ${_rgInclAttach?'checked':''}    onchange="window._rgToggle('attach')">    Attachments List</label>
+          <label class="rg-check-row"><input type="checkbox" ${_rgInclFloorPlan?'checked':''} onchange="window._rgToggle('floorplan')"> Floor Plan Page</label>
           <label class="rg-check-row"><input type="checkbox" ${_rgInclEnv?'checked':''}    onchange="window._rgToggle('env')">    Environmental Charts</label>
         </div>
       </div>
@@ -11605,6 +11625,11 @@ function showShareModal() {
       square:      () => _rgSquare     = !_rgSquare,
       pagenums:    () => _rgPageNums   = !_rgPageNums,
       whitelabel:  () => _rgWhiteLabel = !_rgWhiteLabel,
+      progress:    () => _rgInclProgress  = !_rgInclProgress,
+      tower:       () => _rgInclTower     = !_rgInclTower,
+      labor:       () => _rgInclLabor     = !_rgInclLabor,
+      attach:      () => _rgInclAttach    = !_rgInclAttach,
+      floorplan:   () => _rgInclFloorPlan = !_rgInclFloorPlan,
     };
     if (acts[key]) { acts[key](); _rebuildSidebar(); _rebuildPreview(); }
   };

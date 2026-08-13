@@ -97,6 +97,11 @@
     const square     = opts.square     || false;
     const pageNums   = opts.pageNums   !== false;
     const imgQual    = opts.imgQual    || 'low';
+    const inclProgress  = opts.inclProgress  !== false;
+    const inclTower     = opts.inclTower     !== false;
+    const inclLabor     = opts.inclLabor     !== false;
+    const inclAttach    = opts.inclAttach    !== false;
+    const inclFloorPlan = opts.inclFloorPlan !== false;
     const imgFilter  = imgQual === 'max' ? '' : 'filter:contrast(0.88) saturate(0.82);';
     const today      = new Date().toLocaleDateString();
 
@@ -135,7 +140,8 @@
         <div style="height:4px;width:${pct}%;background:${P.accent};border-radius:2px"></div>
       </div>`;
 
-    const metaCols = [['Client',proj.client],['Company',proj.company],['Auditor',proj.auditor]]
+    const metaCols = [['Project #',proj.projectNumber],['Type',proj.projectType],
+      ['Client',proj.client],['Company',proj.company],['Auditor',proj.auditor]]
       .filter(([,v]) => v).map(([l,v]) => `
         <div style="min-width:0">
           <div style="font-size:7px;font-weight:700;color:${P.sub};text-transform:uppercase;letter-spacing:0.5px">${l}</div>
@@ -222,15 +228,94 @@
       const dates = dparts.length
         ? `<div style="font-size:9px;font-weight:700;color:${P.sub};margin-top:6px">${dparts.join('&nbsp;&nbsp;&bull;&nbsp;&nbsp;')}</div>` : '';
 
+      // Completion % bar + named sub-item breakdown (mirrors _siEffProgress)
+      let progress = '';
+      if (inclProgress) {
+        const rows = item.progressItems || [];
+        const pp = rows.length
+          ? Math.round(rows.reduce((s,r)=>s+(+r.pct||0),0)/rows.length)
+          : (item.progressPct == null ? null : Math.round(+item.progressPct||0));
+        if (pp != null) {
+          const fill = pp >= 100 ? '#22c55e' : pp >= 50 ? P.accent : '#fbbf24';
+          progress = `<div style="display:flex;align-items:center;gap:6px;margin-top:5px">
+              <span style="font-size:7.5px;font-weight:700;color:${P.sub};letter-spacing:0.4px">COMPLETION</span>
+              <div style="flex:1;height:4px;background:${P.border};border-radius:2px"><div style="height:4px;width:${pp}%;background:${fill};border-radius:2px"></div></div>
+              <span style="font-size:9.5px;font-weight:800;color:${P.ink}">${pp}%</span>
+            </div>` + (rows.length ? `<div style="display:flex;flex-wrap:wrap;gap:2px 12px;margin-top:3px">${rows.map(r=>`<span style="font-size:7.5px;color:${P.sub}">${esc(r.name||'')} <b style="color:${P.text}">${Math.round(+r.pct||0)}%</b></span>`).join('')}</div>` : '');
+        }
+      }
+
+      const wparts = [];
+      if (item.assignedTo) wparts.push('Assigned: ' + esc(item.assignedTo));
+      if (item.trade)      wparts.push('Trade: ' + esc(item.trade));
+      if (item.delivery?.truck) wparts.push('Truck: ' + esc(item.delivery.truck) + (item.delivery.deliveryDate ? ' (' + esc(item.delivery.deliveryDate) + ')' : ''));
+      const who = wparts.length
+        ? `<div style="font-size:9px;font-weight:700;color:${P.sub};margin-top:4px">${wparts.join('&nbsp;&nbsp;&bull;&nbsp;&nbsp;')}</div>` : '';
+
       const tags = (inclTags && item.tags && item.tags.length)
         ? `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:6px">${item.tags.map(t=>`<span style="font-size:8px;padding:2px 6px;background:${P.row};border:1px solid ${P.border};color:${P.sub};border-radius:4px">${esc(t)}</span>`).join('')}</div>` : '';
+
+      const attach = (inclAttach && item.attachments?.length)
+        ? `<div style="font-size:8px;color:${P.sub};margin-top:5px">Attachments (${item.attachments.length}): ${item.attachments.map(a=>esc(a.name||'file')).join(', ')}</div>` : '';
+
+      // Tower work: summary bar + room-status chips + room photos grouped by room
+      let tower = '';
+      if (inclTower && item.towerWork?.enabled && item.towerWork.rooms?.length) {
+        const rooms = [...item.towerWork.rooms].sort((a,b)=>{
+          const na=parseInt(a.number)||0, nb=parseInt(b.number)||0;
+          return na!==nb ? na-nb : String(a.number).localeCompare(String(b.number));
+        });
+        const done = rooms.filter(r=>r.status==='completed').length;
+        const inPr = rooms.filter(r=>r.status==='in-progress').length;
+        const tpct = Math.round(done/rooms.length*100);
+        const TWC = { completed:['#dcfce7','#166534'], 'in-progress':['#fef3c7','#92400e'], pending:['#f1f5f9','#475569'] };
+        const chips = rooms.map(r=>{ const c=TWC[r.status]||TWC.pending;
+          return `<span style="font-size:7.5px;font-weight:700;background:${c[0]};color:${c[1]};padding:1px 5px;border-radius:3px">${esc(r.number)}</span>`; }).join('');
+        const rpCells = inclPhotos ? rooms.filter(r=>r.photos?.length).flatMap(r=>r.photos.map(p=>{
+          const src = srcOf(p);
+          return `<div style="flex:0 0 calc(25% - 5px);max-width:calc(25% - 5px)">
+              <div style="aspect-ratio:4/3;background:${P.row};border:1px solid ${P.border};border-radius:3px;overflow:hidden">
+                ${src?`<img src="${src}" loading="lazy" style="width:100%;height:100%;object-fit:cover;${imgFilter}" onerror="this.style.opacity=0">`:''}
+              </div>
+              <div style="font-size:7px;color:${P.sub};margin-top:1px">Room ${esc(r.number)}${r.type?' — '+esc(r.type):''}</div>
+            </div>`; })).join('') : '';
+        tower = `<div style="margin-top:8px;padding-top:6px;border-top:1px dashed ${P.border}">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+              <span style="font-size:8px;font-weight:800;color:${P.ink};letter-spacing:0.3px">TOWER WORK — ${done}/${rooms.length} ROOMS COMPLETE (${tpct}%)</span>
+              <span style="font-size:7.5px;color:${P.sub};white-space:nowrap">${done} done · ${inPr} in progress · ${rooms.length-done-inPr} pending</span>
+            </div>
+            <div style="height:3px;background:${P.border};border-radius:2px;margin-top:3px"><div style="height:3px;width:${tpct}%;background:${tpct===100?'#22c55e':P.accent};border-radius:2px"></div></div>
+            <div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:5px">${chips}</div>
+            ${rpCells?`<div style="font-size:8px;font-weight:800;color:${P.ink};margin-top:6px">ROOM PHOTOS</div><div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:3px">${rpCells}</div>`:''}
+          </div>`;
+      }
+
+      // Labor log: full entry table + man-hour total (budget when tracked)
+      let labor = '';
+      if (inclLabor && item.laborEntries?.length) {
+        const es = [...item.laborEntries].sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+        let tot = 0;
+        const lrows = es.map(e=>{
+          const mh = e.total != null ? +e.total : (+e.workers||0)*(+e.hours||0); tot += +mh||0;
+          return `<tr style="border-bottom:1px solid ${P.border}"><td style="padding:2px 6px 2px 0;white-space:nowrap">${esc(e.date||'')}</td><td style="padding:2px 6px;text-align:right">${e.workers??''}</td><td style="padding:2px 6px;text-align:right">${e.hours??''}</td><td style="padding:2px 6px;text-align:right;font-weight:700">${mh}</td><td style="padding:2px 0 2px 6px;color:${P.sub}">${esc(e.note||'')}</td></tr>`; }).join('');
+        labor = `<div style="margin-top:8px;padding-top:6px;border-top:1px dashed ${P.border}">
+            <div style="font-size:8px;font-weight:800;color:${P.ink};letter-spacing:0.3px">LABOR LOG</div>
+            <table style="width:100%;border-collapse:collapse;font-size:7.5px;color:${P.text};margin-top:3px">
+              <tr style="color:${P.sub}"><th style="text-align:left;padding:2px 6px 2px 0;font-size:7px">DATE</th><th style="text-align:right;padding:2px 6px;font-size:7px">WORKERS</th><th style="text-align:right;padding:2px 6px;font-size:7px">HRS/WORKER</th><th style="text-align:right;padding:2px 6px;font-size:7px">MAN-HRS</th><th style="text-align:left;padding:2px 0 2px 6px;font-size:7px">NOTE</th></tr>
+              ${lrows}
+            </table>
+            <div style="font-size:8px;font-weight:800;color:${P.ink};margin-top:3px">Total: ${tot} man-hours${item.laborHours?` <span style="font-weight:400;color:${P.sub}">(${item.laborHours}h budgeted — ${Math.max(0,item.laborHours-tot)}h remaining)</span>`:''}</div>
+          </div>`;
+      }
+      const extras = tower + labor;
 
       const textBlock = `
         <div style="font-size:15px;font-weight:800;color:${P.ink};letter-spacing:0.3px">${esc(siLbl(item.num))}</div>
         <div style="font-size:13px;font-weight:700;color:${P.ink};line-height:1.25;margin-top:2px">${esc(item.title||'')}</div>
         <div style="margin-top:5px">${statusLine}</div>
+        ${progress}
         ${fc?`<div style="margin-top:5px">${fc}</div>`:''}
-        ${notes}${dates}${tags}`;
+        ${notes}${dates}${who}${tags}${attach}`;
 
       const photos = inclPhotos ? (item.photos || []) : [];
       const cell = (ph, idx) => {
@@ -252,22 +337,36 @@
           </div>` : '';
         const bits = [];
         if (item.statusCode) bits.push(esc(item.statusCode) + (item.statusText ? ' — ' + esc(item.statusText) : ''));
+        if (inclProgress) {
+          const prows = item.progressItems || [];
+          const cpp = prows.length ? Math.round(prows.reduce((s,r)=>s+(+r.pct||0),0)/prows.length)
+                    : (item.progressPct == null ? null : Math.round(+item.progressPct||0));
+          if (cpp != null) bits.push(cpp + '%');
+        }
         if (item.deliveryDate) bits.push('Del ' + esc(item.deliveryDate));
         if (item.dueDate)      bits.push('Inst ' + esc(item.dueDate));
+        if (item.projectedStartDate) bits.push('Start ' + esc(item.projectedStartDate));
+        if (item.punchDate)    bits.push('Punch ' + esc(item.punchDate));
+        if (item.assignedTo)   bits.push(esc(item.assignedTo));
         const noteTxt = (inclNotes && item.notes && item.notes.trim())
           ? `<div style="font-size:8.5px;color:${P.text};line-height:1.4;margin-top:2px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">${esc(item.notes.trim())}</div>` : '';
-        return `<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 4px;border-bottom:1px solid ${P.border}">
-          <div style="flex:1;min-width:0">
-            <div style="font-size:10px;font-weight:800;color:${P.ink};line-height:1.3">
-              <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${statusColor(item.status)};margin-right:4px"></span>${esc(siLbl(item.num))}&nbsp; ${esc(item.title||'')}
+        const tagLine = (inclTags && item.tags && item.tags.length)
+          ? `<div style="font-size:7.5px;color:${P.sub};margin-top:2px">${item.tags.map(esc).join(', ')}</div>` : '';
+        return `<div style="border-bottom:1px solid ${P.border}">
+          <div style="display:flex;gap:8px;align-items:flex-start;padding:6px 4px 4px">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:10px;font-weight:800;color:${P.ink};line-height:1.3">
+                <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${statusColor(item.status)};margin-right:4px"></span>${esc(siLbl(item.num))}&nbsp; ${esc(item.title||'')}
+              </div>
+              <div style="font-size:8px;margin-top:2px">
+                <span style="color:${statusColor(item.status)};font-weight:700">${statusLabel(item.status)}</span>
+                ${bits.length?`<span style="color:${P.sub}"> &nbsp;·&nbsp; ${bits.join(' &nbsp;·&nbsp; ')}</span>`:''}
+              </div>
+              ${noteTxt}${tagLine}
             </div>
-            <div style="font-size:8px;margin-top:2px">
-              <span style="color:${statusColor(item.status)};font-weight:700">${statusLabel(item.status)}</span>
-              ${bits.length?`<span style="color:${P.sub}"> &nbsp;·&nbsp; ${bits.join(' &nbsp;·&nbsp; ')}</span>`:''}
-            </div>
-            ${noteTxt}
+            ${thumb}
           </div>
-          ${thumb}
+          ${extras?`<div style="padding:0 4px 6px">${extras}</div>`:''}
         </div>`;
       }
 
@@ -282,6 +381,7 @@
           ${textBlock}
           <div style="width:36px;height:2px;background:${P.accent};margin-top:6px"></div>
           ${bigGrid}
+          ${extras}
         </div>`;
       }
 
@@ -305,11 +405,46 @@
       const sep = styleKey === 'grid'
         ? `border-bottom:1px solid ${P.rule}`
         : `border-bottom:1px solid ${P.border}`;
-      return `<div style="padding:11px 0;${sep}">${body}</div>`;
+      return `<div style="padding:11px 0;${sep}">${body}${extras}</div>`;
     }
 
     // ── SECTION PAGES ─────────────────────────────────────────────────────────
     let pgNum = inclCover ? 2 : 1;
+    let floorPlanPage = '';
+    const buildFloorPlanPage = () => {
+      if (!(inclFloorPlan && proj.floorPlan?.imageData && !proj.floorPlan.isPDF)) return;
+      const fpins = [...(proj.floorPlan.pins || [])].sort((a, b) =>
+        String(a.siNum || '').localeCompare(String(b.siNum || ''), undefined, { numeric: true }));
+      const pinDots = fpins.map((p, i) => `
+        <div style="position:absolute;left:${p.xPct}%;top:${p.yPct}%;transform:translate(-50%,-50%);
+          width:16px;height:16px;border-radius:50%;background:${P.accent};border:2px solid #fff;
+          color:#fff;font-size:8px;font-weight:800;display:flex;align-items:center;justify-content:center;
+          box-shadow:0 1px 3px rgba(0,0,0,0.35)">${i+1}</div>`).join('');
+      const legend = fpins.length ? `
+        <div style="font-size:8px;font-weight:800;color:${P.ink};margin:10px 0 5px;letter-spacing:0.4px">PIN LEGEND</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px 12px">
+          ${fpins.map((p, i) => `
+            <div style="display:flex;gap:5px;align-items:center;flex:0 0 calc(50% - 6px);min-width:0">
+              <span style="flex:0 0 14px;height:14px;border-radius:50%;background:${P.accent};color:#fff;font-size:7.5px;font-weight:800;display:flex;align-items:center;justify-content:center">${i+1}</span>
+              <span style="font-size:8.5px;color:${P.text};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(siLbl(p.siNum))}&nbsp; ${esc(p.siTitle||'')}</span>
+            </div>`).join('')}
+        </div>` : '';
+      const fpPg = pgNum++;
+      floorPlanPage = `
+        <div class="page-container">
+        <div class="page-scaler">
+          <div class="page-num">${fpPg}</div>
+          ${sectionHeader('Floor Plan', fpins.length).replace(/(\d+) item(s?)/, '$1 pin$2')}
+          <div style="padding:10px 18px;flex:1">
+            <div style="position:relative;border:1px solid ${P.border};border-radius:3px;overflow:hidden;background:#fff">
+              <img src="${proj.floorPlan.imageData}" style="width:100%;display:block">
+              ${pinDots}
+            </div>
+            ${legend}
+          </div>
+          <div class="pg-footer"><span>${esc(proj.name||'')}</span><span>Page ${fpPg}</span></div>
+        </div></div>`;
+    };
     const sectionHeader = (name, count) => {
       if (styleKey === 'grid') return `<div style="padding:14px 18px 0">
           <div style="height:3px;background:${P.rule}"></div>
@@ -356,6 +491,8 @@
           </div>
         </div></div>`;
     };
+
+    buildFloorPlanPage(); // consumes its page number before the section pages
 
     const sectionIds = new Set(sections.map(s => s.id));
     let sectionPages = sections.map(sec => {
@@ -473,6 +610,7 @@ body{background:#18212f;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
 </script>
 </head><body>
 ${coverPage}
+${floorPlanPage}
 ${sectionPages}
 ${envPage}
 ${sigPage}
@@ -525,6 +663,25 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
 
   function siLabel(num){ return String(num || '').replace(/^SI\s+/i, 'SI-'); }
   function photoCaption(ph){ return (ph && (ph.caption || ph.note || ph.label || '')) || ''; }
+  // Mirrors _siEffProgress in index.html: progressItems average wins, else the
+  // manual slider %, else null (progress not tracked on this item).
+  function itemProgressPct(item) {
+    const rows = item.progressItems || [];
+    if (rows.length) return Math.round(rows.reduce((s, r) => s + (+r.pct || 0), 0) / rows.length);
+    return (item.progressPct == null) ? null : Math.round(+item.progressPct || 0);
+  }
+  // Tower room status → print-friendly chip colors (tint bg + dark text)
+  const TW_CHIP = {
+    completed:     { bg:'#dcfce7', fg:'#166534' },
+    'in-progress': { bg:'#fef3c7', fg:'#92400e' },
+    pending:       { bg:'#f1f5f9', fg:'#475569' },
+  };
+  function sortedTowerRooms(tw) {
+    return [...(tw?.rooms || [])].sort((a, b) => {
+      const na = parseInt(a.number) || 0, nb = parseInt(b.number) || 0;
+      return na !== nb ? na - nb : String(a.number).localeCompare(String(b.number));
+    });
+  }
 
   window.exportPDF = async function (pid) {
     const proj = (typeof getProject === 'function' ? getProject : window.getProject)(pid);
@@ -572,6 +729,11 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
     const pageNums   = S.pageNums !== false;      // page numbers + footer rule
     const square     = S.square   ?? false;       // 1:1 photo crops
     const imgSize    = S.imgSize  || 'regular';   // small | regular | large | xl
+    const inclProgress  = S.inclProgress  ?? true; // per-item completion % + breakdown
+    const inclTower     = S.inclTower     ?? true; // tower work room grid + room photos
+    const inclLabor     = S.inclLabor     ?? true; // labor log table
+    const inclAttach    = S.inclAttach    ?? true; // attachment file list
+    const inclFloorPlan = S.inclFloorPlan ?? true; // floor plan page with SI pins
 
     // Palette comes from the selected style
     const P = {
@@ -649,8 +811,10 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
     }
 
     // ── Shared stats strip (used on both covers) ──────────────────────────────
+    // Counts the same filtered, non-deleted items the report pages render, so
+    // the cover totals always agree with the pages that follow.
     function drawStats(yTop) {
-      const items = proj.items || [];
+      const items = allItems;
       const st = [
         ['Total',      items.length,                                             P.sub],
         ['Completed',  items.filter(i=>i.status==='completed').length,           '#16a34a'],
@@ -687,7 +851,8 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       setFill(P.rule); doc.rect(MX, ty, CW, 1.8, 'F'); ty += 11;
       doc.setFont(P.font,'bold'); doc.setFontSize(12); setText(P.text);
       doc.text(proj.date || new Date().toLocaleDateString(), MX, ty); ty += 15;
-      const meta = [['Client',proj.client],['Company',proj.company],['Auditor',proj.auditor]];
+      const meta = [['Project #',proj.projectNumber],['Type',proj.projectType],
+                    ['Client',proj.client],['Company',proj.company],['Auditor',proj.auditor]];
       meta.forEach(([k,v]) => { if (!v) return;
         doc.setFontSize(7.5); doc.setFont(P.font,'bold'); setText(P.sub); doc.text(k.toUpperCase(),MX,ty);
         doc.setFontSize(11); doc.setFont(P.font,'normal'); setText(P.text); doc.text(String(v),MX,ty+6,{maxWidth:CW-78}); ty += 15;
@@ -729,7 +894,8 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       doc.text(proj.date || new Date().toLocaleDateString(), PW-MX, heroH-10, { align:'right' });
       // white area: meta + stats
       let my = heroH + 16;
-      const meta = [['Client',proj.client],['Company',proj.company],['Auditor',proj.auditor]];
+      const meta = [['Project #',proj.projectNumber],['Type',proj.projectType],
+                    ['Client',proj.client],['Company',proj.company],['Auditor',proj.auditor]];
       const present = meta.filter(([,v])=>v);
       const colW = present.length ? CW/present.length : CW;
       present.forEach(([k,v],i) => {
@@ -812,6 +978,41 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       if (draw) { setText(isDone ? P.red : statusColor(item.status)); doc.text(statusStr, x, cyy+3); }
       cyy += 5.6;
 
+      // Completion % bar + optional named-sub-item breakdown
+      if (inclProgress) {
+        const pp = itemProgressPct(item);
+        if (pp != null) {
+          doc.setFont(P.font,'bold'); doc.setFontSize(7.5);
+          if (draw) {
+            setText(P.sub); doc.text('COMPLETION', x, cyy+3);
+            const barX = x + 24, barW = width - 24 - 13, barH = 2.6;
+            setFill(P.border); doc.roundedRect(barX, cyy+0.8, barW, barH, 1.2, 1.2, 'F');
+            if (pp > 0) {
+              setFill(pp >= 100 ? '#22c55e' : pp >= 50 ? P.accent : '#fbbf24');
+              doc.roundedRect(barX, cyy+0.8, Math.max(2.6, barW*pp/100), barH, 1.2, 1.2, 'F');
+            }
+            setText(P.ink); doc.text(pp + '%', x + width, cyy+3, {align:'right'});
+          }
+          cyy += 5.4;
+          const rows = item.progressItems || [];
+          if (rows.length) {
+            doc.setFontSize(6.8);
+            const colW2 = (width - 6) / 2;
+            rows.forEach((r, i) => {
+              const col = i % 2, rx = x + col*(colW2+6);
+              if (draw) {
+                doc.setFont(P.font,'normal'); setText(P.sub);
+                doc.text(String(r.name || '').slice(0, 42), rx, cyy+2.6, { maxWidth: colW2 - 12 });
+                doc.setFont(P.font,'bold'); setText(P.text);
+                doc.text(Math.round(+r.pct || 0) + '%', rx + colW2 - 1, cyy+2.6, {align:'right'});
+              }
+              if (col === 1 || i === rows.length-1) cyy += 3.4;
+            });
+            cyy += 1;
+          }
+        }
+      }
+
       if (item.statusCode) {
         const b = FC_BADGE[item.statusCode] || { bg:'#f3f4f6', fg:'#374151' };
         doc.setFont(P.font,'bold'); doc.setFontSize(8);
@@ -848,6 +1049,19 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
         cyy += dl.length*4 + 1.5;
       }
 
+      // Responsibility line: assigned crew / trade / Innergy delivery truck
+      const who = [];
+      if (item.assignedTo) who.push('Assigned: ' + item.assignedTo);
+      if (item.trade)      who.push('Trade: ' + item.trade);
+      if (item.delivery && item.delivery.truck)
+        who.push('Truck: ' + item.delivery.truck + (item.delivery.deliveryDate ? ' (' + item.delivery.deliveryDate + ')' : ''));
+      if (who.length) {
+        doc.setFont(P.font,'bold'); doc.setFontSize(7.5);
+        const wl = doc.splitTextToSize(who.join('    \u2022    '), width);
+        if (draw) { setText(P.sub); doc.text(wl, x, cyy+3); }
+        cyy += wl.length*4 + 1.5;
+      }
+
       if (inclTags && item.tags && item.tags.length) {
         doc.setFont(P.font,'normal'); doc.setFontSize(6.5);
         let tx = x, ty2 = cyy + 1;
@@ -858,6 +1072,15 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
           tx += tw + 2;
         });
         cyy = ty2 + 5;
+      }
+
+      // Attachment file list (names only — files themselves live in the app)
+      if (inclAttach && item.attachments && item.attachments.length) {
+        doc.setFont(P.font,'normal'); doc.setFontSize(7);
+        const names = item.attachments.map(a => a.name || 'file').join(', ');
+        const al = doc.splitTextToSize('Attachments (' + item.attachments.length + '): ' + names, width).slice(0, 2);
+        if (draw) { setText(P.sub); doc.text(al, x, cyy+3); }
+        cyy += al.length*3.8 + 1.5;
       }
       return cyy - y;
     }
@@ -933,6 +1156,103 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
         doc.setFont(P.font,'bold'); doc.setFontSize(7); setText('#ffffff'); doc.text(String(badge), bx, byy+2.3, {align:'center'});
       }
     }
+
+    // ── TOWER WORK block: summary bar + wrapping room-status chips ────────────
+    // Row-by-row page breaks so a 300-room tower flows across pages cleanly.
+    function drawTowerBlock(item, contName) {
+      const tw = item.towerWork;
+      if (!tw || !tw.enabled || !(tw.rooms || []).length) return;
+      const rooms  = sortedTowerRooms(tw);
+      const done   = rooms.filter(r => r.status === 'completed').length;
+      const inProg = rooms.filter(r => r.status === 'in-progress').length;
+      const pct    = Math.round(done / rooms.length * 100);
+      if (cy + 16 > PH - BOT) { newPage(); cy = contHeader(contName); }
+      doc.setFont(P.font,'bold'); doc.setFontSize(7.5); setText(P.ink);
+      doc.text('TOWER WORK — ' + done + '/' + rooms.length + ' rooms complete (' + pct + '%)', MX, cy+3);
+      doc.setFont(P.font,'normal'); doc.setFontSize(6.5); setText(P.sub);
+      doc.text(done + ' done  •  ' + inProg + ' in progress  •  ' + (rooms.length - done - inProg) + ' pending', PW-MX, cy+3, {align:'right'});
+      cy += 5;
+      setFill(P.border); doc.roundedRect(MX, cy, CW, 2.2, 1, 1, 'F');
+      if (pct > 0) { setFill(pct === 100 ? '#22c55e' : P.accent); doc.roundedRect(MX, cy, Math.max(2.2, CW*pct/100), 2.2, 1, 1, 'F'); }
+      cy += 5;
+      doc.setFont(P.font,'bold'); doc.setFontSize(6.5);
+      const chipH = 5;
+      let tx = MX;
+      rooms.forEach(rm => {
+        const c = TW_CHIP[rm.status] || TW_CHIP.pending;
+        const label = String(rm.number);
+        const w = doc.getTextWidth(label) + 4.4;
+        if (tx + w > PW - MX) { tx = MX; cy += chipH + 1.6; }
+        if (cy + chipH > PH - BOT) { newPage(); cy = contHeader(contName); tx = MX; }
+        setFill(c.bg); doc.roundedRect(tx, cy, w, chipH, 1.2, 1.2, 'F');
+        setText(c.fg); doc.text(label, tx + 2.2, cy + 3.6);
+        tx += w + 1.6;
+      });
+      cy += chipH + 4;
+    }
+
+    // ── Tower room photos: all of them, grouped by room, captioned per room ───
+    async function drawTowerPhotos(item, contName) {
+      const tw = item.towerWork;
+      if (!tw || !tw.enabled) return;
+      const rooms = sortedTowerRooms(tw).filter(r => r.photos && r.photos.length);
+      if (!rooms.length) return;
+      const photos = [];
+      rooms.forEach(rm => rm.photos.forEach(p => photos.push(Object.assign({}, p, {
+        caption: 'Room ' + rm.number + (rm.type ? ' — ' + rm.type : '') + (p.caption ? ': ' + p.caption : '')
+      }))));
+      if (cy + 12 > PH - BOT) { newPage(); cy = contHeader(contName); }
+      doc.setFont(P.font,'bold'); doc.setFontSize(7.5); setText(P.ink);
+      doc.text('ROOM PHOTOS (' + photos.length + ')', MX, cy+3); cy += 5;
+      cy = await drawPhotoGrid(photos, MX, cy, CW, contName);
+    }
+
+    // ── LABOR LOG table: date | workers | hrs | man-hrs | note + total row ────
+    function drawLaborBlock(item, contName) {
+      const entries = item.laborEntries || [];
+      if (!entries.length) return;
+      const rows = [...entries].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+      const colX = [MX, MX+27, MX+45, MX+66, MX+84];
+      const noteW = PW - MX - colX[4] - 2;
+      if (cy + 18 > PH - BOT) { newPage(); cy = contHeader(contName); }
+      doc.setFont(P.font,'bold'); doc.setFontSize(7.5); setText(P.ink);
+      doc.text('LABOR LOG', MX, cy+3); cy += 5;
+      setFill(P.row); doc.rect(MX, cy, CW, 5, 'F');
+      doc.setFontSize(6.5); setText(P.sub);
+      doc.text('DATE', colX[0]+1.5, cy+3.4); doc.text('WORKERS', colX[1], cy+3.4);
+      doc.text('HRS/WORKER', colX[2], cy+3.4); doc.text('MAN-HRS', colX[3], cy+3.4);
+      doc.text('NOTE', colX[4], cy+3.4);
+      cy += 5.8;
+      let totalMH = 0;
+      doc.setFontSize(7);
+      rows.forEach(e => {
+        const noteLines = e.note ? doc.splitTextToSize(String(e.note), noteW).slice(0, 2) : [];
+        const rh = Math.max(4.4, noteLines.length * 3.6 + 1);
+        if (cy + rh + 8 > PH - BOT) { newPage(); cy = contHeader(contName); }
+        doc.setFont(P.font,'normal'); setText(P.text);
+        doc.text(String(e.date || ''), colX[0]+1.5, cy+3);
+        doc.text(String(e.workers ?? ''), colX[1], cy+3);
+        doc.text(String(e.hours ?? ''), colX[2], cy+3);
+        const mh = (e.total != null) ? +e.total : (+e.workers || 0) * (+e.hours || 0);
+        totalMH += (+mh || 0);
+        doc.setFont(P.font,'bold'); doc.text(String(mh), colX[3], cy+3); doc.setFont(P.font,'normal');
+        if (noteLines.length) { setText(P.sub); doc.text(noteLines, colX[4], cy+3); }
+        setStroke(P.border); doc.setLineWidth(0.15); doc.line(MX, cy+rh, PW-MX, cy+rh);
+        cy += rh + 0.8;
+      });
+      doc.setFont(P.font,'bold'); doc.setFontSize(7.5); setText(P.ink);
+      let totalStr = 'Total: ' + totalMH + ' man-hours';
+      if (item.laborHours) totalStr += '   (' + item.laborHours + 'h budgeted — ' + Math.max(0, item.laborHours - totalMH) + 'h remaining)';
+      doc.text(totalStr, MX, cy+3.5);
+      cy += 7;
+    }
+
+    async function drawItemExtras(item, contName) {
+      if (inclTower) drawTowerBlock(item, contName);
+      if (inclTower && inclPhotos) await drawTowerPhotos(item, contName);
+      if (inclLabor) drawLaborBlock(item, contName);
+    }
+
     async function drawItem(item, contName) {
       if (styleKey === 'compact') return drawItemCompact(item, contName);
       if (styleKey === 'photo')   return drawItemPhoto(item, contName);
@@ -956,6 +1276,7 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
         if (inclPhotos && item.photos?.length) cy = await drawPhotoGrid(item.photos, MX, cy, CW, contName);
         cy += 4;
       }
+      await drawItemExtras(item, contName);
 
       if (styleKey === 'grid') { setFill(P.rule); doc.rect(MX, cy, CW, 0.4, 'F'); cy += 5; }
       else { setStroke(P.border); doc.setLineWidth(0.3); doc.line(MX, cy, PW-MX, cy); cy += 5; }
@@ -970,6 +1291,10 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       if (inclNotes && item.notes && item.notes.trim()) {
         doc.setFont(P.font,'normal'); doc.setFontSize(7.5);
         h += doc.splitTextToSize(item.notes.trim(), width).slice(0, 3).length * 3.6 + 1;
+      }
+      if (inclTags && item.tags && item.tags.length) {
+        doc.setFont(P.font,'normal'); doc.setFontSize(6.5);
+        h += doc.splitTextToSize(item.tags.join(', '), width).slice(0, 2).length * 3.2 + 1;
       }
       return h;
     }
@@ -995,9 +1320,12 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       // Condensed status / field-check / dates line
       const bits = [statusLabel(item.status)];
       if (item.statusCode) bits.push(item.statusCode + (item.statusText ? ' — ' + item.statusText : ''));
+      if (inclProgress) { const pp = itemProgressPct(item); if (pp != null) bits.push(pp + '%'); }
       if (item.deliveryDate) bits.push('Del ' + item.deliveryDate);
       if (item.dueDate)      bits.push('Inst ' + item.dueDate);
+      if (item.projectedStartDate) bits.push('Start ' + item.projectedStartDate);
       if (item.punchDate)    bits.push('Punch ' + item.punchDate);
+      if (item.assignedTo)   bits.push(item.assignedTo);
       doc.setFont(P.font,'bold'); doc.setFontSize(7);
       setText(statusColor(item.status));
       const statusTxt = bits.shift();
@@ -1016,6 +1344,14 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
         ty += nl.length * 3.6 + 1;
       }
 
+      // Condition tags as a compact comma-joined line (max 2 lines)
+      if (inclTags && item.tags && item.tags.length) {
+        doc.setFont(P.font,'normal'); doc.setFontSize(6.5); setText(P.sub);
+        const tl = doc.splitTextToSize(item.tags.join(', '), tw - 5).slice(0, 2);
+        doc.text(tl, tx + 5, ty + 2.8);
+        ty += tl.length * 3.2 + 1;
+      }
+
       // Small thumbnail on the right, "+N" marker when more photos exist
       if (hasPhoto) {
         await itemThumb(item.photos[0], MX + CW - thumbW - 3, cy + 3, thumbW, thumbH, null);
@@ -1026,6 +1362,7 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       }
 
       cy += rowH;
+      await drawItemExtras(item, contName);
       setStroke(P.border); doc.setLineWidth(0.2); doc.line(MX, cy, PW-MX, cy);
     }
 
@@ -1056,17 +1393,11 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
         }
         cy += cellH + (hasCap ? 7 : 0) + 6;
       }
+      await drawItemExtras(item, contName);
     }
 
-    // ── DISPATCH: cover ───────────────────────────────────────────────────────
-    // The cover can be a blob-storage URL (synced like SI photos) — jsPDF's
-    // addImage cannot fetch remote URLs, so convert it to a data URL first.
-    let coverImg = proj.coverPhoto || null;
-    if (coverImg && /^https?:/.test(coverImg)) coverImg = await compressImage(coverImg, 0.9);
-    if (inclCover) { (styleKey === 'flow' || styleKey === 'photo') ? coverFlow() : coverGrid(); }
-
-    // ── SECTIONS + ITEMS ──────────────────────────────────────────────────────
-    // Honor the All / Complete / Incomplete filter (and never print deleted SIs)
+    // Honor the All / Complete / Incomplete filter (and never print deleted SIs).
+    // Computed BEFORE the cover so the stats strip counts what the pages show.
     const allItems = (proj.items || []).filter(i => !i._deleted).filter(i => {
       if (filterKey === 'complete')   return i.status === 'completed' || i.status === 'punch-ongoing';
       if (filterKey === 'incomplete') return i.status !== 'completed' && i.status !== 'punch-ongoing';
@@ -1076,6 +1407,78 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
     let done = 0;
     const sections = proj.sections || [];
     const sectionIds = new Set(sections.map(s => s.id));
+
+    // ── DISPATCH: cover ───────────────────────────────────────────────────────
+    // The cover can be a blob-storage URL (synced like SI photos) — jsPDF's
+    // addImage cannot fetch remote URLs, so convert it to a data URL first.
+    let coverImg = proj.coverPhoto || null;
+    if (coverImg && /^https?:/.test(coverImg)) coverImg = await compressImage(coverImg, 0.9);
+    if (inclCover) { (styleKey === 'flow' || styleKey === 'photo') ? coverFlow() : coverGrid(); }
+
+    // ── FLOOR PLAN PAGE (image plans; PDF-file plans can't be rasterized here) ─
+    if (inclFloorPlan && proj.floorPlan && proj.floorPlan.imageData && !proj.floorPlan.isPDF) {
+      try {
+        window.updatePDFProgress('Rendering floor plan…', 8);
+        const pins = [...(proj.floorPlan.pins || [])].sort((a, b) =>
+          String(a.siNum || '').localeCompare(String(b.siNum || ''), undefined, { numeric: true }));
+        const fp = await new Promise(res => {
+          const img = new Image();
+          img.onload = () => {
+            const MAXW = 1600; let w = img.width, h = img.height;
+            if (w > MAXW) { h = Math.round(h * MAXW / w); w = MAXW; }
+            const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+            const ctx = cv.getContext('2d');
+            ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h);
+            ctx.drawImage(img, 0, 0, w, h);
+            const r = Math.max(11, Math.round(w * 0.013));
+            pins.forEach((p, i) => {
+              const px = w * (parseFloat(p.xPct) || 0) / 100, py = h * (parseFloat(p.yPct) || 0) / 100;
+              ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2);
+              ctx.fillStyle = P.accent; ctx.fill();
+              ctx.lineWidth = Math.max(2, r * 0.18); ctx.strokeStyle = '#ffffff'; ctx.stroke();
+              ctx.fillStyle = '#ffffff'; ctx.font = 'bold ' + Math.round(r * 1.1) + 'px Helvetica,Arial,sans-serif';
+              ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+              ctx.fillText(String(i + 1), px, py + r * 0.05);
+            });
+            try { res({ data: cv.toDataURL('image/jpeg', 0.85), w, h }); } catch (e) { res(null); }
+          };
+          img.onerror = () => res(null);
+          img.src = proj.floorPlan.imageData;
+        });
+        if (fp) {
+          newPage();
+          setFill(P.ink); doc.rect(0, 0, PW, 18, 'F');
+          doc.setFontSize(10); doc.setFont(P.font, 'bold'); setText('#ffffff');
+          doc.text('FLOOR PLAN', 15, 12);
+          const fy = 24, maxH = pins.length ? 168 : 250;
+          let dw = CW, dh = dw * fp.h / fp.w;
+          if (dh > maxH) { dh = maxH; dw = dh * fp.w / fp.h; }
+          const fx = MX + (CW - dw) / 2;
+          doc.addImage(fp.data, 'JPEG', fx, fy, dw, dh, '', 'FAST');
+          setStroke(P.border); doc.setLineWidth(0.3); doc.rect(fx, fy, dw, dh, 'D');
+          if (pins.length) {
+            let ly = fy + dh + 7;
+            doc.setFont(P.font, 'bold'); doc.setFontSize(7.5); setText(P.ink);
+            doc.text('PIN LEGEND', MX, ly + 3); ly += 6.5;
+            const colW2 = (CW - 8) / 2;
+            let col = 0;
+            doc.setFontSize(7);
+            pins.forEach((p, i) => {
+              if (ly + 5 > PH - BOT) { newPage(); ly = 16; col = 0; }
+              const x = MX + col * (colW2 + 8);
+              setFill(P.accent); doc.circle(x + 2.2, ly + 1.6, 2.2, 'F');
+              doc.setFont(P.font, 'bold'); setText('#ffffff'); doc.setFontSize(5.5);
+              doc.text(String(i + 1), x + 2.2, ly + 2.4, { align: 'center' });
+              doc.setFontSize(7); doc.setFont(P.font, 'normal'); setText(P.text);
+              const label = siLabel(p.siNum) + (p.siTitle ? '  ' + p.siTitle : '');
+              doc.text(doc.splitTextToSize(label, colW2 - 8)[0] || '', x + 6.5, ly + 3);
+              if (col === 1) ly += 5.5;
+              col = 1 - col;
+            });
+          }
+        }
+      } catch (e) { console.warn('[PDF] Floor plan page failed:', e && e.message); }
+    }
 
     for (const sec of sections) {
       const secItems = allItems.filter(i => i.sectionId === sec.id);
