@@ -3513,7 +3513,7 @@ let store = JSON.parse(JSON.stringify(SEED));
 
 // Keep in lockstep with CACHE_VERSION in sw.js — shown in the Admin
 // Console header so a stale cached client is diagnosable at a glance.
-const APP_VERSION = '8.47';
+const APP_VERSION = '8.48';
 
 let _currentUser = null; // { userId, userDetails, userRoles }
 
@@ -11681,24 +11681,137 @@ window.toggleCheck = function(id) {
   el.textContent = on ? '✓' : '';
 };
 
-// ── EXPORT CSV ────────────────────────
+// ── EXPORT CSV — PM status report ─────────────────────────────────────────────
+// One workbook-style CSV: project header + summary KPIs, then a Scope Items
+// table (completion %, rooms, man-hours, dates), then Tower Rooms and Labor
+// Log detail blocks. Opens clean in Excel (BOM + CRLF), numbers stay numeric
+// so a PM can sort, filter, and average.
 function exportCSV(pid) {
   const proj=getProject(pid); if(!proj) return;
+  const safe = v => '"' + String((v===undefined||v===null)?'':v).replace(/"/g,'""') + '"';
+  const row  = arr => arr.map(safe).join(',');
   const rows = [];
-  // Header
-  rows.push(['item_id','si_number','title','status','assigned_to','due_date','tags','notes'].join(','));
-  activeItems(proj).forEach(it => {
-    const safe = v => '"' + String((v===undefined||v===null)?'':v).replace(/"/g,'""') + '"';
-    const tags = (it.tags||[]).join(';');
-    rows.push([
-      safe(it.id), safe(it.num), safe(it.title), safe(it.status), safe(it.assignedTo), safe(it.dueDate), safe(tags), safe(it.notes)
-    ].join(','));
+  const items = activeItems(proj);
+  const secName = id => (proj.sections||[]).find(s=>s.id===id)?.name || 'Other';
+
+  // Effective completion %: tracked progress wins; a completed SI is 100 by
+  // definition; blank when nothing is tracked (so Excel averages stay honest).
+  const effPct = it => {
+    const p = _siEffProgress(it);
+    if (p != null) return p;
+    return it.status === 'completed' ? 100 : '';
+  };
+  const twRooms  = it => (it.towerWork && it.towerWork.enabled && it.towerWork.rooms) || [];
+  const mhLogged = it => (it.laborEntries||[]).reduce((s,e)=>s+(e.total!=null?+e.total:(+e.workers||0)*(+e.hours||0)),0);
+
+  // ── Project header ──
+  rows.push(row(['PROJECT STATUS REPORT']));
+  rows.push(row(['Project', proj.name||'']));
+  if (proj.projectNumber) rows.push(row(['Project #', proj.projectNumber]));
+  if (proj.projectType)   rows.push(row(['Type', proj.projectType]));
+  if (proj.client)        rows.push(row(['Client', proj.client]));
+  if (proj.company)       rows.push(row(['Company', proj.company]));
+  if (proj.auditor)       rows.push(row(['Auditor', proj.auditor]));
+  rows.push(row(['Audit Date', proj.date||'']));
+  rows.push(row(['Generated', new Date().toLocaleString()]));
+  rows.push('');
+
+  // ── Summary KPIs ──
+  const byStatus = s => items.filter(i=>i.status===s).length;
+  const allRooms = items.flatMap(twRooms);
+  const roomsDone = allRooms.filter(r=>r.status==='completed').length;
+  const totalMH = items.reduce((s,it)=>s+mhLogged(it),0);
+  const totalBudget = items.reduce((s,it)=>s+(+it.laborHours||0),0);
+  const tracked = items.map(effPct).filter(v=>v!=='');
+  rows.push(row(['SUMMARY']));
+  rows.push(row(['Total Scope Items', items.length]));
+  rows.push(row(['Completed', byStatus('completed')]));
+  rows.push(row(['Punch Ongoing', byStatus('punch-ongoing')]));
+  rows.push(row(['In Progress', byStatus('in-progress')]));
+  rows.push(row(['Not Ready', byStatus('not-ready')]));
+  rows.push(row(['On Hold', byStatus('on-hold')]));
+  rows.push(row(['Pending', byStatus('pending')]));
+  rows.push(row(['Items Complete %', items.length ? Math.round(byStatus('completed')/items.length*100) : 0]));
+  if (tracked.length) rows.push(row(['Avg Item Completion %', Math.round(tracked.reduce((a,b)=>a+b,0)/tracked.length)]));
+  if (allRooms.length) {
+    rows.push(row(['Tower Rooms Done', roomsDone]));
+    rows.push(row(['Tower Rooms Total', allRooms.length]));
+    rows.push(row(['Tower Rooms %', Math.round(roomsDone/allRooms.length*100)]));
+  }
+  if (totalMH || totalBudget) {
+    rows.push(row(['Man-Hours Logged', totalMH]));
+    if (totalBudget) {
+      rows.push(row(['Hours Budgeted', totalBudget]));
+      rows.push(row(['Hours Remaining', Math.max(0, totalBudget-totalMH)]));
+    }
+  }
+  rows.push('');
+
+  // ── Scope items table (grouped in section order, like the PDF) ──
+  rows.push(row(['SCOPE ITEMS']));
+  rows.push(row(['Section','SI #','Title','Status','Completion %','Field Check','Field Check Notes',
+                 'Rooms Done','Rooms Total','Rooms %','Man-Hours Logged','Hours Budgeted','Hours Remaining',
+                 'Assigned To','Trade','Truck','Projected Start','Delivery Date','Install Due','Punch Date',
+                 'Photos','Attachments','Condition Tags','Field Notes']));
+  const secIds = new Set((proj.sections||[]).map(s=>s.id));
+  const ordered = [
+    ...(proj.sections||[]).flatMap(sec => items.filter(i=>i.sectionId===sec.id)),
+    ...items.filter(i=>!secIds.has(i.sectionId)),
+  ];
+  ordered.forEach(it => {
+    const rms = twRooms(it);
+    const done = rms.filter(r=>r.status==='completed').length;
+    const mh = mhLogged(it);
+    const roomPhotoCount = rms.reduce((s,r)=>s+((r.photos||[]).length),0);
+    rows.push(row([
+      secName(it.sectionId), it.num, it.title, (it.status||'pending').replace(/-/g,' '),
+      effPct(it), it.statusCode||'', it.statusText||'',
+      rms.length?done:'', rms.length||'', rms.length?Math.round(done/rms.length*100):'',
+      mh||'', it.laborHours||'', it.laborHours?Math.max(0,it.laborHours-mh):'',
+      it.assignedTo||'', it.trade||'', it.delivery?.truck||'',
+      it.projectedStartDate||'', it.deliveryDate||'', it.dueDate||'', it.punchDate||'',
+      (it.photos||[]).length + roomPhotoCount, (it.attachments||[]).length,
+      (it.tags||[]).join('; '), it.notes||''
+    ]));
   });
-  const csv = rows.join('\r\n');
+
+  // ── Tower rooms detail ──
+  const twItems = ordered.filter(it=>twRooms(it).length);
+  if (twItems.length) {
+    rows.push('');
+    rows.push(row(['TOWER ROOMS DETAIL']));
+    rows.push(row(['SI #','SI Title','Room','Type','Room Status','Photos']));
+    twItems.forEach(it => {
+      [...twRooms(it)].sort((a,b)=>{
+        const na=parseInt(a.number)||0, nb=parseInt(b.number)||0;
+        return na!==nb?na-nb:String(a.number).localeCompare(String(b.number));
+      }).forEach(r => rows.push(row([
+        it.num, it.title, r.number, r.type||'', (r.status||'pending').replace(/-/g,' '), (r.photos||[]).length
+      ])));
+    });
+  }
+
+  // ── Labor log detail ──
+  const lbItems = ordered.filter(it=>(it.laborEntries||[]).length);
+  if (lbItems.length) {
+    rows.push('');
+    rows.push(row(['LABOR LOG DETAIL']));
+    rows.push(row(['SI #','SI Title','Date','Workers','Hrs/Worker','Man-Hours','Note']));
+    lbItems.forEach(it => {
+      [...it.laborEntries].sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')))
+        .forEach(e => rows.push(row([
+          it.num, it.title, e.date||'', e.workers??'', e.hours??'',
+          e.total!=null?e.total:(+e.workers||0)*(+e.hours||0), e.note||''
+        ])));
+    });
+  }
+
+  // BOM so Excel reads UTF-8 (em-dashes, accented names) correctly
+  const csv = String.fromCharCode(0xFEFF) + rows.join('\r\n');
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = proj.name.replace(/[^a-z0-9]/gi,'_') + '_audit.csv';
+  a.download = proj.name.replace(/[^a-z0-9]/gi,'_') + '_status_report.csv';
   a.click(); closeModal(); showToast('✓ CSV Downloaded','green');
 }
 
