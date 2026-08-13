@@ -1602,6 +1602,14 @@ body.theme-dark .week-cell.labor-row { background:var(--accent); color:#000; }
 .tw-room-status-lbl { font-family:var(--mono); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; white-space:nowrap; }
 .tw-room-del { font-size:10px; color:var(--text3); cursor:pointer; padding:2px 6px; border-radius:4px; border:none; background:transparent; flex-shrink:0; }
 .tw-room-del:hover { background:var(--red-dim); color:var(--red); }
+.tw-room-cam {
+  display:flex; align-items:center; gap:3px; flex-shrink:0;
+  font-size:11px; color:var(--text3); cursor:pointer;
+  padding:2px 7px; border-radius:4px; border:none; background:transparent;
+}
+.tw-room-cam:hover { background:rgba(96,165,250,0.12); color:#60a5fa; }
+.tw-room-cam.has-photos { color:#60a5fa; }
+.tw-cam-count { font-family:var(--mono); font-size:10px; font-weight:700; }
 .tw-add-section { border-top:1px solid var(--border); padding-top:10px; display:flex; flex-direction:column; gap:7px; }
 .tw-input-row { display:flex; gap:6px; align-items:center; }
 .tw-input {
@@ -3505,7 +3513,7 @@ let store = JSON.parse(JSON.stringify(SEED));
 
 // Keep in lockstep with CACHE_VERSION in sw.js — shown in the Admin
 // Console header so a stale cached client is diagnosable at a glance.
-const APP_VERSION = '8.45';
+const APP_VERSION = '8.46';
 
 let _currentUser = null; // { userId, userDetails, userRoles }
 
@@ -3835,7 +3843,18 @@ function _buildProjectPayload(proj) {
       const cloudAttachments = (item.attachments || [])
         .map(a => ({ id: a.id, name: a.name, type: a.type, ext: a.ext,
                      icon: a.icon, size: a.size, addedAt: a.addedAt, addedBy: a.addedBy }));
-      return Object.assign({}, item, { photos: cloudPhotos, attachments: cloudAttachments });
+      const cleanItem = Object.assign({}, item, { photos: cloudPhotos, attachments: cloudAttachments });
+      // Tower room photos: same rule as SI photos — only uploaded URLs go to
+      // Cosmos; pending local Blobs stay on-device until _flushPendingPhotos.
+      if (item.towerWork && item.towerWork.rooms) {
+        cleanItem.towerWork = Object.assign({}, item.towerWork, {
+          rooms: item.towerWork.rooms.map(r => (r.photos && r.photos.length)
+            ? Object.assign({}, r, { photos: r.photos.filter(p => p.url)
+                .map(p => ({ url: p.url, caption: p.caption || '', takenAt: p.takenAt || '' })) })
+            : r)
+        });
+      }
+      return cleanItem;
     })
   });
   if (cleanFloorPlan !== undefined) out.floorPlan = cleanFloorPlan;
@@ -3907,6 +3926,14 @@ async function _apiSaveProject(proj) {
   });
   if (!res.ok) throw new Error(`saveProject HTTP ${res.status} (${proj.id})`);
   return res.json();
+}
+
+/** Every Azure URL an item references — SI photos + tower-room photos. */
+function _itemPhotoUrls(item) {
+  const urls = (item.photos || []).map(p => p.url);
+  ((item.towerWork && item.towerWork.rooms) || []).forEach(r =>
+    (r.photos || []).forEach(p => urls.push(p.url)));
+  return urls;
 }
 
 /** Best-effort server-side cleanup of Azure photo blobs (fire and forget). */
@@ -4146,11 +4173,17 @@ function _mergeProjectIntoLocal(cloudProj) {
 
   // Snapshot local photos before merge
   const localPhotos = {};
+  const localTwPhotos = {}; // itemId → { roomId → photos[] } (tower work)
   const localProj = store.projects.find(p => p.id === localPid);
 
   if (localProj) {
     (localProj.items || []).forEach(i => {
       if (i.photos && i.photos.length) localPhotos[i.id] = i.photos;
+      ((i.towerWork && i.towerWork.rooms) || []).forEach(r => {
+        if (r.photos && r.photos.length) {
+          (localTwPhotos[i.id] = localTwPhotos[i.id] || {})[r.id] = r.photos;
+        }
+      });
     });
   }
 
@@ -4182,6 +4215,23 @@ function _mergeProjectIntoLocal(cloudProj) {
     out.photos = [...keptLocal, ...freshCloud];
     if (Object.keys(tomb).length) out.photoTombstones = tomb;
     else delete out.photoTombstones;
+    // Tower room photos follow the exact same rules, sharing the item-level
+    // tombstone map (URLs are unique, so one map serves both photo lists).
+    const localRooms = localTwPhotos[item.id] || {};
+    if (out.towerWork && out.towerWork.rooms) {
+      out.towerWork = Object.assign({}, out.towerWork, {
+        rooms: out.towerWork.rooms.map(r => {
+          const localRP = localRooms[r.id] || [];
+          const cloudRP = (r.photos || []).filter(p => p.url && !tomb[p.url]);
+          if (!localRP.length && !cloudRP.length && !(r.photos && r.photos.length)) return r;
+          const cloudSet = new Set(cloudRP.map(p => p.url));
+          const localSet = new Set(localRP.map(p => p.url).filter(Boolean));
+          const kept = localRP.filter(p =>
+            !(p.url && tomb[p.url]) && (hasLocalData(p) || (p.url && cloudSet.has(p.url))));
+          return Object.assign({}, r, { photos: [...kept, ...cloudRP.filter(p => !localSet.has(p.url))] });
+        })
+      });
+    }
     return out;
   }
 
@@ -4211,6 +4261,7 @@ function _mergeProjectIntoLocal(cloudProj) {
       const merged = Object.assign({}, li, ci);
       const rp = restorePhotos(ci, li);
       merged.photos = rp.photos;
+      if (rp.towerWork) merged.towerWork = rp.towerWork;
       if (rp.photoTombstones) merged.photoTombstones = rp.photoTombstones;
       else delete merged.photoTombstones;
       localItemMap.set(ci.id, merged);
@@ -4263,34 +4314,40 @@ async function _flushPendingPhotos(proj) {
     }
   }
 
-  for (const item of proj.items || []) {
-    for (const p of item.photos || []) {
+  // Upload one pending photo entry (SI or tower-room) and swap data→url
+  async function flushEntry(p, siId) {
+    // Check if the URL is completely missing, OR if it is a temporary local string
+    const isTemporaryUrl = p.url && (p.url.startsWith('data:') || p.url.startsWith('blob:'));
 
-      // Check if the URL is completely missing, OR if it is a temporary local string
-      const isTemporaryUrl = p.url && (p.url.startsWith('data:') || p.url.startsWith('blob:'));
-
-      // Upload if there's no permanent Azure URL, or a markup re-upload is
-      // still pending (_needsUpload — photo.url points at the pre-markup copy)
-      if ((!p.url || isTemporaryUrl || p._needsUpload) && p.data) {
-        try {
-          const newUrl = await _uploadPhotoToAzureBlob(p.data, proj.id, item.id);
-          if (newUrl) {
-            const staleUrl = (p._replaceUrl && p._replaceUrl !== newUrl) ? p._replaceUrl : null;
-            p.url = newUrl; // Overwrite the temporary string with the real Azure link
-            delete p._needsUpload;
-            delete p._replaceUrl;
-            if (staleUrl) {
-              fetch('/api/deleteBlob', {
-                method : 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body   : JSON.stringify({ blobUrl: staleUrl }),
-              }).catch(() => {});
-            }
+    // Upload if there's no permanent Azure URL, or a markup re-upload is
+    // still pending (_needsUpload — photo.url points at the pre-markup copy)
+    if ((!p.url || isTemporaryUrl || p._needsUpload) && p.data) {
+      try {
+        const newUrl = await _uploadPhotoToAzureBlob(p.data, proj.id, siId);
+        if (newUrl) {
+          const staleUrl = (p._replaceUrl && p._replaceUrl !== newUrl) ? p._replaceUrl : null;
+          p.url = newUrl; // Overwrite the temporary string with the real Azure link
+          delete p._needsUpload;
+          delete p._replaceUrl;
+          if (staleUrl) {
+            fetch('/api/deleteBlob', {
+              method : 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body   : JSON.stringify({ blobUrl: staleUrl }),
+            }).catch(() => {});
           }
-        } catch(uploadErr) {
-          console.warn('[Sync] Pending photo upload failed:', uploadErr.message);
         }
+      } catch(uploadErr) {
+        console.warn('[Sync] Pending photo upload failed:', uploadErr.message);
       }
+    }
+  }
+
+  for (const item of proj.items || []) {
+    for (const p of item.photos || []) await flushEntry(p, item.id);
+    // Tower room photos share the SI's blob folder (pid/siId/…)
+    for (const room of (item.towerWork && item.towerWork.rooms) || []) {
+      for (const p of room.photos || []) await flushEntry(p, item.id);
     }
   }
 }
@@ -9177,6 +9234,10 @@ function triggerImport(pid,sid) {
 }
 function handleFileImport(e) {
   const item=getSI(_pt.pid,_pt.sid); if(!item) return;
+  // Tower-room capture (triggerTowerCamera/Import) routes into room.photos
+  const twRoom = _pt.roomId ? ((item.towerWork && item.towerWork.rooms) || []).find(r => r.id === _pt.roomId) : null;
+  if (_pt.roomId && !twRoom) return;
+  if (twRoom && !twRoom.photos) twRoom.photos = [];
   const files=Array.from(e.target.files); let loaded=0;
 
   // Extract EXIF DateTimeOriginal from JPEG binary
@@ -9256,9 +9317,14 @@ function handleFileImport(e) {
             // Save locally first (works offline, instant feedback)
             // Store this raw 'blob' object directly into IndexedDB instead of the Base64 string.
             const photoEntry = {data: blob, caption: '', takenAt};
-            item.photos.push(photoEntry);
-            _logActivity(_pt.pid,{type:'photo',siId:_pt.sid,siNum:item.num,detail:`Photo ${item.photos.length}`,by:_whoAmI()});
-            if(++loaded===files.length){ markAsDirty(_pt.sid); save(); buildSIEditor(_pt.pid,_pt.sid); renderLeft(route()); }
+            const targetList = twRoom ? twRoom.photos : item.photos;
+            targetList.push(photoEntry);
+            _logActivity(_pt.pid,{type:'photo',siId:_pt.sid,siNum:item.num,detail: twRoom?`Room ${twRoom.number} photo ${targetList.length}`:`Photo ${item.photos.length}`,by:_whoAmI()});
+            if(++loaded===files.length){
+              markAsDirty(_pt.sid); save();
+              if (twRoom) { _twpRefresh(); _refreshTowerPanel(_pt.pid,_pt.sid); }
+              else { buildSIEditor(_pt.pid,_pt.sid); renderLeft(route()); }
+            }
 
             // Then upload to Azure Blob Storage in the background
             try {
@@ -9268,7 +9334,7 @@ function handleFileImport(e) {
                 photoEntry.url = blobUrl;
                 markAsDirty(_pt.sid);
                 save();
-                buildSIEditor(_pt.pid, _pt.sid);
+                if (!twRoom) buildSIEditor(_pt.pid, _pt.sid);
               }
             } catch(uploadErr) {
               // Non-fatal — photo is still saved locally as a Blob and
@@ -10088,7 +10154,7 @@ function _recAppUrls() {
   const set = new Set();
   (store.projects || []).forEach(p => {
     if (p.coverPhoto && !p.coverPhoto.startsWith('data:')) set.add(p.coverPhoto);
-    (p.items || []).forEach(it => (it.photos || []).forEach(ph => { if (ph.url) set.add(ph.url); }));
+    (p.items || []).forEach(it => _itemPhotoUrls(it).forEach(u => { if (u) set.add(u); }));
   });
   return set;
 }
@@ -11971,7 +12037,7 @@ window.confirmDeleteSI = function(pid, sid) {
     item._fieldTs._deleted = item._deletedAt;
     item._dirty     = true;             // guard our tombstone against a stale cloud merge
     // Best-effort: the modal says "Photos go with it" — delete its Azure blobs
-    _deleteBlobUrls((item.photos || []).map(p => p.url));
+    _deleteBlobUrls(_itemPhotoUrls(item));
     markProjectDirty(pid);
     closeModal();
     // We were inside this SI's editor — drop back to the project view.
@@ -12005,7 +12071,7 @@ function confirmDeleteProject(pid,fid) {
       _delProj._fieldTs._deleted = _delTs;
       // Best-effort: remove this project's photo blobs from Azure Storage
       // so deleted projects don't leave orphaned blobs behind.
-      _deleteBlobUrls((_delProj.items || []).flatMap(i => (i.photos || []).map(p => p.url)));
+      _deleteBlobUrls((_delProj.items || []).flatMap(_itemPhotoUrls));
     }
     // Register the tombstone so saveIndex removes the ID from the cloud
     // index (projectIds is merged as a union — this is the only way out).
@@ -13025,14 +13091,19 @@ function _buildTowerPanelHTML(pid, sid) {
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   const barColor = pct === 100 ? '#22c55e' : pct >= 50 ? '#60a5fa' : '#fbbf24';
 
-  const roomsHTML = rooms.length ? rooms.map(rm => `
+  const roomsHTML = rooms.length ? rooms.map(rm => {
+    const phCount = (rm.photos || []).length;
+    return `
     <div class="tw-room-row" onclick="cycleTowerRoomStatus('${pid}','${sid}','${rm.id}')">
       <div class="tw-room-dot" style="background:${TW_STATUS_COLOR[rm.status]||TW_STATUS_COLOR.pending}"></div>
       <span class="tw-room-num">${rm.number}</span>
       <span class="tw-room-type">${rm.type || '—'}</span>
       <span class="tw-room-status-lbl" style="color:${TW_STATUS_COLOR[rm.status]||TW_STATUS_COLOR.pending}">${TW_STATUS_LABEL[rm.status]||'Pending'}</span>
+      <button class="tw-room-cam${phCount?' has-photos':''}" title="Room photos"
+        onclick="event.stopPropagation();openTowerRoomPhotos('${pid}','${sid}','${rm.id}')">📷${phCount?`<span class="tw-cam-count">${phCount}</span>`:''}</button>
       <button class="tw-room-del" onclick="event.stopPropagation();deleteTowerRoom('${pid}','${sid}','${rm.id}')">✕</button>
-    </div>`).join('')
+    </div>`;
+  }).join('')
     : `<div style="text-align:center;padding:14px;font-size:11px;color:var(--text3)">No rooms added yet</div>`;
 
   return `
@@ -13164,9 +13235,131 @@ window.cycleTowerRoomStatus = function(pid, sid, roomId) {
 window.deleteTowerRoom = function(pid, sid, roomId) {
   const item = getSI(pid, sid); if (!item) return;
   _twEnsure(item);
+  const room = item.towerWork.rooms.find(r => r.id === roomId);
+  // Room photos go with the room — clean up their Azure blobs and leave
+  // tombstones so the deletion propagates instead of resurrecting on merge.
+  if (room && room.photos && room.photos.length) {
+    item.photoTombstones = item.photoTombstones || {};
+    room.photos.forEach(p => {
+      if (p._blobUrl) URL.revokeObjectURL(p._blobUrl);
+      if (p.url) item.photoTombstones[p.url] = Date.now();
+    });
+    _deleteBlobUrls(room.photos.map(p => p.url));
+  }
   item.towerWork.rooms = item.towerWork.rooms.filter(r => r.id !== roomId);
   markAsDirty(sid); save();
   _refreshTowerPanel(pid, sid);
+};
+
+// ── Tower room photos ────────────────────────────────────────────────────
+// Each room carries its own photos array ({data: Blob, url, takenAt}) with
+// the exact same lifecycle as SI photos: saved locally first, uploaded to
+// Azure Blob Storage in the background, URL synced through Cosmos, and
+// re-flushed by _flushPendingPhotos if the upload fails offline.
+let _twp = null; // open room-photo modal target: { pid, sid, roomId }
+
+function _twGetRoom(pid, sid, roomId) {
+  const item = getSI(pid, sid); if (!item) return {};
+  _twEnsure(item);
+  return { item, room: item.towerWork.rooms.find(r => r.id === roomId) };
+}
+
+window.openTowerRoomPhotos = function(pid, sid, roomId) {
+  const { room } = _twGetRoom(pid, sid, roomId);
+  if (!room) return;
+  _twp = { pid, sid, roomId };
+  makeModal(`📷 Room ${_htmlEsc(room.number)}${room.type ? ' · ' + _htmlEsc(room.type) : ''}`,
+    `<div id="twp-body">${_twpBodyHTML()}</div>`, null, true);
+};
+
+function _twpBodyHTML() {
+  if (!_twp) return '';
+  const { room } = _twGetRoom(_twp.pid, _twp.sid, _twp.roomId);
+  if (!room) return '';
+  const photos = room.photos || [];
+  const grid = photos.length === 0
+    ? `<div class="photo-empty"><div class="photo-empty-icon">📷</div>No photos for this room yet</div>`
+    : `<div class="photo-grid">` + photos.map((p, i) => {
+        const src = getPhotoSrcForDisplay(p);
+        const dateLabel = p.takenAt ? `<div class="photo-date-label">${p.takenAt}</div>` : '';
+        const inner = src
+          ? `<img src="${src}" loading="lazy" />`
+          : `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;font-size:10px;color:var(--text3);text-align:center;gap:4px">
+               <span style="font-size:20px">🚫</span>Photo unavailable<br>Retake needed</div>`;
+        return `
+        <div class="photo-cell">
+          <div class="photo-card" onclick="previewTowerRoomPhoto(${i})">
+            ${inner}
+            <div class="photo-card-overlay">
+              <span class="photo-num">${i+1}</span>
+              <button class="photo-del" onclick="event.stopPropagation();deleteTowerRoomPhoto(${i})">✕</button>
+            </div>
+          </div>
+          ${dateLabel}
+        </div>`;
+      }).join('') + `</div>`;
+  return `
+    <div class="photo-actions">
+      <button class="btn-photo camera" onclick="triggerTowerCamera()">📷 Camera</button>
+      <button class="btn-photo import" onclick="triggerTowerImport()">🖼 Import</button>
+    </div>
+    ${grid}`;
+}
+
+function _twpRefresh() {
+  const el = document.getElementById('twp-body');
+  if (el) el.innerHTML = _twpBodyHTML();
+}
+
+window.triggerTowerCamera = function() {
+  if (!_twp) return;
+  _pt = { pid: _twp.pid, sid: _twp.sid, roomId: _twp.roomId };
+  const inp = document.getElementById('file-input');
+  inp.setAttribute('capture','environment'); inp.click();
+};
+
+window.triggerTowerImport = function() {
+  if (!_twp) return;
+  _pt = { pid: _twp.pid, sid: _twp.sid, roomId: _twp.roomId };
+  const inp = document.getElementById('file-input');
+  inp.removeAttribute('capture'); inp.click();
+};
+
+window.previewTowerRoomPhoto = function(idx) {
+  if (!_twp) return;
+  const { room } = _twGetRoom(_twp.pid, _twp.sid, _twp.roomId);
+  const p = room && room.photos && room.photos[idx]; if (!p) return;
+  const src = getPhotoSrcForDisplay(p);
+  const ov = document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;z-index:999;background:rgba(0,0,0,0.93);display:flex;align-items:center;justify-content:center;cursor:pointer;';
+  ov.innerHTML = src
+    ? `<img src="${src}" style="max-width:92%;max-height:92%;border-radius:10px;object-fit:contain;" />`
+    : `<div style="color:#8b95a8;text-align:center;font-size:14px"><div style="font-size:40px;margin-bottom:10px">🚫</div>This photo's image data was lost before it could upload.<br>It needs to be retaken.</div>`;
+  ov.onclick = () => document.body.removeChild(ov);
+  document.body.appendChild(ov);
+};
+
+window.deleteTowerRoomPhoto = function(idx) {
+  if (!_twp) return;
+  const { item, room } = _twGetRoom(_twp.pid, _twp.sid, _twp.roomId);
+  if (!item || !room || !room.photos) return;
+  const [removed] = room.photos.splice(idx, 1);
+  markAsDirty(_twp.sid); save();
+  if (removed && removed._blobUrl) URL.revokeObjectURL(removed._blobUrl);
+  // Tombstone + server-side delete, same as SI photos — without the
+  // tombstone the cloud copy resurrects the URL on the next merge.
+  if (removed && removed.url) {
+    item.photoTombstones = item.photoTombstones || {};
+    item.photoTombstones[removed.url] = Date.now();
+    markAsDirty(_twp.sid);
+    fetch('/api/deleteBlob', {
+      method : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body   : JSON.stringify({ blobUrl: removed.url }),
+    }).catch(e => console.warn('[TowerPhoto] Blob delete failed (non-fatal):', e.message));
+  }
+  _twpRefresh();
+  _refreshTowerPanel(_twp.pid, _twp.sid);
 };
 // ══════════════════════════════════════════
 // MANPOWER TRACKING  v1.0
@@ -15575,7 +15768,7 @@ function _innergyDriftDelete(i) {
   item._fieldTs   = item._fieldTs || {};
   item._fieldTs._deleted = item._deletedAt;
   item._dirty     = true;
-  _deleteBlobUrls((item.photos || []).map(p => p.url));
+  _deleteBlobUrls(_itemPhotoUrls(item));
   markProjectDirty(pid);
   renderLeft(route());
   _innergyDriftRowDone(`idrift-del-${i}`, `✓ Deleted ${_htmlEsc(item.num)}`, 'var(--red)');
