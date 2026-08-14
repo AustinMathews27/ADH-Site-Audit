@@ -3514,7 +3514,7 @@ let store = JSON.parse(JSON.stringify(SEED));
 
 // Keep in lockstep with CACHE_VERSION in sw.js — shown in the Admin
 // Console header so a stale cached client is diagnosable at a glance.
-const APP_VERSION = '8.49';
+const APP_VERSION = '8.50';
 
 let _currentUser = null; // { userId, userDetails, userRoles }
 
@@ -4996,16 +4996,35 @@ const getSI      = (pid,sid) => getProject(pid)?.items.find(i=>i.id===sid);
 const activeItems = proj => (proj && proj.items ? proj.items.filter(i => !i._deleted) : []);
 
 // Helper function to parse mixed photo formats from IndexedDB
+// Object URLs only live as long as the page session that minted them, so they
+// are cached in this session-scoped WeakMap — never on the photo entry itself.
+// The entry is persisted to IndexedDB by save(), and a revived blob: string
+// from a dead session is truthy but points at nothing: every device-taken
+// photo rendered as a blank tile after the next reload (v8.49 field bug).
+const _photoObjUrls = new WeakMap(); // Blob → object URL
+function _photoObjUrl(blob) {
+  let u = _photoObjUrls.get(blob);
+  if (!u) { u = URL.createObjectURL(blob); _photoObjUrls.set(blob, u); }
+  return u;
+}
+// Revoke a photo's object URL (photo delete / blob replace). Also drops the
+// legacy persisted _blobUrl so it can't ride back into IndexedDB.
+function _freePhotoObjUrl(p) {
+  if (!p) return;
+  if (p.data instanceof Blob) {
+    const u = _photoObjUrls.get(p.data);
+    if (u) { try { URL.revokeObjectURL(u); } catch (e) {} _photoObjUrls.delete(p.data); }
+  }
+  if (p._blobUrl) { try { URL.revokeObjectURL(p._blobUrl); } catch (e) {} delete p._blobUrl; }
+}
 function getPhotoSrcForDisplay(p) {
+  // Scrub the legacy on-entry cache — always stale (new sessions never set it)
+  // and it must not survive into the next save().
+  if (p._blobUrl) delete p._blobUrl;
   // 1. Local Blob first — it is always the current version (fresh captures and
   //    markups land here before upload; p.url may still point at the pre-markup
   //    cloud copy until the re-upload succeeds) and it works offline.
-  if (p.data instanceof Blob) {
-    // Convert the raw binary blob into a temporary local URL for the <img> tag
-    // Cached internally as _blobUrl to prevent memory leaks during frequent UI re-renders
-    if (!p._blobUrl) p._blobUrl = URL.createObjectURL(p.data);
-    return p._blobUrl;
-  }
+  if (p.data instanceof Blob) return _photoObjUrl(p.data);
 
   // 2. Remote Azure Blob URL
   if (p.url) return p.url;
@@ -10185,7 +10204,7 @@ async function _annSave() {
     if (!blob) { showToast('Save failed', 'red'); return; }
 
     // Free previous local object URL so it re-derives from the new Blob
-    if (photo._blobUrl) { try { URL.revokeObjectURL(photo._blobUrl); } catch (e) {} delete photo._blobUrl; }
+    _freePhotoObjUrl(photo);
 
     const oldUrl = photo.url || null;
     // Replace with the annotated Blob but KEEP photo.url — the old cloud copy
@@ -10357,9 +10376,7 @@ function deletePhoto(pid,sid,idx) {
   buildSIEditor(pid,sid); renderLeft(route());
 
   // Free memory if it was a local blob (crucial memory cleanup)
-  if (removed && removed._blobUrl) {
-    URL.revokeObjectURL(removed._blobUrl);
-  }
+  _freePhotoObjUrl(removed);
 
   // If the photo was uploaded to Azure Blob, delete it server-side too, and
   // leave a tombstone (url → deletedAt) so the deletion propagates: without
@@ -13820,7 +13837,7 @@ window.deleteTowerRoom = function(pid, sid, roomId) {
   if (room && room.photos && room.photos.length) {
     item.photoTombstones = item.photoTombstones || {};
     room.photos.forEach(p => {
-      if (p._blobUrl) URL.revokeObjectURL(p._blobUrl);
+      _freePhotoObjUrl(p);
       if (p.url) item.photoTombstones[p.url] = Date.now();
     });
     _deleteBlobUrls(room.photos.map(p => p.url));
@@ -13924,7 +13941,7 @@ window.deleteTowerRoomPhoto = function(idx) {
   if (!item || !room || !room.photos) return;
   const [removed] = room.photos.splice(idx, 1);
   markAsDirty(_twp.sid); save();
-  if (removed && removed._blobUrl) URL.revokeObjectURL(removed._blobUrl);
+  _freePhotoObjUrl(removed);
   // Tombstone + server-side delete, same as SI photos — without the
   // tombstone the cloud copy resurrects the URL on the next merge.
   if (removed && removed.url) {
