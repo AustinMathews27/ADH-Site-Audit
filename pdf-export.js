@@ -770,6 +770,7 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const PW = 210, PH = 297, MX = 14, CW = PW - MX * 2, BOT = 14, PAGE_TOP = 20;
+    const HERO_H = 176; // hero cover band height (flow / photo styles)
 
     const hex2rgb = h => [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)];
     const setFill   = c => doc.setFillColor(...hex2rgb(c));
@@ -807,6 +808,28 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
           try { res(canvas.toDataURL('image/jpeg', q)); } catch (e) { res(null); }
         };
         img.onerror = () => res(null); img.src = dataUrl;
+      });
+    }
+
+    // Central cover-crop to a target aspect (w/h). jsPDF's addImage stretches
+    // whatever it's given into the frame — the on-screen preview cover-crops
+    // with CSS, so without this the exported cover comes out distorted.
+    async function coverCropImage(dataUrl, aspect, q) {
+      return new Promise(res => {
+        const img = new Image();
+        if (dataUrl && dataUrl.startsWith('https://')) img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          let sw = img.width, sh = img.height;
+          if (sw / sh > aspect) sw = Math.round(sh * aspect);
+          else sh = Math.round(sw / aspect);
+          const sx = Math.round((img.width - sw) / 2), sy = Math.round((img.height - sh) / 2);
+          const w = Math.min(900, sw), h = Math.round(w / aspect);
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
+          try { res(canvas.toDataURL('image/jpeg', q)); } catch (e) { res(dataUrl); }
+        };
+        img.onerror = () => res(dataUrl); img.src = dataUrl;
       });
     }
 
@@ -869,7 +892,7 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
     // ── COVER: Clean Flow (hero) ──────────────────────────────────────────────
     function coverFlow() {
       newPage();
-      const heroH = 176;
+      const heroH = HERO_H;
       let drew = false;
       if (coverImg) { try { doc.addImage(coverImg,'JPEG',0,0,PW,heroH,'','FAST'); drew = true; } catch(e){} }
       if (!drew) { setFill(P.ink); doc.rect(0,0,PW,heroH,'F'); }
@@ -1413,6 +1436,12 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
     // addImage cannot fetch remote URLs, so convert it to a data URL first.
     let coverImg = proj.coverPhoto || null;
     if (coverImg && /^https?:/.test(coverImg)) coverImg = await compressImage(coverImg, 0.9);
+    // Crop to the frame the style draws it into — the full-width hero band on
+    // flow/photo, the portrait card on grid/compact.
+    if (coverImg && inclCover) {
+      const aspect = (styleKey === 'flow' || styleKey === 'photo') ? PW / HERO_H : 70 / 92;
+      coverImg = await coverCropImage(coverImg, aspect, 0.9);
+    }
     if (inclCover) { (styleKey === 'flow' || styleKey === 'photo') ? coverFlow() : coverGrid(); }
 
     // ── FLOOR PLAN PAGE (image plans; PDF-file plans can't be rasterized here) ─
