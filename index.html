@@ -25,6 +25,7 @@
 <script src="vendor/jspdf.umd.min.js" defer></script> <!-- self-hosted (v4.2.1) so PDF export works offline from first launch -->
 <script src="pdf-export.js" defer></script>
 <script src="vendor/xlsx.full.min.js" defer></script> <!-- self-hosted SheetJS (v0.20.3) - to upgrade, drop a newer xlsx.full.min.js from cdn.sheetjs.com into /vendor -->
+<script src="vendor/pdf-lib.min.js" defer></script> <!-- self-hosted (v1.17.1) — appends crew signature pages onto the original toolbox-talk PDFs, offline-safe -->
 <style>
 :root {
   --bg: #f1f5f9;              /* app background (Daylight) */
@@ -3513,7 +3514,7 @@ let store = JSON.parse(JSON.stringify(SEED));
 
 // Keep in lockstep with CACHE_VERSION in sw.js — shown in the Admin
 // Console header so a stale cached client is diagnosable at a glance.
-const APP_VERSION = '8.48';
+const APP_VERSION = '8.49';
 
 let _currentUser = null; // { userId, userDetails, userRoles }
 
@@ -5967,7 +5968,7 @@ function buildRootView() {
       <div class="folder-card" onclick="navToToolbox()" style="border-color:rgba(239,68,68,0.25)">
         <div class="fc-icon">🦺</div>
         <div class="fc-name">Toolbox Talk</div>
-        <div class="fc-count">Browse &amp; Print</div>
+        <div class="fc-count">Read · Sign · Send</div>
       </div>
       <div class="folder-card" onclick="navToAWI()" style="border-color:rgba(245,158,11,0.3)">
         <div class="fc-icon">📐</div>
@@ -6122,7 +6123,51 @@ function _ensureDocStyles() {
   .tbl-fields input,.tbl-fields textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font:inherit;font-size:13px;outline:none}
   .tbl-fields input:focus,.tbl-fields textarea:focus{border-color:var(--accent)}
   .tbl-full{grid-column:1/-1}
-  .tbl-open{display:inline-block;padding:9px 14px;background:var(--accent);color:#fff;border-radius:8px;font-size:12.5px;font-weight:600;text-decoration:none}`;
+  .tbl-open{display:inline-block;padding:9px 14px;background:var(--accent);color:#fff;border-radius:8px;font-size:12.5px;font-weight:600;text-decoration:none}
+  .tbl-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .tbl-sign-btn{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;background:var(--green);color:#fff;border:none;border-radius:8px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+  .tb-sign{display:inline-flex;align-items:center;gap:5px;padding:7px 11px;background:var(--green-dim);color:var(--green);border:1px solid rgba(22,163,74,0.25);border-radius:8px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;flex:0 0 auto;white-space:nowrap}
+  .tb-sign:active{transform:scale(0.96)}
+  .tbsign-ov{position:fixed;inset:0;z-index:700;background:var(--bg);display:flex;flex-direction:column}
+  .tbsign-head{display:flex;align-items:center;gap:11px;padding:calc(env(safe-area-inset-top, 0px) + 12px) 16px 12px;border-bottom:1px solid var(--border);background:var(--surface);flex:0 0 auto}
+  .tbsign-head .tb-wk{font-size:12px}
+  .tbsign-ttl{flex:1;min-width:0;font-size:14.5px;font-weight:600;line-height:1.25}
+  .tbsign-x{width:34px;height:34px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);font-size:15px;display:grid;place-items:center;cursor:pointer;flex:0 0 auto}
+  .tbsign-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 16px 24px}
+  .tbsign-inner{max-width:640px;margin:0 auto}
+  .tbsign-read{display:flex;align-items:center;gap:12px;width:100%;padding:13px 15px;background:var(--accent-dim);border:1px solid rgba(37,99,235,0.3);border-radius:11px;color:var(--accent);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;text-align:left;margin-bottom:14px}
+  .tbsign-read small{display:block;font-weight:400;font-size:11.5px;color:var(--text3);margin-top:2px}
+  .tbsign-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px}
+  .tbsign-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .tbsign-fields label{font-size:10px;color:var(--text3);font-weight:600;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:.4px}
+  .tbsign-fields input{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font:inherit;font-size:13.5px;outline:none}
+  .tbsign-fields input:focus{border-color:var(--accent)}
+  .tbsign-fields .ro{background:var(--surface2);color:var(--text2)}
+  .tbsign-sec{font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text2);margin:4px 2px 8px}
+  .tbsign-row{display:flex;align-items:center;gap:11px;padding:9px 4px;border-top:1px solid var(--border)}
+  .tbsign-row:first-child{border-top:none}
+  .tbsign-n{font-family:var(--mono);font-size:11px;color:var(--text3);flex:0 0 18px;text-align:right}
+  .tbsign-name{flex:1;min-width:0;font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tbsign-img{height:36px;max-width:130px;object-fit:contain;background:#fff;border:1px solid var(--border);border-radius:6px;flex:0 0 auto}
+  .tbsign-del{width:28px;height:28px;border-radius:7px;border:1px solid var(--border);background:var(--surface2);color:var(--text3);font-size:12px;display:grid;place-items:center;cursor:pointer;flex:0 0 auto}
+  .tbsign-add{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:12px;background:var(--green-dim);border:1.5px dashed rgba(22,163,74,0.45);border-radius:10px;color:var(--green);font:inherit;font-size:13.5px;font-weight:700;cursor:pointer;margin-top:10px}
+  .tbsign-foot{flex:0 0 auto;display:flex;gap:10px;padding:12px 16px calc(env(safe-area-inset-bottom, 0px) + 12px);border-top:1px solid var(--border);background:var(--surface)}
+  .tbsign-foot .max{max-width:640px;margin:0 auto;display:flex;gap:10px;width:100%}
+  .tbsign-clear{flex:0 0 auto;padding:13px 15px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text2);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+  .tbsign-send{flex:1;padding:13px;background:var(--green);border:none;border-radius:10px;color:#fff;font:inherit;font-size:14px;font-weight:700;cursor:pointer}
+  .tbsign-send:disabled{opacity:0.45;cursor:default}
+  .tbpad-ov{position:fixed;inset:0;z-index:710;background:rgba(0,0,0,0.55);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:16px}
+  .tbpad{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;width:100%;max-width:560px}
+  .tbpad-ttl{font-size:14px;font-weight:700;margin-bottom:10px}
+  .tbpad input{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:var(--bg);color:var(--text);font:inherit;font-size:14px;outline:none;margin-bottom:10px}
+  .tbpad input:focus{border-color:var(--accent)}
+  .tbpad-cv{width:100%;height:170px;background:#fff;border:1.5px dashed var(--border2);border-radius:10px;touch-action:none;display:block;cursor:crosshair}
+  .tbpad-hint{font-size:11px;color:var(--text3);margin:6px 2px 12px}
+  .tbpad-btns{display:flex;gap:9px}
+  .tbpad-btns button{flex:1;padding:12px;border-radius:9px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;border:1px solid var(--border)}
+  .tbpad-clear{background:var(--surface2);color:var(--text2)}
+  .tbpad-cancel{background:var(--surface2);color:var(--text2)}
+  .tbpad-save{background:var(--green);color:#fff;border-color:var(--green)!important}`;
   document.head.appendChild(st);
 }
 
@@ -6132,12 +6177,12 @@ function buildToolboxView() {
   _ensureDocStyles();
   const el = document.getElementById('v-toolbox'); if (!el) return;
   el.innerHTML = `<div class="grid-wrap doc-wrap"><div class="env-header-title">🦺 Toolbox Talks</div><div class="doc-sub">Loading…</div></div>`;
-  loadDocManifest().then(m => {
+  Promise.all([loadDocManifest(), _tbSignLoad()]).then(([m]) => {
     if (route().view !== 'toolbox') return;
     const talks = m.toolboxTalks || [];
     el.innerHTML = `<div class="grid-wrap doc-wrap">
       <div class="env-header-title">🦺 Toolbox Talks</div>
-      <div class="doc-sub">Open or print any weekly safety talk plus its 30-slot crew sign-in sheet. To record a talk for a specific job, open that project and use the <b>Toolbox Talk Log</b>.</div>
+      <div class="doc-sub">Tap a talk to read it, then hit <b>✍ Sign</b> to collect crew signatures right on this device and send the signed PDF. To log a talk against a specific job, open that project and use the <b>Toolbox Talk Log</b>.</div>
       <input class="doc-search" placeholder="Search ${talks.length} weeks…" oninput="_tbFilter(this.value)" value="${_esc(_tbSearch)}">
       <div id="tb-list">${_tbRows(talks, _tbSearch)}</div>
     </div>`;
@@ -6146,12 +6191,15 @@ function buildToolboxView() {
 function _tbRows(talks, q) {
   q = (q || '').toLowerCase();
   const f = talks.filter(t => !q || t.title.toLowerCase().includes(q) || ('week ' + t.week).includes(q) || String(t.week) === q);
-  return f.map(t => `<div class="doc-row" onclick="window.open('${_docHref(t.file)}','_blank','noopener')">
+  return f.map(t => {
+    const n = _tbSigCount('', t.week);
+    return `<div class="doc-row" onclick="window.open('${_docHref(t.file)}','_blank','noopener')">
     <span class="tb-wk">WK ${String(t.week).padStart(2,'0')}</span>
     <span class="tb-ttl">${_esc(t.title)}</span>
-    <span class="doc-open">Open ↗</span>
+    <button class="tb-sign" onclick="event.stopPropagation();tbSignOpen(${t.week},'')" title="Collect crew signatures on this device">✍ ${n ? n + ' signed' : 'Sign'}</button>
     ${_docDlBtn(t.file)}
-  </div>`).join('') || emptyMsg('No matches');
+  </div>`;
+  }).join('') || emptyMsg('No matches');
 }
 function _tbFilter(q) {
   _tbSearch = q;
@@ -6223,7 +6271,7 @@ function buildTbLogView(pid) {
   const el = document.getElementById('v-tblog'); if (!el) return;
   const proj = getProject(pid);
   el.innerHTML = `<div class="grid-wrap doc-wrap"><div class="env-header-title">🦺 Toolbox Talk Log</div><div class="doc-sub">Loading…</div></div>`;
-  loadDocManifest().then(m => {
+  Promise.all([loadDocManifest(), _tbSignLoad()]).then(([m]) => {
     const r = route();
     if (r.view !== 'tblog' || r.projectId !== pid) return;
     const talks = m.toolboxTalks || [];
@@ -6233,10 +6281,12 @@ function buildTbLogView(pid) {
     const rows = talks.map(t => {
       const s = log[t.week] || {};
       const isOpen = _tbLogOpen === t.week;
+      const sigN = _tbSigCount(pid, t.week);
       const meta = [];
       if (s.date) meta.push('📅 ' + s.date);
       if (s.supervisor) meta.push('👷 ' + _esc(s.supervisor));
       if (s.attendees) meta.push('👥 ' + _esc(s.attendees));
+      if (sigN) meta.push('✍ ' + sigN + ' signed on this device');
       return `<div class="tbl-card ${isOpen ? 'open' : ''}">
         <div class="tbl-row ${s.done ? 'done' : ''}" onclick="tbLogToggleOpen('${pid}',${t.week})">
           <div class="tbl-box" onclick="event.stopPropagation();tbLogToggleDone('${pid}',${t.week})"></div>
@@ -6254,13 +6304,16 @@ function buildTbLogView(pid) {
             <div><label>Attendees</label><input type="number" min="0" value="${_esc(s.attendees||'')}" placeholder="#" onchange="tbLogField('${pid}',${t.week},'attendees',this.value)"></div>
             <div class="tbl-full"><label>Notes</label><textarea rows="2" placeholder="Optional" onchange="tbLogField('${pid}',${t.week},'notes',this.value)">${_esc(s.notes||'')}</textarea></div>
           </div>
-          <a class="tbl-open" href="${_docHref(t.file)}" target="_blank" rel="noopener">Open talk + sign-in ↗</a>
+          <div class="tbl-actions">
+            <a class="tbl-open" href="${_docHref(t.file)}" target="_blank" rel="noopener">📖 Read talk ↗</a>
+            <button class="tbl-sign-btn" onclick="tbSignOpen(${t.week},'${pid}')">✍ Sign &amp; Send PDF${sigN ? ' (' + sigN + ')' : ''}</button>
+          </div>
         </div>
       </div>`;
     }).join('');
     el.innerHTML = `<div class="grid-wrap doc-wrap">
       <div class="env-header-title">🦺 Toolbox Talk Log</div>
-      <div class="doc-sub">Log each weekly safety talk for <b>${_esc(proj ? proj.name : '')}</b>. Saved with this project and synced to the cloud.</div>
+      <div class="doc-sub">Log each weekly safety talk for <b>${_esc(proj ? proj.name : '')}</b>. The log below is saved with this project and synced to the cloud. Crew signatures collected via <b>✍ Sign &amp; Send</b> stay on this device only — the emailed PDF is the signed record.</div>
       <div class="tbl-prog">
         <div class="tbl-ring" style="--p:${pct}"><span>${pct}%</span></div>
         <div><div style="font-weight:700;font-size:15px;color:var(--text)">${done} of ${talks.length} conducted</div>
@@ -6297,6 +6350,394 @@ function tbLogField(pid, wk, key, val) {
   p.toolboxTalks[wk] = cur;
   markProjectDirty(pid); save();
   if (reflow) buildTbLogView(pid);
+}
+
+// ── TOOLBOX TALK CREW SIGN-IN (device-local; the sent PDF is the record) ──
+// Signatures deliberately NEVER sync: they live only in this device's
+// IndexedDB (kv key 'tbsign_sessions'), so two supervisors' devices can't
+// merge or overwrite each other's sheets and a signature can always be traced
+// to the device that collected it. Only the plain log fields above
+// (done/date/supervisor/attendee count) sync with the project. One sheet per
+// week per scope (project or global quick-access); Clear starts a fresh one.
+let _tbSignAll = null;   // { 'scope:week': session } — lazy-loaded from IDB
+let _tbSignCur = null;   // { week, scope, talk } while the sign sheet is open
+
+function _tbSignLoad() {
+  if (_tbSignAll) return Promise.resolve(_tbSignAll);
+  return _idbGet('tbsign_sessions')
+    .then(v => { _tbSignAll = v || {}; return _tbSignAll; })
+    .catch(() => { _tbSignAll = {}; return _tbSignAll; });
+}
+function _tbSignPersist() {
+  _idbSet('tbsign_sessions', _tbSignAll)
+    .catch(() => showToast('Could not save signatures on this device', 'red'));
+}
+function _tbSignKey(scope, wk) { return (scope || 'global') + ':' + wk; }
+function _tbSigCount(scope, wk) {
+  const s = _tbSignAll && _tbSignAll[_tbSignKey(scope, wk)];
+  return (s && s.sigs) ? s.sigs.length : 0;
+}
+function _tbSignSession(scope, wk) {
+  const k = _tbSignKey(scope, wk);
+  if (!_tbSignAll[k]) {
+    const proj = scope ? getProject(scope) : null;
+    const me = _whoAmI();
+    _tbSignAll[k] = {
+      week: wk, scope: scope || '',
+      job: proj ? (proj.name || '') : '',
+      supervisor: me === 'You' ? '' : me,
+      date: new Date().toISOString().slice(0, 10),
+      sigs: [], sentAt: 0, updatedAt: Date.now()
+    };
+  }
+  return _tbSignAll[k];
+}
+
+function tbSignOpen(wk, scope) {
+  _ensureDocStyles();
+  Promise.all([loadDocManifest(), _tbSignLoad()]).then(([m]) => {
+    const talk = (m.toolboxTalks || []).find(t => t.week === wk);
+    if (!talk) return showToast('Talk not found');
+    _tbSignCur = { week: wk, scope: scope || '', talk };
+    _tbSignSession(scope, wk);
+    let ov = document.getElementById('tbsign-ov');
+    if (!ov) {
+      ov = document.createElement('div');
+      ov.id = 'tbsign-ov'; ov.className = 'tbsign-ov';
+      document.body.appendChild(ov);
+      ov._esc = e => {
+        if (e.key !== 'Escape') return;
+        if (document.getElementById('tbpad-ov')) tbSignPadCancel(); else tbSignClose();
+      };
+      document.addEventListener('keydown', ov._esc);
+    }
+    _tbSignRender();
+  });
+}
+function tbSignClose() {
+  const ov = document.getElementById('tbsign-ov');
+  if (ov) { if (ov._esc) document.removeEventListener('keydown', ov._esc); ov.remove(); }
+  tbSignPadCancel();
+  _tbSignCur = null;
+  // refresh the view underneath so ✍ counts stay current
+  const r = route();
+  if (r.view === 'toolbox') buildToolboxView();
+  else if (r.view === 'tblog') buildTbLogView(r.projectId);
+}
+function _tbSignRender() {
+  const ov = document.getElementById('tbsign-ov');
+  if (!ov || !_tbSignCur) return;
+  const { talk, scope } = _tbSignCur;
+  const s = _tbSignSession(scope, talk.week);
+  const proj = scope ? getProject(scope) : null;
+  const rows = s.sigs.map((g, i) => `
+    <div class="tbsign-row">
+      <span class="tbsign-n">${i + 1}.</span>
+      <span class="tbsign-name">${_esc(g.n)}</span>
+      <img class="tbsign-img" src="${g.d}" alt="signature">
+      <button class="tbsign-del" onclick="tbSignDelete(${i})" title="Remove">✕</button>
+    </div>`).join('');
+  ov.innerHTML = `
+    <div class="tbsign-head">
+      <span class="tb-wk">WK ${String(talk.week).padStart(2, '0')}</span>
+      <div class="tbsign-ttl">${_esc(talk.title)}</div>
+      <div class="tbsign-x" onclick="tbSignClose()" title="Close">✕</div>
+    </div>
+    <div class="tbsign-body"><div class="tbsign-inner">
+      <button class="tbsign-read" onclick="window.open('${_docHref(talk.file)}','_blank','noopener')">
+        <span style="font-size:20px">📖</span>
+        <span style="flex:1;min-width:0">Read the talk first<small>Opens the Week ${talk.week} PDF — review it with the crew, then sign below.</small></span>
+        <span>↗</span>
+      </button>
+      <div class="tbsign-card">
+        <div class="tbsign-sec">Talk details</div>
+        <div class="tbsign-fields">
+          <div style="grid-column:1/-1"><label>Job / Location</label>
+            ${proj
+              ? `<input class="ro" value="${_esc(proj.name || '')}" readonly>`
+              : `<input value="${_esc(s.job || '')}" placeholder="Job name or location" onchange="tbSignField('job',this.value)">`}
+          </div>
+          <div><label>Supervisor</label><input value="${_esc(s.supervisor || '')}" placeholder="Name" onchange="tbSignField('supervisor',this.value)"></div>
+          <div><label>Date conducted</label><input type="date" value="${_esc(s.date || '')}" onchange="tbSignField('date',this.value)"></div>
+        </div>
+      </div>
+      <div class="tbsign-card">
+        <div class="tbsign-sec">Crew sign-in${s.sigs.length ? ' · ' + s.sigs.length : ''}</div>
+        ${rows || `<div style="padding:12px 4px;font-size:12.5px;color:var(--text3)">No signatures yet — after the talk, pass the device around the crew.</div>`}
+        <button class="tbsign-add" onclick="tbSignPadOpen()">＋ Add signature</button>
+      </div>
+      ${s.sentAt ? `<div style="font-size:11.5px;color:var(--text3);text-align:center;margin-top:2px">Last sent ${new Date(s.sentAt).toLocaleString()}</div>` : ''}
+    </div></div>
+    <div class="tbsign-foot"><div class="max">
+      <button class="tbsign-clear" onclick="tbSignClearSheet()">Clear</button>
+      <button class="tbsign-send" ${s.sigs.length ? '' : 'disabled'} onclick="tbSignSend()">📤 Send signed PDF${s.sigs.length ? ' (' + s.sigs.length + ')' : ''}</button>
+    </div></div>`;
+}
+function tbSignField(key, val) {
+  if (!_tbSignCur) return;
+  const s = _tbSignSession(_tbSignCur.scope, _tbSignCur.talk.week);
+  s[key] = val; s.updatedAt = Date.now();
+  _tbSignPersist();
+}
+function tbSignDelete(i) {
+  if (!_tbSignCur) return;
+  const s = _tbSignSession(_tbSignCur.scope, _tbSignCur.talk.week);
+  const g = s.sigs[i]; if (!g) return;
+  if (!confirm('Remove ' + (g.n || 'this signature') + ' from the sheet?')) return;
+  s.sigs.splice(i, 1); s.updatedAt = Date.now();
+  _tbSignPersist(); _tbSignRender();
+}
+function tbSignClearSheet() {
+  if (!_tbSignCur) return;
+  const s = _tbSignSession(_tbSignCur.scope, _tbSignCur.talk.week);
+  if (!s.sigs.length) return showToast('Sheet is already empty');
+  if (!confirm('Clear all ' + s.sigs.length + ' signatures and start a fresh sheet? PDFs you already sent are unaffected.')) return;
+  s.sigs = []; s.sentAt = 0; s.updatedAt = Date.now();
+  _tbSignPersist(); _tbSignRender();
+}
+
+// ── Signature pad ──
+let _padDrawn = false, _padDown = false;
+function tbSignPadOpen() {
+  if (document.getElementById('tbpad-ov') || !_tbSignCur) return;
+  const ov = document.createElement('div');
+  ov.id = 'tbpad-ov'; ov.className = 'tbpad-ov';
+  ov.onclick = e => { if (e.target === ov) tbSignPadCancel(); };
+  ov.innerHTML = `<div class="tbpad">
+    <div class="tbpad-ttl">✍ Sign in — WK ${String(_tbSignCur.talk.week).padStart(2, '0')}</div>
+    <input id="tbpad-name" placeholder="Print your name" maxlength="60" autocomplete="off">
+    <canvas class="tbpad-cv" id="tbpad-cv"></canvas>
+    <div class="tbpad-hint">Sign above with your finger or stylus. By signing you confirm you attended and understood this safety talk.</div>
+    <div class="tbpad-btns">
+      <button class="tbpad-cancel" onclick="tbSignPadCancel()">Cancel</button>
+      <button class="tbpad-clear" onclick="tbSignPadClear()">Clear</button>
+      <button class="tbpad-save" onclick="tbSignPadSave()">Save</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  const cv = document.getElementById('tbpad-cv');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = cv.clientWidth || 500, h = cv.clientHeight || 170;
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  const cx = cv.getContext('2d');
+  cx.fillStyle = '#ffffff'; cx.fillRect(0, 0, cv.width, cv.height);
+  cx.strokeStyle = '#111827'; cx.lineWidth = 2.4 * dpr; cx.lineCap = 'round'; cx.lineJoin = 'round';
+  _padDrawn = false; _padDown = false;
+  // map pointer coords through the CSS→backing-store scale so strokes stay
+  // accurate even if the pad resizes (e.g. iPad rotation) mid-signature
+  const pos = e => {
+    const r = cv.getBoundingClientRect();
+    return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height];
+  };
+  cv.onpointerdown = e => {
+    e.preventDefault();
+    try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+    _padDown = true;
+    const [x, y] = pos(e);
+    cx.beginPath(); cx.moveTo(x, y); cx.lineTo(x + 0.01, y + 0.01); cx.stroke();
+    _padDrawn = true;
+  };
+  cv.onpointermove = e => {
+    if (!_padDown) return; e.preventDefault();
+    const [x, y] = pos(e); cx.lineTo(x, y); cx.stroke();
+  };
+  cv.onpointerup = cv.onpointercancel = () => { _padDown = false; };
+  const inp = document.getElementById('tbpad-name');
+  if (inp && !('ontouchstart' in window)) setTimeout(() => inp.focus(), 100);
+}
+function tbSignPadClear() {
+  const cv = document.getElementById('tbpad-cv'); if (!cv) return;
+  const cx = cv.getContext('2d');
+  cx.fillStyle = '#ffffff'; cx.fillRect(0, 0, cv.width, cv.height);
+  _padDrawn = false;
+}
+function tbSignPadCancel() {
+  const ov = document.getElementById('tbpad-ov'); if (ov) ov.remove();
+}
+function tbSignPadSave() {
+  const inp = document.getElementById('tbpad-name');
+  const name = (inp ? inp.value : '').trim();
+  if (!name) return showToast('Print your name first');
+  if (!_padDrawn) return showToast('Sign in the box first');
+  const cv = document.getElementById('tbpad-cv'); if (!cv || !_tbSignCur) return;
+  const s = _tbSignSession(_tbSignCur.scope, _tbSignCur.talk.week);
+  s.sigs.push({ n: name, d: cv.toDataURL('image/png'), ts: Date.now() });
+  s.updatedAt = Date.now();
+  _tbSignPersist(); tbSignPadCancel(); _tbSignRender();
+  showToast('✓ ' + name + ' signed', 'green');
+}
+
+// ── Build: original talk PDF + appended sign-in page(s) (pdf-lib) ──
+async function _tbSignPdf(talk, s) {
+  let tries = 0;   // deferred script may still be loading on a fast first tap
+  while (typeof PDFLib === 'undefined' && tries < 20) { await new Promise(r => setTimeout(r, 150)); tries++; }
+  if (typeof PDFLib === 'undefined') throw new Error('PDF library not loaded yet — try again');
+  const res = await fetch(_docHref(talk.file));
+  if (!res.ok) throw new Error(navigator.onLine ? 'Talk PDF unavailable' : 'Talk PDF not cached — open it once while online');
+  const src = await res.arrayBuffer();
+  const pdf = await PDFLib.PDFDocument.load(src, { ignoreEncryption: true });
+  const font = await pdf.embedFont(PDFLib.StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(PDFLib.StandardFonts.HelveticaBold);
+  const { width: PW, height: PH } = pdf.getPage(0).getSize();
+  const rgb = PDFLib.rgb;
+  const INK = rgb(0.075, 0.09, 0.11), SUB = rgb(0.35, 0.4, 0.47), LINE = rgb(0.78, 0.82, 0.86);
+  const M = 46;
+  // Helvetica is WinAnsi-only — swap smart punctuation to ASCII, keep the
+  // Latin-1 range (ó, ñ, é… survive: crew names must print correctly on a
+  // safety record), drop anything WinAnsi can't encode
+  const wa = t => String(t == null ? '' : t).normalize('NFC')
+    .replace(/[‘’]/g, "'").replace(/[“”]/g, '"')
+    .replace(/[–—]/g, '-').replace(/•/g, '-')
+    .replace(/[^\x20-\x7E\xA0-\xFF]/g, '').slice(0, 95);
+  const added = [];
+  let page = null, y = 0;
+  const newPage = first => {
+    page = pdf.addPage([PW, PH]); added.push(page);
+    page.drawRectangle({ x: 0, y: PH - 40, width: PW, height: 40, color: INK });
+    page.drawText('TOOLBOX TALK - CREW SIGN-IN RECORD', { x: M, y: PH - 26, size: 12, font: bold, color: rgb(1, 1, 1) });
+    const wkTxt = 'WK ' + String(talk.week).padStart(2, '0');
+    page.drawText(wkTxt, { x: PW - M - bold.widthOfTextAtSize(wkTxt, 11), y: PH - 26, size: 11, font: bold, color: rgb(1, 1, 1) });
+    y = PH - 66;
+    if (first) {
+      [
+        ['TALK', 'Week ' + talk.week + ' - ' + talk.title],
+        ['JOB / LOCATION', s.job || '-'],
+        ['DATE CONDUCTED', s.date || '-'],
+        ['SUPERVISOR', s.supervisor || '-'],
+        ['SIGNATURES', String(s.sigs.length)],
+        ['RECORDED ON', (_deviceUser ? _deviceUser + "'s device" : 'field device') + ' - ADH Field Audit Tool'],
+      ].forEach(kv => {
+        page.drawText(wa(kv[0]), { x: M, y, size: 7.5, font: bold, color: SUB });
+        page.drawText(wa(kv[1]), { x: M + 108, y, size: 10, font, color: INK });
+        y -= 17;
+      });
+      y -= 4;
+      page.drawLine({ start: { x: M, y }, end: { x: PW - M, y }, thickness: 0.8, color: LINE });
+      y -= 14;
+    }
+  };
+  newPage(true);
+  const ROW = 58, SIGW = 190, SIGH = 42;
+  for (let i = 0; i < s.sigs.length; i++) {
+    if (y - ROW < 40) newPage(false);
+    const g = s.sigs[i];
+    page.drawText((i + 1) + '.', { x: M, y: y - 18, size: 9, font, color: SUB });
+    page.drawText(wa(g.n), { x: M + 18, y: y - 18, size: 11, font: bold, color: INK });
+    if (g.ts) page.drawText('Signed ' + new Date(g.ts).toLocaleString(), { x: M + 18, y: y - 31, size: 7.5, font, color: SUB });
+    const bx = PW - M - SIGW;
+    try {
+      const img = await pdf.embedPng(g.d);
+      const sc = Math.min(SIGW / img.width, SIGH / img.height);
+      const iw = img.width * sc, ih = img.height * sc;
+      page.drawImage(img, { x: bx + (SIGW - iw), y: y - 48, width: iw, height: ih });
+    } catch (e) { /* unreadable signature image — leave the line blank */ }
+    page.drawLine({ start: { x: bx, y: y - 48 }, end: { x: PW - M, y: y - 48 }, thickness: 0.6, color: SUB });
+    page.drawLine({ start: { x: M, y: y - ROW + 3 }, end: { x: PW - M, y: y - ROW + 3 }, thickness: 0.4, color: LINE });
+    y -= ROW;
+  }
+  const stamp = 'Generated by ADH Field Audit Tool - ' + new Date().toLocaleString();
+  added.forEach((pg, idx) => {
+    pg.drawText(wa(stamp), { x: M, y: 22, size: 7, font, color: SUB });
+    const pn = 'Sign-in page ' + (idx + 1) + ' of ' + added.length;
+    pg.drawText(pn, { x: PW - M - font.widthOfTextAtSize(pn, 7), y: 22, size: 7, font, color: SUB });
+  });
+  const slug = t => String(t || '').replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'Job';
+  const filename = 'ToolboxTalk_WK' + String(talk.week).padStart(2, '0') + '_' + slug(s.job) + '_' + (s.date || new Date().toISOString().slice(0, 10)) + '.pdf';
+  const bytes = await pdf.save();
+  return { blob: new Blob([bytes], { type: 'application/pdf' }), filename };
+}
+
+let _tbSignBusy = false;
+async function tbSignSend() {
+  if (!_tbSignCur || _tbSignBusy) return;
+  const { talk, scope } = _tbSignCur;
+  const s = _tbSignSession(scope, talk.week);
+  if (!s.sigs.length) return showToast('No signatures yet');
+  _tbSignBusy = true;
+  const btn = document.querySelector('.tbsign-send');
+  if (btn) { btn.disabled = true; btn.textContent = 'Building PDF…'; }
+  try {
+    const out = await _tbSignPdf(talk, s);
+    _tbSignDeliver(out.blob, out.filename, _tbSignMarkSent);
+  } catch (e) {
+    showToast(e.message || 'Could not build PDF', 'red');
+  } finally {
+    _tbSignBusy = false;
+    _tbSignRender();
+  }
+}
+// Same ready-sheet pattern as the audit PDF export: navigator.share needs a
+// FRESH user gesture, so the share happens from this overlay's buttons.
+function _tbSignDeliver(blob, filename, onSent) {
+  const pdfFile = new File([blob], filename, { type: 'application/pdf' });
+  const canShare = !!(navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] }));
+  const isMobile = /iphone|ipad|ipod|android/i.test(navigator.userAgent);
+  const blobURL = URL.createObjectURL(blob);
+  if (!isMobile && !canShare) {
+    const a = document.createElement('a');
+    a.href = blobURL; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(blobURL), 1500);
+    onSent();
+    showToast('✓ Signed PDF downloaded', 'green');
+    return;
+  }
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:750;background:rgba(0,0,0,0.8);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px;';
+  ov.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:340px;width:100%;text-align:center;">
+    <div style="font-size:36px;margin-bottom:12px">🦺</div>
+    <div style="font-size:15px;font-weight:600;margin-bottom:6px;color:var(--text)">Signed PDF ready</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:18px;line-height:1.6;word-break:break-word">${_esc(filename)}<br>${canShare ? 'Share it by email, AirDrop, or save to Files.' : 'Download or open the PDF.'}</div>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      ${canShare ? `<button id="tbsend-share" style="background:var(--green);color:#fff;border:none;border-radius:10px;padding:13px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;">📤 Share / Send PDF</button>` : ''}
+      <button id="tbsend-dl" style="background:${canShare ? 'var(--surface2)' : 'var(--green)'};color:${canShare ? 'var(--text)' : '#fff'};border:1px solid var(--border);border-radius:10px;padding:12px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;">⬇ Download</button>
+      <button id="tbsend-cancel" style="background:none;color:var(--text2);border:none;padding:8px;font:inherit;font-size:12px;cursor:pointer;">Cancel</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  const cleanup = () => { ov.remove(); URL.revokeObjectURL(blobURL); };
+  const shareBtn = ov.querySelector('#tbsend-share');
+  if (shareBtn) shareBtn.addEventListener('click', async () => {
+    try {
+      await navigator.share({ files: [pdfFile], title: filename });
+      cleanup(); onSent();
+      showToast('✓ Signed PDF sent', 'green');
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;   // sheet dismissed — keep ours open
+      window.open(blobURL, '_blank'); cleanup(); onSent();
+    }
+  });
+  ov.querySelector('#tbsend-dl').addEventListener('click', () => {
+    const a = document.createElement('a');
+    a.href = blobURL; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(cleanup, 500);
+    onSent();
+    showToast('✓ Signed PDF downloaded', 'green');
+  });
+  ov.querySelector('#tbsend-cancel').addEventListener('click', cleanup);
+}
+function _tbSignMarkSent() {
+  if (!_tbSignCur) return;
+  const { talk, scope } = _tbSignCur;
+  const s = _tbSignSession(scope, talk.week);
+  s.sentAt = Date.now();
+  _tbSignPersist();
+  // Project scope: reflect the conducted talk in the synced log — plain
+  // fields only (done/date/supervisor/attendee count); signatures never sync.
+  if (scope) {
+    const p = getProject(scope);
+    if (p) {
+      if (!p.toolboxTalks) p.toolboxTalks = {};
+      const cur = p.toolboxTalks[talk.week] || {};
+      cur.done = true;
+      if (s.date) cur.date = s.date;
+      if (s.supervisor && !cur.supervisor) cur.supervisor = s.supervisor;
+      cur.attendees = String(s.sigs.length);
+      p.toolboxTalks[talk.week] = cur;
+      markProjectDirty(scope); save();
+    }
+  }
+  _tbSignRender();
 }
 
 // AWI STANDARDS VIEW
