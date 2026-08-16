@@ -84,6 +84,11 @@ module.exports = async function (context, req) {
           const existTs = (existing._fieldTs && existing._fieldTs._deleted) || existing._deletedAt || 0;
           const incTs   = (c._fieldTs && c._fieldTs._deleted) || 0;
           if (incTs > existTs) contactMap.set(c.id, c);
+        } else if (existing && !existing._deleted && !c._deleted) {
+          // Per-contact newest-wins via _modified (same as folders) so a
+          // stale device's copy can't overwrite a fresh edit; unstamped
+          // legacy contacts keep the old incoming-wins behavior.
+          if ((c._modified || 0) >= (existing._modified || 0)) contactMap.set(c.id, c);
         } else {
           contactMap.set(c.id, c);
         }

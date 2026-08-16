@@ -121,8 +121,32 @@ function mergeItems(currentItems, incomingItems) {
     }
   });
 
-  // Items only on current side are kept as-is (created by another device)
-  return [...currentMap.values()];
+  // Output follows the INCOMING array's order (drag-reorder on the pushing
+  // device must propagate — Map insertion order would freeze the old cloud
+  // order forever); items only on the current side (created by another
+  // device) are appended after.
+  const out = [];
+  const emitted = new Set();
+  (incomingItems || []).forEach(i => {
+    const m = currentMap.get(i.id);
+    if (m && !emitted.has(i.id)) { out.push(m); emitted.add(i.id); }
+  });
+  currentMap.forEach((v, id) => { if (!emitted.has(id)) out.push(v); });
+  return out;
+}
+
+// Environmental screenshots are stored as base64 on the device only — never
+// let them into Cosmos (a couple of phone screenshots exceed the 2MB doc
+// limit and permanently break the project's sync).
+function stripEnvScreens(env) {
+  if (!env || !Array.isArray(env.screenshots)) return env;
+  return Object.assign({}, env, {
+    screenshots: env.screenshots.map(sc => {
+      const c = Object.assign({}, sc);
+      delete c.data;
+      return c;
+    })
+  });
 }
 
 module.exports = async function (context, req) {
@@ -188,7 +212,9 @@ module.exports = async function (context, req) {
       // (saveIndex) removes the ID from projectIds so it is never fetched
       // on startup again.
       if (incoming._deleted) {
-        if (current && current.ownedBy && incoming.ownedBy && current.ownedBy !== incoming.ownedBy) {
+        // Treat a missing incoming.ownedBy as a mismatch — otherwise omitting
+        // the field bypasses the guard entirely.
+        if (current && current.ownedBy && incoming.ownedBy !== current.ownedBy) {
           context.log.warn(`[saveProject] Delete rejected on ${incoming.id}: owner=${current.ownedBy} requester=${incoming.ownedBy}`);
           context.res.status = 403;
           context.res.body   = { ok: false, error: "Forbidden — you do not own this project." };
@@ -212,7 +238,10 @@ module.exports = async function (context, req) {
           projectId: incoming.id,  // Original app-level ID preserved here
           ownedBy:   incoming.ownedBy || '',  // User identity — never overwritten
           items: mergeItems([], incoming.items || []),
-          coverPhoto: null,        // Never in Cosmos — too large
+          // Cover photos sync as Blob-storage URLs; only base64 stays out of Cosmos
+          coverPhoto: (incoming.coverPhoto && !String(incoming.coverPhoto).startsWith('data:'))
+            ? incoming.coverPhoto : null,
+          envData: stripEnvScreens(incoming.envData),
           floorPlan: incoming.floorPlan
             ? Object.assign({}, incoming.floorPlan, { imageData: null })
             : undefined,
@@ -226,7 +255,8 @@ module.exports = async function (context, req) {
 
         // Safety guard: if the project already has an owner and the incoming
         // request is from a different user, reject the write.
-        if (current.ownedBy && incoming.ownedBy && current.ownedBy !== incoming.ownedBy) {
+        // Missing incoming.ownedBy counts as a mismatch — see delete guard.
+        if (current.ownedBy && incoming.ownedBy !== current.ownedBy) {
           context.log.warn(`[saveProject] Ownership mismatch on ${incoming.id}: owner=${current.ownedBy} requester=${incoming.ownedBy}`);
           context.res.status = 403;
           context.res.body   = { ok: false, error: "Forbidden — you do not own this project." };
@@ -238,7 +268,12 @@ module.exports = async function (context, req) {
           projectId: incoming.id,
           ownedBy:   ownedBy,  // Preserve original owner
           items:     mergeItems(current.items || [], incoming.items || []),
-          coverPhoto: null,
+          // Preserve blob-URL covers (the client uploads then pushes the URL);
+          // base64 never enters Cosmos, and a data: push keeps the stored URL.
+          coverPhoto: (incoming.coverPhoto && !String(incoming.coverPhoto).startsWith('data:'))
+            ? incoming.coverPhoto
+            : (incoming.coverPhoto === null ? null : (current.coverPhoto || null)),
+          envData: incoming.envData ? stripEnvScreens(incoming.envData) : (current.envData || undefined),
           floorPlan: incoming.floorPlan
             ? Object.assign({}, incoming.floorPlan, { imageData: null })
             : (current.floorPlan || undefined),

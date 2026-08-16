@@ -712,6 +712,11 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       return;
     }
 
+    // Everything below runs under try/finally: any render error (bad image
+    // data, corrupt field, jsPDF throw) must still dismiss the full-screen
+    // progress overlay — it has no close button and would brick the app.
+    try {
+
     const S          = window._pdfExportSettings || {};
     const quality    = S.quality     ?? 0.72;
     const inclPhotos = S.inclPhotos  ?? true;
@@ -984,7 +989,9 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
     }
 
     // ── Item text block (measure when draw=false, render when draw=true) ───────
-    function itemTextBlock(item, x, y, width, draw) {
+    // brkName: continuation-header name enabling internal page breaks for
+    // long notes — without it jsPDF silently draws text past the page bottom.
+    function itemTextBlock(item, x, y, width, draw, brkName) {
       let cyy = y;
       doc.setFont(P.font,'bold'); doc.setFontSize(13);
       if (draw) { setText(P.ink); doc.text(siLabel(item.num), x, cyy+4); }
@@ -1043,9 +1050,14 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
         if (draw) { setFill(b.bg); doc.roundedRect(x, cyy, lw, bh, 1.2, 1.2, 'F'); setText(b.fg); doc.text(item.statusCode, x+2.5, cyy+3.6); }
         if (item.statusText) {
           doc.setFont(P.font,'normal'); doc.setFontSize(8.5);
-          if (draw) { setText(P.text); doc.text(item.statusText, x+lw+3, cyy+3.6, {maxWidth: width-lw-3}); }
+          // Wrapped detail text takes real height — reserving one badge row
+          // would overlap the notes below (measure pass must match).
+          const stl = doc.splitTextToSize(item.statusText, width-lw-3);
+          if (draw) { setText(P.text); doc.text(stl, x+lw+3, cyy+3.6); }
+          cyy += Math.max(bh, stl.length*4.4) + 2.6;
+        } else {
+          cyy += bh + 2.6;
         }
-        cyy += bh + 2.6;
       } else if (item.statusText) {
         doc.setFont(P.font,'normal'); doc.setFontSize(8.5);
         const sl = doc.splitTextToSize(item.statusText, width);
@@ -1056,8 +1068,26 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       if (inclNotes && item.notes && item.notes.trim()) {
         doc.setFont(P.font,'normal'); doc.setFontSize(9);
         const nl = doc.splitTextToSize(item.notes.trim(), width);
-        if (draw) { setText(P.text); doc.text(nl, x, cyy+3.5); }
-        cyy += nl.length*4.6 + 1.5;
+        if (draw) {
+          setText(P.text);
+          let li = 0;
+          while (li < nl.length) {
+            // How many lines still fit on this page (all of them when page
+            // breaking is unavailable — old clipping behavior, measure only)
+            const fit = brkName ? Math.max(1, Math.floor((PH - BOT - (cyy + 3.5)) / 4.6)) : nl.length;
+            const chunk = nl.slice(li, li + fit);
+            doc.text(chunk, x, cyy + 3.5);
+            cyy += chunk.length * 4.6;
+            li += chunk.length;
+            if (li < nl.length && brkName) {
+              newPage(); cyy = contHeader(brkName);
+              doc.setFont(P.font,'normal'); doc.setFontSize(9); setText(P.text);
+            }
+          }
+          cyy += 1.5;
+        } else {
+          cyy += nl.length*4.6 + 1.5;
+        }
       }
 
       const parts = [];
@@ -1291,10 +1321,10 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
         let belowPhoto = cy + singleH;
         const cap = photoCaption(ph);
         if (cap) { doc.setFont(P.font,'normal'); doc.setFontSize(6.5); setText(P.sub); const cl = doc.splitTextToSize(cap, singleW).slice(0,3); doc.text(cl, MX, belowPhoto+3); belowPhoto += 3 + cl.length*3; }
-        const th = itemTextBlock(item, tx, cy, tw, true);
+        const th = itemTextBlock(item, tx, cy, tw, true, contName);
         cy = Math.max(belowPhoto, cy + th) + 6;
       } else {
-        const th = itemTextBlock(item, MX, cy, CW, true);
+        const th = itemTextBlock(item, MX, cy, CW, true, contName);
         cy += th + 2;
         if (inclPhotos && item.photos?.length) cy = await drawPhotoGrid(item.photos, MX, cy, CW, contName);
         cy += 4;
@@ -1307,17 +1337,43 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
 
     // ── COMPACT TABLE row: dot + SI# | condensed text | small thumb ───────────
     let _compactRowIdx = 0;
+    // The status/meta bits must be identical in the measure and draw passes.
+    function compactBits(item) {
+      const bits = [statusLabel(item.status)];
+      if (item.statusCode) bits.push(item.statusCode + (item.statusText ? ' — ' + item.statusText : ''));
+      if (inclProgress) { const pp = itemProgressPct(item); if (pp != null) bits.push(pp + '%'); }
+      if (item.deliveryDate) bits.push('Del ' + item.deliveryDate);
+      if (item.dueDate)      bits.push('Inst ' + item.dueDate);
+      if (item.projectedStartDate) bits.push('Start ' + item.projectedStartDate);
+      if (item.punchDate)    bits.push('Punch ' + item.punchDate);
+      if (item.assignedTo)   bits.push(item.assignedTo);
+      return bits;
+    }
     function compactTextH(item, width) {
+      // Measure at the SAME effective width the draw pass uses (text is
+      // drawn at tx+5, i.e. width-5) — a wider measure under-counts lines
+      // and the next row's zebra fill paints over the overflow.
+      const tw = width - 5;
       doc.setFont(P.font,'bold'); doc.setFontSize(9.5);
-      const titleLines = doc.splitTextToSize(siLabel(item.num) + '  ' + (item.title || ''), width).slice(0, 2);
-      let h = titleLines.length * 4.4 + 4.6; // title + status line
+      const titleLines = doc.splitTextToSize(siLabel(item.num) + '  ' + (item.title || ''), tw).slice(0, 2);
+      // Status/meta line: measure actual wrapped height, not a fixed one line
+      doc.setFont(P.font,'bold'); doc.setFontSize(7);
+      const bits = compactBits(item);
+      const statusTxt = bits[0];
+      const sw = doc.getTextWidth(statusTxt);
+      let metaLines = 1;
+      if (bits.length > 1) {
+        doc.setFont(P.font,'normal');
+        metaLines = doc.splitTextToSize('  ·  ' + bits.slice(1).join('  ·  '), Math.max(10, width - 8 - sw)).length;
+      }
+      let h = titleLines.length * 4.4 + metaLines * 4.6;
       if (inclNotes && item.notes && item.notes.trim()) {
         doc.setFont(P.font,'normal'); doc.setFontSize(7.5);
-        h += doc.splitTextToSize(item.notes.trim(), width).slice(0, 3).length * 3.6 + 1;
+        h += doc.splitTextToSize(item.notes.trim(), tw).slice(0, 3).length * 3.6 + 1;
       }
       if (inclTags && item.tags && item.tags.length) {
         doc.setFont(P.font,'normal'); doc.setFontSize(6.5);
-        h += doc.splitTextToSize(item.tags.join(', '), width).slice(0, 2).length * 3.2 + 1;
+        h += doc.splitTextToSize(item.tags.join(', '), tw).slice(0, 2).length * 3.2 + 1;
       }
       return h;
     }
@@ -1340,24 +1396,23 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       doc.text(titleLines, tx + 5, ty + 3.4);
       ty += titleLines.length * 4.4 + 1;
 
-      // Condensed status / field-check / dates line
-      const bits = [statusLabel(item.status)];
-      if (item.statusCode) bits.push(item.statusCode + (item.statusText ? ' — ' + item.statusText : ''));
-      if (inclProgress) { const pp = itemProgressPct(item); if (pp != null) bits.push(pp + '%'); }
-      if (item.deliveryDate) bits.push('Del ' + item.deliveryDate);
-      if (item.dueDate)      bits.push('Inst ' + item.dueDate);
-      if (item.projectedStartDate) bits.push('Start ' + item.projectedStartDate);
-      if (item.punchDate)    bits.push('Punch ' + item.punchDate);
-      if (item.assignedTo)   bits.push(item.assignedTo);
+      // Condensed status / field-check / dates line — advance by the ACTUAL
+      // wrapped line count (compactTextH budgets the same), or wrapped meta
+      // text collides with the notes below.
+      const bits = compactBits(item);
       doc.setFont(P.font,'bold'); doc.setFontSize(7);
       setText(statusColor(item.status));
       const statusTxt = bits.shift();
       doc.text(statusTxt, tx + 5, ty + 3);
+      let metaLines = 1;
       if (bits.length) {
         setText(P.sub); doc.setFont(P.font,'normal');
-        doc.text('  ·  ' + bits.join('  ·  '), tx + 5 + doc.getTextWidth(statusTxt) + 1, ty + 3, { maxWidth: tw - 8 - doc.getTextWidth(statusTxt) });
+        const sw = doc.getTextWidth(statusTxt);
+        const ml = doc.splitTextToSize('  ·  ' + bits.join('  ·  '), Math.max(10, tw - 8 - sw));
+        doc.text(ml, tx + 5 + sw + 1, ty + 3);
+        metaLines = ml.length;
       }
-      ty += 4.6;
+      ty += metaLines * 4.6;
 
       // Notes clipped to 3 lines
       if (inclNotes && item.notes && item.notes.trim()) {
@@ -1395,7 +1450,7 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       // Airy, evidence-first: each item starts high on a fresh page
       if (cy > PAGE_TOP + 24) { newPage(); cy = contHeader(contName); }
 
-      const th = itemTextBlock(item, MX, cy, CW, true);
+      const th = itemTextBlock(item, MX, cy, CW, true, contName);
       cy += th + 3;
       setFill(P.accent); doc.rect(MX, cy, 20, 0.8, 'F'); cy += 4;
 
@@ -1573,7 +1628,8 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
         }
         if (_violations.length){
           doc.setFontSize(8); doc.setFont(P.font,'bold'); doc.setTextColor(220,38,38);
-          doc.text(`\u26a0  ${_violations.length} threshold exceedance${_violations.length>1?'s':''} detected`,15,ey+4); ey+=7;
+          // WinAnsi-safe: helvetica can't encode U+26A0 (renders as mojibake)
+          doc.text(`!  ${_violations.length} threshold exceedance${_violations.length>1?'s':''} detected`,15,ey+4); ey+=7;
           doc.setFontSize(7); doc.setFont(P.font,'normal'); doc.setTextColor(153,27,27);
           for (const v of _violations){
             if (ey+6>PH-20){ newPage(); ey=16; }
@@ -1583,7 +1639,8 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
           ey += 4;
         } else {
           doc.setFontSize(8); doc.setFont(P.font,'bold'); doc.setTextColor(22,163,74);
-          doc.text('\u2713  All readings within acceptable range',15,ey+4); ey+=10;
+          // WinAnsi-safe: helvetica can't encode U+2713 (renders as mojibake)
+          doc.text('OK  All readings within acceptable range',15,ey+4); ey+=10;
         }
         async function envChart(data, lc, maxT, minT, x, y, w, h) {
           if (!data.length) return;
@@ -1646,7 +1703,10 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       doc.setFontSize(10); doc.setFont(P.font,'bold'); setText('#ffffff'); doc.text('REPORT SIGN-OFF',15,12);
       let sy = 38;
       doc.setFontSize(11); doc.setFont(P.font,'bold'); setText(P.ink); doc.text('Auditor / Inspector',15,sy);
-      doc.addImage(window._pdfBranding.auditorSig,'PNG',15,sy+5,60,20);
+      // Uploaded signature files can be formats jsPDF can't decode (SVG,
+      // HEIC…) — never let a bad signature kill the whole export.
+      try { doc.addImage(window._pdfBranding.auditorSig,'PNG',15,sy+5,60,20); }
+      catch (e) { console.warn('[PDF] Auditor signature could not be drawn:', e.message); }
       doc.setFontSize(9); doc.setFont(P.font,'normal'); setText(P.sub);
       doc.line(15,sy+26,85,sy+26); doc.text('Signature',15,sy+30); doc.text('Date: '+new Date().toLocaleDateString(),60,sy+30);
     }
@@ -1717,7 +1777,14 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       ov.querySelector('#pdf-cancel-btn')?.addEventListener('click', cleanup);
     } else {
       doc.save(filename);
-      if (typeof showToast === 'function') showToast('\u2713 PDF Downloaded — ' + styleName, 'green');
+      if (typeof showToast === 'function') showToast('✓ PDF Downloaded — ' + styleName, 'green');
+    }
+
+    } catch (err) {
+      console.error('[PDF] Export failed:', err);
+      if (typeof showToast === 'function') showToast('PDF export failed — ' + (err && err.message || 'unknown error'), 'red');
+    } finally {
+      try { window.hidePDFProgress(); } catch (e) {}
     }
   };
 

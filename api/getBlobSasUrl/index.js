@@ -38,23 +38,47 @@ module.exports = async function (context, req) {
     return;
   }
 
+  // Per-blob scoping: ?blob=<name> narrows the token to create/write on that
+  // single blob path. A container-wide write token would let any holder
+  // overwrite ANY photo in the container for an hour.
+  const blobName = (req.query && req.query.blob || '').trim();
+  if (blobName && (!/^[a-zA-Z0-9_\-./]+$/.test(blobName) || blobName.includes('..'))) {
+    context.res = {
+      status: 400,
+      headers: _corsHeaders(),
+      body: JSON.stringify({ error: 'Invalid blob name.' }),
+    };
+    return;
+  }
+
   try {
     const cred      = new StorageSharedKeyCredential(account, accountKey);
     const now       = new Date();
     const expiresOn = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour
 
     const sasToken = generateBlobSASQueryParameters(
-      {
-        containerName: container,
-        permissions  : BlobSASPermissions.parse('rcw'), // read, create, write — NO delete
-        protocol     : SASProtocol.Https,
-        startsOn     : new Date(now.getTime() - 5 * 60 * 1000), // 5 min clock-skew buffer
-        expiresOn,
-      },
+      blobName
+        ? {
+            containerName: container,
+            blobName,
+            permissions  : BlobSASPermissions.parse('cw'), // create/write THIS blob only
+            protocol     : SASProtocol.Https,
+            startsOn     : new Date(now.getTime() - 5 * 60 * 1000),
+            expiresOn,
+          }
+        : {
+            containerName: container,
+            permissions  : BlobSASPermissions.parse('r'), // legacy no-blob callers: read-only
+            protocol     : SASProtocol.Https,
+            startsOn     : new Date(now.getTime() - 5 * 60 * 1000), // 5 min clock-skew buffer
+            expiresOn,
+          },
       cred
     ).toString();
 
-    const sasUrl = `https://${account}.blob.core.windows.net/${container}?${sasToken}`;
+    const sasUrl = blobName
+      ? `https://${account}.blob.core.windows.net/${container}/${blobName}?${sasToken}`
+      : `https://${account}.blob.core.windows.net/${container}?${sasToken}`;
 
     context.log(`[getBlobSasUrl] ✓ SAS issued. Expires: ${expiresOn.toISOString()}`);
 

@@ -3514,7 +3514,7 @@ let store = JSON.parse(JSON.stringify(SEED));
 
 // Keep in lockstep with CACHE_VERSION in sw.js — shown in the Admin
 // Console header so a stale cached client is diagnosable at a glance.
-const APP_VERSION = '8.51';
+const APP_VERSION = '8.52';
 
 let _currentUser = null; // { userId, userDetails, userRoles }
 
@@ -3837,6 +3837,16 @@ function _buildProjectPayload(proj) {
     // Blob-storage URL syncs through Cosmos; pending base64 stays local
     // until _flushPendingPhotos uploads it.
     coverPhoto: (proj.coverPhoto && !proj.coverPhoto.startsWith('data:')) ? proj.coverPhoto : null,
+    // Environmental screenshots are full-size base64 — a couple of them blow
+    // Cosmos's 2MB doc limit and permanently break this project's sync.
+    // Metadata syncs; the image data stays on the capturing device.
+    envData: (proj.envData && Array.isArray(proj.envData.screenshots))
+      ? Object.assign({}, proj.envData, {
+          screenshots: proj.envData.screenshots.map(sc => {
+            const c = Object.assign({}, sc); delete c.data; return c;
+          })
+        })
+      : proj.envData,
     items: (proj.items || []).map(item => {
       const cloudPhotos = (item.photos || [])
         .filter(p => p.url)
@@ -4072,10 +4082,12 @@ function _mergeIndexIntoLocal(cloudIndex) {
       const cloud = cloudById.get(id);
       if (!cloud) return local; // local-only (created offline)
       if (!local) return cloud; // cloud-only (added by another device)
-      // Both exist — tombstone wins, else cloud wins (newer server version)
+      // Both exist — tombstone wins, else per-contact newest-wins via
+      // _modified (same pattern as folders) so an unpushed local edit isn't
+      // reverted by a stale cloud copy; unstamped legacy data: cloud wins.
       if (local._deleted) return local;  // preserve our tombstone
       if (cloud._deleted) return cloud;  // accept cloud tombstone
-      return cloud; // cloud has the latest confirmed version
+      return (local._modified || 0) > (cloud._modified || 0) ? local : cloud;
     });
   }
 
@@ -4260,6 +4272,18 @@ function _mergeProjectIntoLocal(cloudProj) {
     } else if (!li._dirty) {
       // Safe to merge — no unsaved local changes
       const merged = Object.assign({}, li, ci);
+      // Attachment file bytes live only on the device (the cloud doc holds
+      // data-less stubs) — carry local data forward or the merge erases the
+      // only copy of the file.
+      if (merged.attachments && merged.attachments.length && li.attachments && li.attachments.length) {
+        merged.attachments = merged.attachments.map(a => {
+          const la = li.attachments.find(x => x.id === a.id);
+          return la && la.data && !a.data ? Object.assign({}, a, { data: la.data }) : a;
+        });
+      } else if ((!merged.attachments || !merged.attachments.length) && li.attachments && li.attachments.some(x => x.data)) {
+        // Cloud stub list missing entirely (older doc) — keep local files
+        merged.attachments = li.attachments;
+      }
       const rp = restorePhotos(ci, li);
       merged.photos = rp.photos;
       if (rp.towerWork) merged.towerWork = rp.towerWork;
@@ -4270,11 +4294,56 @@ function _mergeProjectIntoLocal(cloudProj) {
     // else: li._dirty → skip, preserve local version
   });
 
-  // Merge project-level fields (cloud wins for confirmed data)
-  const mergedProj = Object.assign({}, localProj, cloudProj, {
-    id:        localPid,  // always keep local ID format
-    items:     [...localItemMap.values()]
-  });
+  // Merge project-level fields (cloud wins for confirmed data) — UNLESS this
+  // project has unpushed local changes: schedule cells, labor logs, env data,
+  // toolbox logs etc. live at project level with no per-field timestamps, so
+  // a cloud-wins merge while dirty would silently revert edits made offline
+  // or in the seconds before the push (startup merge runs before the first
+  // push). Items still merge normally above; project fields keep local until
+  // the dirty push completes.
+  const projDirty = typeof _dirtyProjectIds !== 'undefined' && _dirtyProjectIds.has(localPid);
+  // Item ORDER: drag-reorder syncs as the array order of the pushed doc, so
+  // a clean pull adopts the cloud order (local-only items appended); a dirty
+  // project keeps its local order until its own push completes.
+  const orderedItems = (() => {
+    if (projDirty) return [...localItemMap.values()];
+    const out = [], seen = new Set();
+    (cloudProj.items || []).forEach(ci => {
+      const v = localItemMap.get(ci.id);
+      if (v && !seen.has(ci.id)) { out.push(v); seen.add(ci.id); }
+    });
+    localItemMap.forEach((v, id) => { if (!seen.has(id)) out.push(v); });
+    return out;
+  })();
+  const mergedProj = projDirty
+    ? Object.assign({}, localProj, {
+        id:        localPid,
+        items:     orderedItems
+      })
+    : Object.assign({}, localProj, cloudProj, {
+        id:        localPid,  // always keep local ID format
+        items:     orderedItems
+      });
+  // Environmental screenshots are stored as base64 on the device and never
+  // sent to Cosmos — carry local ones forward or the merge erases them.
+  if (!projDirty && localProj.envData && Array.isArray(localProj.envData.screenshots) && localProj.envData.screenshots.length) {
+    const localShots = localProj.envData.screenshots.filter(sc => sc && sc.data);
+    if (localShots.length) {
+      mergedProj.envData = Object.assign({}, mergedProj.envData || {});
+      const cloudShots = Array.isArray(mergedProj.envData.screenshots) ? mergedProj.envData.screenshots : [];
+      const key = sc => sc && (sc.id || sc.label);
+      const have = new Set(cloudShots.map(key));
+      // Cloud stubs matching a local screenshot get their data restored;
+      // local-only ones (never pushed) are appended.
+      mergedProj.envData.screenshots = [
+        ...cloudShots.map(sc => {
+          const la = localShots.find(l => key(l) === key(sc));
+          return la && !sc.data ? Object.assign({}, sc, { data: la.data }) : sc;
+        }),
+        ...localShots.filter(sc => !have.has(key(sc)))
+      ];
+    }
+  }
   // Cover photo: a pending local upload (base64 not yet flushed to blob
   // storage) always wins; otherwise the cloud value is authoritative so
   // covers — and cover removals (null) — sync across devices like SI photos.
@@ -4433,12 +4502,17 @@ async function syncChanges(isAuto = false) {
 
     if (_dirtyIndex) {
       try {
+        // Clear the flag BEFORE the await (same pattern as projects): index
+        // edits made while the push is in flight re-set it and survive to the
+        // next cycle instead of being wiped by a post-push clear.
+        _dirtyIndex = false;
         const result = await _apiSaveIndex(_buildIndexPayload());
         if (result.ok) {
-          _dirtyIndex = false;
           if (result._ts) _cloudTs.index = result._ts;
+        } else {
+          _dirtyIndex = true;
         }
-      } catch(err) { console.warn('[Sync] Index push failed:', err.message); }
+      } catch(err) { _dirtyIndex = true; console.warn('[Sync] Index push failed:', err.message); }
     }
 
     await _saveCloudTs();
@@ -4547,10 +4621,12 @@ async function _pullAll() {
 
     // Also push any dirty index/project data before pulling
     if (_dirtyIndex) {
+      // Clear before the await so edits made mid-push re-set the flag and
+      // survive; restore it if the push failed.
+      _dirtyIndex = false;
       try {
         await _apiSaveIndex(_buildIndexPayload());
-        _dirtyIndex = false;
-      } catch(e) { console.warn('[PullAll] Index push failed:', e.message); }
+      } catch(e) { _dirtyIndex = true; console.warn('[PullAll] Index push failed:', e.message); }
     }
 
     const cloudIndex = await Promise.race([_apiGetIndex(), timeout(8000)]);
@@ -5524,9 +5600,9 @@ function renderLeft(r) {
         i.title.toLowerCase().includes(q) ||
         i.num.toLowerCase().includes(q) ||
         (i.notes || '').toLowerCase().includes(q) ||
-        (i.fieldCheck || '').toLowerCase().includes(q) ||
+        ((i.statusCode || '') + ' ' + (i.statusText || '')).toLowerCase().includes(q) ||
         (i._updatedBy || '').toLowerCase().includes(q) ||
-        (Array.isArray(i.conditions) ? i.conditions.join(' ').toLowerCase().includes(q) : false)
+        (Array.isArray(i.tags) ? i.tags.join(' ').toLowerCase().includes(q) : false)
       ));
 
       if (!projNameMatch && !matchingSIs.length) return;
@@ -5635,9 +5711,9 @@ function renderLeft(r) {
         i.title.toLowerCase().includes(q)||
         i.num.toLowerCase().includes(q)||
         (i.notes||'').toLowerCase().includes(q)||
-        (i.fieldCheck||'').toLowerCase().includes(q)||
+        ((i.statusCode||'')+' '+(i.statusText||'')).toLowerCase().includes(q)||
         (i._updatedBy||'').toLowerCase().includes(q)||
-        (Array.isArray(i.conditions)?i.conditions.join(' ').toLowerCase().includes(q):false)
+        (Array.isArray(i.tags)?i.tags.join(' ').toLowerCase().includes(q):false)
       ));
       if (sortActive) {
         const dir = _siSortDir === 'desc' ? -1 : 1;
@@ -6355,7 +6431,7 @@ function tbLogToggleDone(pid, wk) {
   const p = _tbLogProj(pid); if (!p) return;
   const cur = p.toolboxTalks[wk] || {};
   cur.done = !cur.done;
-  if (cur.done && !cur.date) cur.date = new Date().toISOString().slice(0, 10);
+  if (cur.done && !cur.date) cur.date = _todayISO();
   p.toolboxTalks[wk] = cur;
   markProjectDirty(pid); save();
   buildTbLogView(pid);
@@ -6381,13 +6457,27 @@ function tbLogField(pid, wk, key, val) {
 let _tbSignAll = null;   // { 'scope:week': session } — lazy-loaded from IDB
 let _tbSignCur = null;   // { week, scope, talk } while the sign sheet is open
 
+let _tbSignLoadOk = false; // never overwrite the stored sheets from a failed load
 function _tbSignLoad() {
-  if (_tbSignAll) return Promise.resolve(_tbSignAll);
+  if (_tbSignAll && _tbSignLoadOk) return Promise.resolve(_tbSignAll);
   return _idbGet('tbsign_sessions')
-    .then(v => { _tbSignAll = v || {}; return _tbSignAll; })
-    .catch(() => { _tbSignAll = {}; return _tbSignAll; });
+    .then(v => { _tbSignLoadOk = true; _tbSignAll = Object.assign({}, v || {}, _tbSignAll || {}); return _tbSignAll; })
+    .catch(() => { _tbSignAll = _tbSignAll || {}; return _tbSignAll; });
 }
 function _tbSignPersist() {
+  if (!_tbSignLoadOk) {
+    // The initial read failed (transient IDB error): _tbSignAll only holds
+    // this session's sheets, and writing it now would erase every other
+    // saved sign-in sheet on the device. Re-read and merge first.
+    _idbGet('tbsign_sessions')
+      .then(v => {
+        _tbSignLoadOk = true;
+        _tbSignAll = Object.assign({}, v || {}, _tbSignAll || {});
+        return _idbSet('tbsign_sessions', _tbSignAll);
+      })
+      .catch(() => showToast('Could not save signatures on this device', 'red'));
+    return;
+  }
   _idbSet('tbsign_sessions', _tbSignAll)
     .catch(() => showToast('Could not save signatures on this device', 'red'));
 }
@@ -6405,7 +6495,7 @@ function _tbSignSession(scope, wk) {
       week: wk, scope: scope || '',
       job: proj ? (proj.name || '') : '',
       supervisor: me === 'You' ? '' : me,
-      date: new Date().toISOString().slice(0, 10),
+      date: _todayISO(),
       sigs: [], sentAt: 0, updatedAt: Date.now()
     };
   }
@@ -6426,6 +6516,7 @@ function tbSignOpen(wk, scope) {
       document.body.appendChild(ov);
       ov._esc = e => {
         if (e.key !== 'Escape') return;
+        if (document.getElementById('tbsend-ov')) return; // delivery dialog owns Escape — never close the sheet beneath it
         if (document.getElementById('tbpad-ov')) tbSignPadCancel(); else tbSignClose();
       };
       document.addEventListener('keydown', ov._esc);
@@ -6516,7 +6607,7 @@ function tbSignClearSheet() {
 }
 
 // ── Signature pad ──
-let _padDrawn = false, _padDown = false;
+let _padDrawn = false, _padDown = false, _padPtr = null;
 function tbSignPadOpen() {
   if (document.getElementById('tbpad-ov') || !_tbSignCur) return;
   const ov = document.createElement('div');
@@ -6548,19 +6639,25 @@ function tbSignPadOpen() {
     const r = cv.getBoundingClientRect();
     return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height];
   };
+  // Track a single pointer: a palm or second finger resting on the canvas
+  // must not reset the path or end the stroke mid-signature.
   cv.onpointerdown = e => {
+    if (_padDown) return;
     e.preventDefault();
     try { cv.setPointerCapture(e.pointerId); } catch (err) {}
-    _padDown = true;
+    _padDown = true; _padPtr = e.pointerId;
     const [x, y] = pos(e);
     cx.beginPath(); cx.moveTo(x, y); cx.lineTo(x + 0.01, y + 0.01); cx.stroke();
     _padDrawn = true;
   };
   cv.onpointermove = e => {
-    if (!_padDown) return; e.preventDefault();
+    if (!_padDown || e.pointerId !== _padPtr) return; e.preventDefault();
     const [x, y] = pos(e); cx.lineTo(x, y); cx.stroke();
   };
-  cv.onpointerup = cv.onpointercancel = () => { _padDown = false; };
+  cv.onpointerup = cv.onpointercancel = e => {
+    if (e.pointerId !== _padPtr) return;
+    _padDown = false; _padPtr = null;
+  };
   const inp = document.getElementById('tbpad-name');
   if (inp && !('ontouchstart' in window)) setTimeout(() => inp.focus(), 100);
 }
@@ -6591,9 +6688,19 @@ async function _tbSignPdf(talk, s) {
   let tries = 0;   // deferred script may still be loading on a fast first tap
   while (typeof PDFLib === 'undefined' && tries < 20) { await new Promise(r => setTimeout(r, 150)); tries++; }
   if (typeof PDFLib === 'undefined') throw new Error('PDF library not loaded yet — try again');
-  const res = await fetch(_docHref(talk.file));
-  if (!res.ok) throw new Error(navigator.onLine ? 'Talk PDF unavailable' : 'Talk PDF not cached — open it once while online');
+  const offlineMsg = 'Talk PDF not cached on this device — open it once while online, then try again';
+  let res;
+  try { res = await fetch(_docHref(talk.file)); }
+  catch (e) { throw new Error(navigator.onLine ? 'Talk PDF unavailable — check your connection' : offlineMsg); }
+  if (!res.ok) throw new Error(navigator.onLine ? 'Talk PDF unavailable' : offlineMsg);
   const src = await res.arrayBuffer();
+  // Offline, the SW can satisfy this fetch with cached HTML instead of the
+  // PDF — verify the magic bytes before handing the buffer to pdf-lib, or
+  // the user gets a cryptic parse error instead of the guidance above.
+  const head = new Uint8Array(src.slice(0, 5));
+  if (String.fromCharCode.apply(null, head) !== '%PDF-') {
+    throw new Error(navigator.onLine ? 'Talk PDF unavailable' : offlineMsg);
+  }
   const pdf = await PDFLib.PDFDocument.load(src, { ignoreEncryption: true });
   const font = await pdf.embedFont(PDFLib.StandardFonts.Helvetica);
   const bold = await pdf.embedFont(PDFLib.StandardFonts.HelveticaBold);
@@ -6661,7 +6768,7 @@ async function _tbSignPdf(talk, s) {
     pg.drawText(pn, { x: PW - M - font.widthOfTextAtSize(pn, 7), y: 22, size: 7, font, color: SUB });
   });
   const slug = t => String(t || '').replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'Job';
-  const filename = 'ToolboxTalk_WK' + String(talk.week).padStart(2, '0') + '_' + slug(s.job) + '_' + (s.date || new Date().toISOString().slice(0, 10)) + '.pdf';
+  const filename = 'ToolboxTalk_WK' + String(talk.week).padStart(2, '0') + '_' + slug(s.job) + '_' + (s.date || _todayISO()) + '.pdf';
   const bytes = await pdf.save();
   return { blob: new Blob([bytes], { type: 'application/pdf' }), filename };
 }
@@ -6677,7 +6784,9 @@ async function tbSignSend() {
   if (btn) { btn.disabled = true; btn.textContent = 'Building PDF…'; }
   try {
     const out = await _tbSignPdf(talk, s);
-    _tbSignDeliver(out.blob, out.filename, _tbSignMarkSent);
+    // Capture talk/scope now — the sheet (and _tbSignCur) may be closed by
+    // the time the user taps Share/Download on the delivery dialog.
+    _tbSignDeliver(out.blob, out.filename, () => _tbSignMarkSent(talk, scope));
   } catch (e) {
     showToast(e.message || 'Could not build PDF', 'red');
   } finally {
@@ -6702,6 +6811,7 @@ function _tbSignDeliver(blob, filename, onSent) {
     return;
   }
   const ov = document.createElement('div');
+  ov.id = 'tbsend-ov';
   ov.style.cssText = 'position:fixed;inset:0;z-index:750;background:rgba(0,0,0,0.8);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px;';
   ov.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:340px;width:100%;text-align:center;">
     <div style="font-size:36px;margin-bottom:12px">🦺</div>
@@ -6722,7 +6832,19 @@ function _tbSignDeliver(blob, filename, onSent) {
       showToast('✓ Signed PDF sent', 'green');
     } catch (e) {
       if (e && e.name === 'AbortError') return;   // sheet dismissed — keep ours open
-      window.open(blobURL, '_blank'); cleanup(); onSent();
+      // Fallback tab. Share already consumed the user activation, so popup
+      // blockers often eat this — only count it as sent if the tab actually
+      // opened, keep our overlay for retry otherwise, and delay revoking the
+      // blob URL so the new tab can finish loading it.
+      const win = window.open(blobURL, '_blank');
+      if (win) {
+        ov.remove();
+        setTimeout(() => URL.revokeObjectURL(blobURL), 1500);
+        onSent();
+        showToast('✓ Signed PDF opened in a new tab', 'green');
+      } else {
+        showToast('Could not share — use ⬇ Download instead', 'red');
+      }
     }
   });
   ov.querySelector('#tbsend-dl').addEventListener('click', () => {
@@ -6735,9 +6857,8 @@ function _tbSignDeliver(blob, filename, onSent) {
   });
   ov.querySelector('#tbsend-cancel').addEventListener('click', cleanup);
 }
-function _tbSignMarkSent() {
-  if (!_tbSignCur) return;
-  const { talk, scope } = _tbSignCur;
+function _tbSignMarkSent(talk, scope) {
+  if (!talk) { if (!_tbSignCur) return; ({ talk, scope } = _tbSignCur); }
   const s = _tbSignSession(scope, talk.week);
   s.sentAt = Date.now();
   _tbSignPersist();
@@ -6962,7 +7083,8 @@ function showNewContactModal() {
       company:  document.getElementById('c-company').value.trim() || 'External',
       phone:    document.getElementById('c-phone').value.trim(),
       email:    document.getElementById('c-email').value.trim(),
-      notes:    document.getElementById('c-notes').value.trim()
+      notes:    document.getElementById('c-notes').value.trim(),
+      _modified: Date.now()  // per-contact newest-wins in the index merge
     };
 
     store.contacts.push(contact);
@@ -7102,6 +7224,7 @@ window.showEditContactModal = function(id) {
     contact.phone    = document.getElementById('c-phone').value.trim();
     contact.email    = document.getElementById('c-email').value.trim();
     contact.notes    = document.getElementById('c-notes').value.trim();
+    contact._modified = Date.now(); // newest-wins vs stale cloud copies
 
     markStoreDirty(); save();
     closeModal();
@@ -7232,12 +7355,35 @@ window.handleContactCSV = function(e) {
   e.target.value = '';
 };
 
+// Quote-aware CSV line splitter: Excel/Outlook/Google exports wrap fields
+// containing the separator in double quotes ("" escapes a literal quote).
+// A naive split(sep) shifts every column after such a field.
+function _csvSplitLine(line, sep) {
+  const out = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else inQ = false;
+      } else cur += ch;
+    } else if (ch === '"') {
+      inQ = true;
+    } else if (ch === sep) {
+      out.push(cur); cur = '';
+    } else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
 function parseContactCSV(text) {
   const lines = text.trim().split(/\r?\n/).filter(l => l.trim());
   if (lines.length < 2) return [];
 
   const sep = lines[0].includes('\t') ? '\t' : ',';
-  const headers = lines[0].split(sep).map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
+  const headers = _csvSplitLine(lines[0], sep).map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
 
   const map = { name:-1, role:-1, company:-1, phone:-1, email:-1, notes:-1, category:-1, project:-1 };
   headers.forEach((h, i) => {
@@ -7255,10 +7401,11 @@ function parseContactCSV(text) {
 
   const result = [];
   lines.slice(1).forEach(line => {
-    const cols = line.split(sep).map(c => c.trim().replace(/^["']|["']$/g, ''));
+    const cols = _csvSplitLine(line, sep).map(c => c.trim().replace(/^["']|["']$/g, ''));
     if (cols[map.name]) {
       result.push({
         id:       'cnt_' + Date.now() + Math.random().toString(36).substr(2, 5),
+        _modified: Date.now(),
         name:     cols[map.name],
         category: map.category !== -1 ? cols[map.category] || 'Other'    : 'Other',
         project:  map.project  !== -1 ? cols[map.project]  || 'Office'   : 'Office',
@@ -7743,7 +7890,7 @@ function buildSIEditor(pid,sid) {
             <div class="field-label" style="display:flex;align-items:center;justify-content:space-between">Field Notes / Observations
               <button class="voice-btn" id="voice-btn" onclick="toggleVoice('${pid}','${sid}')" title="Voice note">🎤</button>
             </div>
-            <textarea class="field-input" id="notes-input" placeholder="Describe current field conditions, what changed, what's blocking..." oninput="scheduleAutoSave('${pid}','${sid}')">${item.notes}</textarea>
+            <textarea class="field-input" id="notes-input" placeholder="Describe current field conditions, what changed, what's blocking..." oninput="scheduleAutoSave('${pid}','${sid}')">${_esc(item.notes||'')}</textarea>
           </div>
           <div class="field-row">
             <div class="field-group">
@@ -7778,7 +7925,7 @@ function buildSIEditor(pid,sid) {
     <div style="width:1px; height:20px; background:var(--border); margin:0 4px;"></div>
     <input type="text" class="field-input" style="flex:1; padding:4px 8px; font-size:11px; height:28px; border:none; background:transparent;" 
       placeholder="Additional details..." 
-      value="${item.statusText || ''}" 
+      value="${_esc(item.statusText || '')}"
       oninput="updateSIField('${pid}','${sid}','statusText',this.value)">
   </div>
 </div>
@@ -7809,9 +7956,9 @@ function buildSIEditor(pid,sid) {
               ${item.trade ? '🔧 Trade ✓' : '＋ Trade'}
             </button>
           </div>
-          <input class="field-input" id="assigned-input" type="text" placeholder="Name or crew" value="${item.assignedTo||''}" oninput="scheduleAutoSave('${pid}','${sid}')" />
+          <input class="field-input" id="assigned-input" type="text" placeholder="Name or crew" value="${_esc(item.assignedTo||'')}" oninput="scheduleAutoSave('${pid}','${sid}')" />
           <div id="trade-field-${sid}" style="${item.trade?'':'display:none'};margin-top:5px">
-            <input class="field-input" id="trade-input" type="text" placeholder="Trade / Subcontractor" value="${item.trade||''}" oninput="scheduleAutoSave('${pid}','${sid}')" />
+            <input class="field-input" id="trade-input" type="text" placeholder="Trade / Subcontractor" value="${_esc(item.trade||'')}" oninput="scheduleAutoSave('${pid}','${sid}')" />
           </div>
         </div>
         <div class="field-group">
@@ -9227,7 +9374,7 @@ function handleEnvFile(e) {
   if(type==='screenshot') {
     const reader=new FileReader();
     reader.onload=ev=>{
-      proj.envData.screenshots.push({data:ev.target.result, label:file.name.replace(/\.[^.]+$/,'')});
+      proj.envData.screenshots.push({id:'env_'+Date.now()+'_'+Math.random().toString(36).slice(2,6), data:ev.target.result, label:file.name.replace(/\.[^.]+$/,'')});
       markProjectDirty(pid); save(); buildEnvView(pid);
     };
     reader.readAsDataURL(file);
@@ -9252,7 +9399,7 @@ function parseEnvCSV(text, filename) {
   if(lines.length<2) return null;
 
   const sep = lines[0].includes('\t') ? '\t' : ',';
-  const headers = lines[0].split(sep).map(h=>h.trim().toLowerCase().replace(/['"]/g,''));
+  const headers = _csvSplitLine(lines[0], sep).map(h=>h.trim().toLowerCase().replace(/['"]/g,''));
 
   let timeIdx=-1, tempIdx=-1, humIdx=-1;
   headers.forEach((h,i)=>{
@@ -9270,7 +9417,7 @@ function parseEnvCSV(text, filename) {
   const tempData=[], humData=[], dates=[];
 
   rows.forEach(row=>{
-    const cols = row.split(sep).map(c=>c.trim().replace(/^["']|["']$/g,''));
+    const cols = _csvSplitLine(row, sep).map(c=>c.trim().replace(/^["']|["']$/g,''));
     if(cols.length < 2) return;
     const rawDate = cols[timeIdx]||'';
     const tVal = parseFloat(cols[tempIdx]);
@@ -9745,8 +9892,22 @@ function handleFileImport(e) {
     return null;
   }
 
+  // Every file — good or undecodable — must advance the batch counter, or
+  // one bad file (e.g. HEIC on Android) silently stalls the save/rebuild
+  // for the whole import.
+  const _importDone=()=>{
+    if(++loaded!==files.length) return;
+    markAsDirty(_pt.sid); save();
+    if (twRoom) { _twpRefresh(); _refreshTowerPanel(_pt.pid,_pt.sid); }
+    else { buildSIEditor(_pt.pid,_pt.sid); renderLeft(route()); }
+  };
+  const _importFail=file=>{
+    showToast(`⚠️ Could not read "${file.name}" — photo skipped`,'red');
+    _importDone();
+  };
   files.forEach(file=>{
     const arrReader=new FileReader();
+    arrReader.onerror=()=>_importFail(file);
     arrReader.onload=arrEv=>{
       const takenAt = getExifDate(arrEv.target.result) ||
         // fallback: use file lastModified
@@ -9758,9 +9919,11 @@ function handleFileImport(e) {
         })();
 
       const dataReader=new FileReader();
+      dataReader.onerror=()=>_importFail(file);
       dataReader.onload=dataEv=>{
         // Resize/Compress before saving to IndexedDB to prevent memory bloat
         const img = new Image();
+        img.onerror = () => _importFail(file);
         img.onload = async () => {
           const canvas = document.createElement('canvas');
           const MAX_WIDTH = 1200; // Resizing to 1200px is plenty for audit reports
@@ -9772,19 +9935,25 @@ function handleFileImport(e) {
 
           // New Blob-based capture logic for IndexedDB
           canvas.toBlob(async (blob) => {
-            if (!blob) return;
-            
+            if (!blob) { _importFail(file); return; }
+
             // Save locally first (works offline, instant feedback)
             // Store this raw 'blob' object directly into IndexedDB instead of the Base64 string.
+            // Re-resolve the target NOW: a background sync merge can rebuild
+            // this item (new object, new photos array) while the file was
+            // decoding — pushing into the stale array captured at the change
+            // event would silently drop the photo from the store.
+            const curItem = getSI(_pt.pid, _pt.sid);
+            if (!curItem) { _importFail(file); return; }
+            const curRoom = _pt.roomId
+              ? ((curItem.towerWork && curItem.towerWork.rooms) || []).find(r => r.id === _pt.roomId)
+              : null;
+            if (_pt.roomId && !curRoom) { _importFail(file); return; }
             const photoEntry = {data: blob, caption: '', takenAt};
-            const targetList = twRoom ? twRoom.photos : item.photos;
+            const targetList = curRoom ? (curRoom.photos = curRoom.photos || []) : (curItem.photos = curItem.photos || []);
             targetList.push(photoEntry);
-            _logActivity(_pt.pid,{type:'photo',siId:_pt.sid,siNum:item.num,detail: twRoom?`Room ${twRoom.number} photo ${targetList.length}`:`Photo ${item.photos.length}`,by:_whoAmI()});
-            if(++loaded===files.length){
-              markAsDirty(_pt.sid); save();
-              if (twRoom) { _twpRefresh(); _refreshTowerPanel(_pt.pid,_pt.sid); }
-              else { buildSIEditor(_pt.pid,_pt.sid); renderLeft(route()); }
-            }
+            _logActivity(_pt.pid,{type:'photo',siId:_pt.sid,siNum:curItem.num,detail: curRoom?`Room ${curRoom.number} photo ${targetList.length}`:`Photo ${curItem.photos.length}`,by:_whoAmI()});
+            _importDone();
 
             // Then upload to Azure Blob Storage in the background
             try {
@@ -9818,18 +9987,13 @@ function handleFileImport(e) {
 // Fetches a short-lived SAS token from the Azure Function, then uploads
 // directly to Blob Storage. Returns the permanent blob URL on success.
 
-let _cachedSasUrl = null;
-let _sasUrlExpiry = null;
-
-async function _getBlobSasUrl() {
-  const now = Date.now();
-  if (_cachedSasUrl && _sasUrlExpiry && now < _sasUrlExpiry) return _cachedSasUrl;
-  const res = await fetch('/api/getBlobSasUrl');
+// Tokens are scoped to a single blob path server-side (create/write on that
+// blob only), so they are requested per upload and never cached.
+async function _getBlobSasUrl(blobName) {
+  const res = await fetch('/api/getBlobSasUrl' + (blobName ? '?blob=' + encodeURIComponent(blobName) : ''));
   if (!res.ok) throw new Error(`SAS fetch failed: ${res.status}`);
-  const { sasUrl, expiresOn } = await res.json();
-  _cachedSasUrl = sasUrl;
-  _sasUrlExpiry = expiresOn ? new Date(expiresOn).getTime() - 5 * 60 * 1000 : now + 50 * 60 * 1000;
-  return _cachedSasUrl;
+  const { sasUrl } = await res.json();
+  return sasUrl;
 }
 
 async function preparePhotoForUpload(dbPhotoData) {
@@ -9861,6 +10025,7 @@ async function preparePhotoForUpload(dbPhotoData) {
 let _ann = null; // active annotation session
 
 async function openAnnotation(pid, sid, idx) {
+  if(_photoIdxStale()) return;
   const item = getSI(pid, sid);
   if (!item || !item.photos || !item.photos[idx]) { showToast('Photo not found', 'red'); return; }
   const photo = item.photos[idx];
@@ -10266,18 +10431,17 @@ async function _annSave() {
 
 async function _uploadPhotoToAzureBlob(dbPhotoData, projectId, siId) {
   const blobToUpload = await preparePhotoForUpload(dbPhotoData);
-  const sasContainerUrl = await _getBlobSasUrl();
   const ext      = 'jpg';
   const blobName = `${projectId}/${siId}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
-  const [baseUrl, sasParams] = sasContainerUrl.split('?');
-  const putUrl = `${baseUrl}/${blobName}?${sasParams}`;
+  const putUrl   = await _getBlobSasUrl(blobName); // SAS scoped to this one blob
+  const baseUrl  = putUrl.split('?')[0];
   const uploadRes = await fetch(putUrl, {
     method : 'PUT',
     headers: { 'x-ms-blob-type': 'BlockBlob', 'Content-Type': 'image/jpeg' },
     body   : blobToUpload,
   });
   if (!uploadRes.ok) throw new Error(`Blob PUT failed: ${uploadRes.status}`);
-  return `${baseUrl}/${blobName}`;
+  return baseUrl; // blob URL without the SAS query
 }
 
 // ── COMPANY BRANDING SYSTEM ──────────────────────────────────────────────────
@@ -10368,7 +10532,20 @@ window.handleBrandingUpload = function(e, type) {
 
 // (duplicate handleBrandingUpload removed — per-company version above is authoritative)
 
+// Photo click handlers bake the array index into the HTML at render time.
+// A background sync can merge photo removals while the repaint is deferred
+// (_pendingSyncRender) — the on-screen indexes are then stale and acting on
+// one could hit the WRONG photo (deletePhoto would tombstone and blob-delete
+// it fleet-wide). Repaint first and ask for a fresh tap.
+function _photoIdxStale() {
+  if (!_pendingSyncRender) return false;
+  _applySyncRender();
+  showToast('Photos were updated from another device — please tap again','red');
+  return true;
+}
+
 function deletePhoto(pid,sid,idx) {
+  if(_photoIdxStale()) return;
   const item=getSI(pid,sid); if(!item) return;
   syncEditorToStore(pid,sid);
   const [removed] = item.photos.splice(idx,1);
@@ -10394,6 +10571,7 @@ function deletePhoto(pid,sid,idx) {
   }
 }
 function previewPhoto(pid,sid,idx) {
+  if(_photoIdxStale()) return;
   const item=getSI(pid,sid); if(!item) return;
   const src=getPhotoSrcForDisplay(item.photos[idx]);
   const ov=document.createElement('div');
@@ -10450,6 +10628,7 @@ function showPhotoRecovery() { showAdminConsole('recovery'); } // legacy entry p
 function _admClose() {
   document.getElementById('admin-overlay')?.remove();
   _rec = null;
+  _admBlobCache = null; // a reopened console must not judge against a stale blob list
 }
 
 function _admSwitch(tab) {
@@ -10854,8 +11033,17 @@ async function _admRenderSweeper() {
   if (crumb) crumb.textContent = 'Photo entries whose image no longer exists anywhere';
   if (body) body.innerHTML = `<div style="text-align:center;padding:40px 0;color:var(--text2)">Scanning all projects…</div>`;
 
+  // The sweeper tombstones photos fleet-wide based on "url not in storage",
+  // so it must judge against a FRESH, COMPLETE blob list: a cached list from
+  // minutes ago flags every photo uploaded since as dead, and a truncated
+  // list flags everything past the cap. Force a re-fetch and ignore URLs
+  // entirely when the listing is truncated.
   let blobSet = null;
-  try { blobSet = new Set((await _admLoadBlobs()).blobs.map(b => b.url)); } catch (e) { blobSet = null; }
+  try {
+    _admBlobCache = null;
+    const bl = await _admLoadBlobs();
+    blobSet = bl.truncated ? null : new Set(bl.blobs.map(b => b.url));
+  } catch (e) { blobSet = null; }
 
   const hasData = ph => (ph.data instanceof Blob) || (typeof ph.data === 'string' && ph.data.startsWith('data:'));
   _admDeadGroups = [];
@@ -12146,7 +12334,13 @@ window.toggleCheck = function(id) {
 // so a PM can sort, filter, and average.
 function exportCSV(pid) {
   const proj=getProject(pid); if(!proj) return;
-  const safe = v => '"' + String((v===undefined||v===null)?'':v).replace(/"/g,'""') + '"';
+  const safe = v => {
+    let s = String((v===undefined||v===null)?'':v);
+    // Formula-injection guard: Excel executes cells starting with = + - @
+    // (plain negative numbers stay untouched)
+    if (/^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = "'" + s;
+    return '"' + s.replace(/"/g,'""') + '"';
+  };
   const row  = arr => arr.map(safe).join(',');
   const rows = [];
   const items = activeItems(proj);
@@ -12366,6 +12560,7 @@ function closeCtxMenu() {
 // PHOTO CARD CONTEXT MENU
 // ══════════════════════════════════════════
 function showPhotoMenu(e,pid,sid,idx) {
+  if(_photoIdxStale()) return;
   closeCtxMenu();
   const btn=e.currentTarget;
   const rect=btn.getBoundingClientRect();
@@ -12829,7 +13024,9 @@ window.addSectionFromModal=function(pid){
 
 window.deleteSectionFromModal=function(pid,secId){
   const proj=getProject(pid); if(!proj) return;
-  const hasItems=proj.items.some(i=>i.sectionId===secId);
+  // Ignore soft-deleted tombstones — they ride along for sync but must not
+  // block deleting a section the user has visibly emptied.
+  const hasItems=proj.items.some(i=>!i._deleted&&i.sectionId===secId);
   if(hasItems) return showToast('Remove all items in this section first');
   proj.sections=proj.sections.filter(s=>s.id!==secId);
   markProjectDirty(pid); save();
@@ -13158,7 +13355,9 @@ function createProjectFromImport(items, folderId) {
     }
 
     siItems.push({
-      id: 'si_' + i.si,
+      // Unique suffix: duplicate SI numbers in the sheet must not produce
+      // colliding item ids (lookups/edits/sync would all hit the first match)
+      id: 'si_' + i.si + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       sectionId: sections[i.section].id,
       num: 'SI ' + i.si,
       title: i.title,
@@ -13296,9 +13495,9 @@ function openGlobalSearch() {
           i.title.toLowerCase().includes(q) ||
           i.num.toLowerCase().includes(q) ||
           (i.notes||'').toLowerCase().includes(q) ||
-          (i.fieldCheck||'').toLowerCase().includes(q) ||
+          ((i.statusCode||'')+' '+(i.statusText||'')).toLowerCase().includes(q) ||
           (i._updatedBy||'').toLowerCase().includes(q) ||
-          (Array.isArray(i.conditions) ? i.conditions.join(' ').toLowerCase().includes(q) : false)
+          (Array.isArray(i.tags) ? i.tags.join(' ').toLowerCase().includes(q) : false)
         ) {
           matchSIs.push({ item: i, proj: p, fid });
         }
@@ -13518,9 +13717,13 @@ function _initMobileQoL() {
     }
   };
 
-  // When the SW takes control (after SKIP_WAITING), reload once
+  // When the SW takes control (after SKIP_WAITING), reload once.
+  // On the very first visit clients.claim() also fires this event — that
+  // must NOT reload the page the user is actively using.
   let _reloading = false;
+  let _hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!_hadController) { _hadController = true; return; }
     if (_reloading) return;
     _reloading = true;
     window.location.reload();
@@ -13922,6 +14125,7 @@ window.triggerTowerImport = function() {
 };
 
 window.previewTowerRoomPhoto = function(idx) {
+  if (_photoIdxStale()) return;
   if (!_twp) return;
   const { room } = _twGetRoom(_twp.pid, _twp.sid, _twp.roomId);
   const p = room && room.photos && room.photos[idx]; if (!p) return;
@@ -13936,6 +14140,7 @@ window.previewTowerRoomPhoto = function(idx) {
 };
 
 window.deleteTowerRoomPhoto = function(idx) {
+  if (_photoIdxStale()) return;
   if (!_twp) return;
   const { item, room } = _twGetRoom(_twp.pid, _twp.sid, _twp.roomId);
   if (!item || !room || !room.photos) return;
@@ -13973,7 +14178,10 @@ function _mpEnsure(item) {
 /** Total hours logged for an item */
 function _mpTotalLogged(item) {
   _mpEnsure(item);
-  return item.laborEntries.reduce((sum, e) => sum + (e.hours || 0), 0);
+  // Man-hours, not hours-per-worker: e.hours is per worker; e.total is
+  // workers × hours (fall back to computing it for entries missing total).
+  return item.laborEntries.reduce((sum, e) =>
+    sum + (e.total != null ? +e.total : (+e.workers || 1) * (+e.hours || 0)), 0);
 }
 
 /** Remaining hours for an item (null if no estimate) */
@@ -13996,9 +14204,11 @@ function _mpColor(pct) {
   return '#22c55e';
 }
 
-/** Today's date as YYYY-MM-DD */
+/** Today's date as YYYY-MM-DD — LOCAL time, not UTC: toISOString() would
+    date evening entries with tomorrow's date in US timezones. */
 function _todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
 /** Format YYYY-MM-DD as M/D/YY */
@@ -14614,7 +14824,10 @@ function _woParseName(name) {
 
 function _woToISODate(v) {
   if (v == null || v === '') return '';
-  if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0, 10);
+  // XLSX hands over Dates parsed in LOCAL time (midnight) — format with local
+  // getters or US timezones shift the date back a day.
+  const loc = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  if (v instanceof Date && !isNaN(v)) return loc(v);
   if (typeof v === 'number') {
     const d = new Date(Math.round((v - 25569) * 86400 * 1000));
     return isNaN(d) ? '' : d.toISOString().slice(0, 10);
@@ -14629,7 +14842,7 @@ function _woToISODate(v) {
   }
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   const d = new Date(s);
-  return isNaN(d) ? '' : d.toISOString().slice(0, 10);
+  return isNaN(d) ? '' : loc(d);
 }
 
 function _woToNumber(v) {
@@ -15644,11 +15857,15 @@ window._fpClearPins=function(pid){
           const cards=[...grid.querySelectorAll('.proj-card:not(.new-card)')];
           return cards.some(c=>c.getAttribute('onclick')?.includes(p.id)||c.querySelector('*')?.onclick?.toString().includes(p.id));
         });
-        // simpler: just filter archived cards from current folder
+        // Scope the archived section to THIS folder's projects — without the
+        // membership filter every archived project shows in every folder.
         if(r.view==='folder'||r.view==='root'){
           const fid=r.folderId||'';
-          const inFolder=store.projects.filter(p=>p.archived);
-          if(inFolder.length) injectArchivedSection(grid, store.projects, fid);
+          const folder=fid?getFolder(fid):null;
+          const scoped=fid
+            ? store.projects.filter(p=>folder&&(folder.projects||[]).includes(p.id))
+            : store.projects.filter(p=>!store.folders.some(f=>(f.projects||[]).includes(p.id)));
+          injectArchivedSection(grid, scoped, fid);
         }
       });
     });
