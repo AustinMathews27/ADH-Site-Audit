@@ -71,7 +71,11 @@ module.exports = async function (context, req) {
   try {
     const cred    = new StorageSharedKeyCredential(account, accountKey);
     const service = new BlobServiceClient(`https://${account}.blob.core.windows.net`, cred);
-    const result  = await service.getContainerClient(container).getBlobClient(blobName).deleteIfExists({ deleteSnapshots: 'includeSnapshots' });
+    // 'include' is the only valid spelling — the old 'includeSnapshots' made the
+    // SDK throw before the request, so server-side photo deletion had been
+    // silently failing (client fires and forgets) and every deleted photo's
+    // file stayed in Blob Storage.
+    const result  = await service.getContainerClient(container).getBlobClient(blobName).deleteIfExists({ deleteSnapshots: 'include' });
 
     context.log(`[deleteBlob] ${result.succeeded ? '✓ Deleted' : 'Not found (already deleted?)'}: ${blobName}`);
     context.res = {
