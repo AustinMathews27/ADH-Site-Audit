@@ -22,6 +22,10 @@ const MAX_RETRIES = 5;
 // 90 days is far beyond any realistic device-offline window.
 const TOMBSTONE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 
+// Max project docs read per save to catch deleted docs whose index tombstone
+// is missing (see step 5b).
+const MAX_DOC_CHECKS = 40;
+
 module.exports = async function (context, req) {
   context.res = { headers: { "Content-Type": "application/json" } };
 
@@ -94,14 +98,10 @@ module.exports = async function (context, req) {
         }
       });
 
-      // ── 4. Merge project tombstones (newest timestamp wins), then GC ──────
+      // ── 4. Merge project tombstones (newest timestamp wins) ───────────────
       const tombstones = Object.assign({}, current.projectTombstones || {});
       Object.entries(incoming.projectTombstones || {}).forEach(([id, ts]) => {
         if (!tombstones[id] || ts > tombstones[id]) tombstones[id] = ts;
-      });
-      const tombstoneCutoff = Date.now() - TOMBSTONE_TTL_MS;
-      Object.keys(tombstones).forEach(id => {
-        if (tombstones[id] < tombstoneCutoff) delete tombstones[id];
       });
 
       // ── 5. Merge projectIds (union of both sides, minus tombstoned) ───────
@@ -111,6 +111,38 @@ module.exports = async function (context, req) {
         ...(current.projectIds  || []),
         ...(incoming.projectIds || [])
       ]);
+
+      // 5a. GC old tombstones — but NEVER while the id is still on either side.
+      // Before v8.54 a tombstone expired after 90 days no matter what, so an id
+      // kept alive by a stale device sat in the union forever once its
+      // tombstone was gone, and every device fetched the dead doc on startup.
+      const tombstoneCutoff = Date.now() - TOMBSTONE_TTL_MS;
+      Object.keys(tombstones).forEach(id => {
+        if (tombstones[id] < tombstoneCutoff && !allProjectIds.has(id)) delete tombstones[id];
+      });
+
+      // 5b. Ids the pushing device does NOT list as live and that carry no
+      // tombstone: ask the project doc itself. A `_deleted` doc means the
+      // delete happened but its index tombstone never existed (pre-tombstone-
+      // era deletes) or expired — mint one now so the id finally leaves the
+      // union. Reads are bounded per save; normally there are 0–1 such ids
+      // (a project just created on another device). A 404 is left alone —
+      // the client's orphan self-heal owns that case.
+      const incomingIds = new Set(incoming.projectIds || []);
+      const suspects = [...allProjectIds].filter(id => !incomingIds.has(id) && !tombstones[id]);
+      if (suspects.length) {
+        const start = Math.floor(Math.random() * suspects.length);   // rotate so repeated saves cover all
+        const batch = suspects.slice(start).concat(suspects.slice(0, start)).slice(0, MAX_DOC_CHECKS);
+        await Promise.all(batch.map(async id => {
+          try {
+            const { resource: doc } = await container.item('adh-proj-' + id, 'adh-proj-' + id).read();
+            if (doc && doc._deleted) {
+              tombstones[id] = Date.now();   // fresh stamp: 90 more days of protection against stale pushes
+              context.log(`[saveIndex] ${id} doc is deleted — tombstoned in index`);
+            }
+          } catch (e) { /* 404 or transient — leave the id alone */ }
+        }));
+      }
       Object.keys(tombstones).forEach(id => allProjectIds.delete(id));
 
       // ── 6. GC old contact tombstones (same TTL as project tombstones) ─────
