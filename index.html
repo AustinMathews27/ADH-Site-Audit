@@ -851,6 +851,7 @@ select.field-input { cursor:pointer; }
 .recovery-btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
 .recovery-btn.danger { background:var(--red-dim); border-color:var(--red-dim); color:var(--red); }
 .recovery-btn:disabled { opacity:0.4; cursor:default; pointer-events:none; }
+.company-badge { display:inline-block; margin-left:8px; padding:2px 7px; border-radius:6px; font-size:10px; font-weight:700; letter-spacing:.04em; font-family:var(--mono); color:#60a5fa; background:rgba(96,165,250,0.10); border:1px solid rgba(96,165,250,0.25); vertical-align:middle; }
 .adm-tabs {
   display:flex; gap:6px; padding:8px 16px; overflow-x:auto; flex-shrink:0;
   background:var(--surface); border-bottom:1px solid var(--border);
@@ -3607,6 +3608,63 @@ function _tombKey(url) { const s = String(url || ''); return s.slice(s.lastIndex
 function _tombHit(tomb, url) { return !!(tomb && url && (tomb[url] || tomb[_tombKey(url)])); }
 
 // ══════════════════════════════════════════
+// COMPANY PROFILES
+// ══════════════════════════════════════════
+// Each top-level folder is one of the sister companies. A project inherits
+// the profile of the company folder it lives in — stamped as proj.companyId
+// at creation, derived from folder membership for older projects. Anything
+// that differs per company reads the profile; never `if (company === …)`,
+// so adding a company is a new entry here, not new branches everywhere.
+//
+//   imports — which project-import paths the company uses (manual entry is
+//             always available):
+//     'innergy'    ⚡ pull work orders from the Innergy ERP (AMI only today)
+//     'sheet'      📥 scope-item spreadsheet (XLS)
+//     'workorders' 📋 work-orders spreadsheet (dates & hours)
+const COMPANY_PROFILES = {
+  fld_ast: { id: 'asst', code: 'A.S.S.T', name: 'A.S.S.T',            imports: ['sheet'] },
+  fld_ami: { id: 'ami',  code: 'AMI',     name: 'Allegheny Millwork', imports: ['innergy', 'workorders', 'sheet'] },
+  fld_acd: { id: 'acd',  code: 'ACD',     name: 'ACD',                imports: ['sheet'] },
+  fld_acs: { id: 'acs',  code: 'ACS',     name: 'ACS',                imports: ['sheet'] },
+  fld_adh: { id: 'adh',  code: 'ADH',     name: 'ADH',                imports: ['sheet'] },
+  fld_acm: { id: 'acm',  code: 'ACM',     name: 'ACM',                imports: ['sheet'] },
+};
+// Folders outside the company tree keep today's behaviour (everything on).
+const COMPANY_DEFAULT = { id: '', code: '', name: '', imports: ['innergy', 'workorders', 'sheet'] };
+
+function _rootFolderOf(fid) {
+  let f = getFolder(fid), guard = 0;
+  while (f && f.parentId && guard++ < 20) f = getFolder(f.parentId);
+  return f || null;
+}
+function companyOfFolder(fid) {
+  const root = _rootFolderOf(fid);
+  if (!root) return COMPANY_DEFAULT;
+  return COMPANY_PROFILES[root.id]
+      || Object.values(COMPANY_PROFILES).find(c => c.code === root.name || c.name === root.name)
+      || COMPANY_DEFAULT;
+}
+function _companyIdForFolder(fid) { return fid ? (companyOfFolder(fid).id || '') : ''; }
+function companyOf(proj) {
+  if (!proj) return COMPANY_DEFAULT;
+  if (proj.companyId) return Object.values(COMPANY_PROFILES).find(c => c.id === proj.companyId) || COMPANY_DEFAULT;
+  const holder = (store.folders || []).find(f => (f.projects || []).includes(proj.id));
+  return holder ? companyOfFolder(holder.id) : COMPANY_DEFAULT;
+}
+function _importButtonsHTML(fid) {
+  const im = companyOfFolder(fid).imports;
+  return [
+    im.includes('sheet')      ? `<button class="import-xls-btn" onclick="triggerXLSImport('${fid}')">📥 Import XLS</button>` : '',
+    im.includes('workorders') ? `<button class="import-xls-btn" onclick="triggerWorkOrdersImport('${fid}')" style="background:rgba(96,165,250,0.08);border-color:rgba(96,165,250,0.25);color:#60a5fa">📋 Work Orders</button>` : '',
+    im.includes('innergy')    ? `<button class="import-xls-btn innergy-btn" onclick="showInnergyImport('${fid}')">⚡ Innergy</button>` : '',
+  ].filter(Boolean).join('\n      ');
+}
+function _companyBadgeHTML(proj) {
+  const c = companyOf(proj);
+  return c.code ? `<span class="company-badge" title="${_htmlEsc(c.name)}">${_htmlEsc(c.code)}</span>` : '';
+}
+
+// ══════════════════════════════════════════
 // DEVICE IDENTITY
 // Every install mints a permanent random device ID on first run. It lives
 // OUTSIDE the synced store (localStorage + IDB, never Cosmos-merged) so one
@@ -3889,6 +3947,9 @@ function _buildProjectPayload(proj) {
     : undefined;
 
   const out = Object.assign({}, proj, {
+    // Company stamp: set at creation for new projects; older projects derive
+    // it from the folder they live in so every cloud doc carries it.
+    companyId: proj.companyId || companyOf(proj).id || '',
     // Who pushed this doc last — stored on the cloud doc for diagnostics
     _pushedBy: { device: _deviceId, label: _deviceLabel, name: _whoAmI(), at: Date.now() },
     // Blob-storage URL syncs through Cosmos; pending base64 stays local
@@ -7698,9 +7759,7 @@ function buildFolderView(fid) {
       </div>
       ${MAIN_FOLDERS.includes(folder.name) ? `<button class="btn-add" onclick="showNewFolderModal('${fid}')" style="color:var(--folder);background:var(--folder-dim);border-color:rgba(245,158,11,0.22)">＋ Folder</button>` : ''}
       <button class="btn-add" onclick="showNewProjectModal('${fid}')">＋ Project</button>
-      <button class="import-xls-btn" onclick="triggerXLSImport('${fid}')">📥 Import XLS</button>
-      <button class="import-xls-btn" onclick="triggerWorkOrdersImport('${fid}')" style="background:rgba(96,165,250,0.08);border-color:rgba(96,165,250,0.25);color:#60a5fa">📋 Work Orders</button>
-      <button class="import-xls-btn innergy-btn" onclick="showInnergyImport('${fid}')">⚡ Innergy</button>
+      ${_importButtonsHTML(fid)}
       <button class="btn-icon" onclick="confirmDeleteFolder('${fid}')" title="Delete Folder" style="border-color:var(--red-dim);color:var(--red)">🗑</button>
     </div>
 
@@ -7782,7 +7841,7 @@ function buildProjectView(pid) {
         </div>
       </div>
       <div class="proj-summary-info">
-        <div class="proj-summary-name">${proj.name}</div>
+        <div class="proj-summary-name">${proj.name}${_companyBadgeHTML(proj)}</div>
         <div class="proj-meta-grid">
           <div class="meta-item"><div class="meta-label">Client</div><div class="meta-val">${proj.client}</div></div>
           <div class="meta-item"><div class="meta-label">Company</div><div class="meta-val">${proj.company}</div></div>
@@ -7815,11 +7874,11 @@ function buildProjectView(pid) {
         <div class="action-body"><div class="action-title">View Import History</div><div class="action-desc">Review previous spreadsheet synchronization logs</div></div>
         <div class="action-arrow">›</div>
       </div>
-      <div class="action-row" onclick="triggerWorkOrdersImport('', '${pid}')">
+      ${companyOf(proj).imports.includes('workorders') ? `<div class="action-row" onclick="triggerWorkOrdersImport('', '${pid}')">
         <div class="action-icon" style="background:rgba(96,165,250,0.1)">📋</div>
         <div class="action-body"><div class="action-title">Import Work Orders</div><div class="action-desc">Update dates & hours from Work Orders spreadsheet</div></div>
         <div class="action-arrow">›</div>
-      </div>
+      </div>` : ''}
       <div class="action-row" onclick="navToSchedule('${pid}')">
         <div class="action-icon" style="background:rgba(96,165,250,0.1)">📅</div>
         <div class="action-body"><div class="action-title">6-Week Look Ahead</div><div class="action-desc">Schedule & export separately from audit</div></div>
@@ -11832,7 +11891,7 @@ function showNewProjectModal(fid) {
     const name=document.getElementById('m-name')?.value.trim();
     if(!name) return showToast('Project name required');
     const proj={
-      id:_newProjectId(name),name,
+      id:_newProjectId(name),name,companyId:_companyIdForFolder(fid),
       ownedBy: _currentUser?.userId || '',
       client:document.getElementById('m-client')?.value||'—',
       company:document.getElementById('m-company')?.value||'—',
@@ -12962,6 +13021,8 @@ async function duplicateProject(pid,fid,opts) {
   // A duplicate belongs to whoever made it (the source may be foreign-owned,
   // and foreign-owned projects are never pushed or indexed for this user).
   newProj.ownedBy = _currentUser?.userId || '';
+  // The copy belongs to the company folder it lands in (falls back to the source's)
+  newProj.companyId = _companyIdForFolder(fid) || src.companyId || '';
   // Don't copy tombstoned (deleted) scope items into the fresh copy
   newProj.items = newProj.items.filter(i => !i._deleted);
 
@@ -16597,6 +16658,7 @@ function _innergyCreateProject() {
     const proj = {
       id: _newProjectId(name),
       name,
+      companyId: _companyIdForFolder(fid),
       ownedBy: _currentUser?.userId || '',
       client:      document.getElementById('m-client')?.value.trim()  || client || '—',
       company:     document.getElementById('m-company')?.value.trim() || '—',

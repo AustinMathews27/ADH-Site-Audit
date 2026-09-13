@@ -54,9 +54,11 @@ const tombHit = (tomb, u) => !!(tomb && u && (tomb[u] || tomb[tombKey(u)]));
 // and `SELECT c.id, c.label FROM c WHERE c.docType = 'project'` lists them.
 function labelFor(doc) {
   const name  = String(doc.name || '(unnamed)').trim();
-  if (doc._deleted) return `DELETED · ${name}`;
+  // Company code first (AMI · …) so Data Explorer sorts/groups by company.
+  const co    = doc.companyId ? String(doc.companyId).toUpperCase() + ' · ' : '';
+  if (doc._deleted) return `DELETED · ${co}${name}`;
   const live  = (doc.items || []).filter(i => !i._deleted).length;
-  const parts = [name];
+  const parts = [co + name];
   if (doc.client && doc.client !== '—') parts.push(String(doc.client).trim());
   parts.push(`${live} SI`);
   return parts.join(' · ');
