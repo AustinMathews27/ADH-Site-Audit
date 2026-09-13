@@ -3457,7 +3457,9 @@ const SEED = {
     {id:'fld_ami',name:'AMI',icon:`<img src='logos/ami.png' alt='AMI' class='folder-logo-img'>`, projects:[], parentId:null},
     {id:'fld_acd',name:'ACD',icon:`<img src='logos/acd-light.png' alt='ACD' class='folder-logo-img logo-light logo-dark-bg'><img src='logos/acd-dark.png' alt='ACD' class='folder-logo-img logo-dark logo-dark-bg'>`, projects:[], parentId:null},
     {id:'fld_acs',name:'ACS',icon:`<img src='logos/acs.png' alt='ACS' class='folder-logo-img'>`, projects:[], parentId:null},
-    {id:'fld_adh',name:'ADH',icon:`<img src='logos/adh.png' alt='ADH' class='folder-logo-img logo-dark-bg'>`, projects:[], parentId:null},
+    // Renamed ADH → AML (Allegheny Millwork and Lumber) 2026-09-13; folder id and
+    // logo file keep their old names, _fixFolderIcons migrates existing stores.
+    {id:'fld_adh',name:'AML',icon:`<img src='logos/adh.png' alt='AML' class='folder-logo-img logo-dark-bg'>`, projects:[], parentId:null},
     {id:'fld_acm',name:'ACM',icon:`<img src='logos/acm-light.png' alt='ACM' class='folder-logo-img logo-light logo-dark-bg'><img src='logos/acm-dark.png' alt='ACM' class='folder-logo-img logo-dark logo-dark-bg'>`, projects:[], parentId:null},
 
   ],
@@ -3626,7 +3628,8 @@ const COMPANY_PROFILES = {
   fld_ami: { id: 'ami',  code: 'AMI',     name: 'Allegheny Millwork', imports: ['innergy', 'workorders', 'sheet'] },
   fld_acd: { id: 'acd',  code: 'ACD',     name: 'ACD',                imports: ['sheet'] },
   fld_acs: { id: 'acs',  code: 'ACS',     name: 'ACS',                imports: ['sheet'] },
-  fld_adh: { id: 'adh',  code: 'ADH',     name: 'ADH',                imports: ['sheet'] },
+  // 'adh' was this company's id before the AML rename — legacy stamps still resolve here.
+  fld_adh: { id: 'aml',  code: 'AML',     name: 'Allegheny Millwork and Lumber', legacyIds: ['adh'], imports: ['sheet'] },
   fld_acm: { id: 'acm',  code: 'ACM',     name: 'ACM',                imports: ['sheet'] },
 };
 // Folders outside the company tree keep today's behaviour (everything on).
@@ -3647,7 +3650,7 @@ function companyOfFolder(fid) {
 function _companyIdForFolder(fid) { return fid ? (companyOfFolder(fid).id || '') : ''; }
 function companyOf(proj) {
   if (!proj) return COMPANY_DEFAULT;
-  if (proj.companyId) return Object.values(COMPANY_PROFILES).find(c => c.id === proj.companyId) || COMPANY_DEFAULT;
+  if (proj.companyId) return Object.values(COMPANY_PROFILES).find(c => c.id === proj.companyId || (c.legacyIds || []).includes(proj.companyId)) || COMPANY_DEFAULT;
   const holder = (store.folders || []).find(f => (f.projects || []).includes(proj.id));
   return holder ? companyOfFolder(holder.id) : COMPANY_DEFAULT;
 }
@@ -4178,6 +4181,14 @@ function _fixFolderIcons() {
     const seedF = SEED.folders.find(sf => sf.id === id);
     if (f && seedF) f.icon = seedF.icon;
   });
+  // One-time rename ADH → AML (2026-09-13). Runs after every index merge as
+  // well as at init, so a stale device pushing the old name can't win: the
+  // touch stamps _modified, and folders merge newest-wins on both sides.
+  const aml = store.folders.find(f => f.id === 'fld_adh');
+  if (aml && aml.name === 'ADH') {
+    aml.name = 'AML';
+    try { _touchFolder(aml); markStoreDirty(); } catch (e) { /* init order — the next save carries it */ }
+  }
 }
 
 /**
@@ -5279,7 +5290,7 @@ function getPhotoSrcForDisplay(p) {
   return null;
 }
 
-const MAIN_FOLDERS = ['A.S.S.T', 'AMI', 'ACD', 'ACS', 'ADH', 'ACM'];
+const MAIN_FOLDERS = ['A.S.S.T', 'AMI', 'ACD', 'ACS', 'AML', 'ACM', 'ADH' /* legacy name of AML until every store has migrated */];
 
 function showUserMenu() {
   const email = _currentUser?.userDetails || 'Unknown';
@@ -10647,7 +10658,8 @@ const ADH_COMPANIES = [
   { id:'acs',  name:'Allegheny Construction Specialties',   abbr:'ACS',  color:'#14532d' },
   { id:'asst', name:'Allegheny Solid Surfaces (A.S.S.T)',   abbr:'ASST', color:'#4a1d96' },
   { id:'acm',  name:'Ascent Custom Millwork (ACM)',         abbr:'ACM',  color:'#7c3aed' },
-  { id:'adh',  name:'Allegheny Diversified Holdings (ADH)', abbr:'ADH',  color:'#0f172a' },
+  // id stays 'adh': it is the IndexedDB key under which this company's logo/signature are stored.
+  { id:'adh',  name:'Allegheny Millwork and Lumber (AML)', abbr:'AML',  color:'#0f172a' },
 ];
 
 // Runtime branding state — populated from IndexedDB on init
