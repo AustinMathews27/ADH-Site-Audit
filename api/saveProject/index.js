@@ -24,7 +24,8 @@ const client    = new CosmosClient({
   connectionString: process.env.COSMOS_DB_CONNECTION_STRING,
   agent: keepAliveAgent
 });
-const database  = client.database("Auditdata");
+// COSMOS_DB_DATABASE lets a staging environment point at its own database (Auditdata-dev)
+const database  = client.database(process.env.COSMOS_DB_DATABASE || "Auditdata");
 const container = database.container("Audits");
 const MAX_RETRIES = 5;
 

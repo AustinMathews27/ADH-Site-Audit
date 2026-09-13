@@ -22,7 +22,8 @@
 const { CosmosClient } = require("@azure/cosmos");
 
 const client   = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
-const database = client.database("Auditdata");
+// COSMOS_DB_DATABASE lets a staging environment point at its own database (Auditdata-dev)
+const database = client.database(process.env.COSMOS_DB_DATABASE || "Auditdata");
 
 const CONTAINER_ID  = "AuditLog";
 const TTL_90_DAYS   = 60 * 60 * 24 * 90; // seconds

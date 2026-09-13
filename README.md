@@ -23,6 +23,17 @@ Every document starts with a human-readable `label` (`"Song Teller Amenities · 
 SELECT c.id, c.label, c.docType, c._savedAt FROM c ORDER BY c.label
 ```
 
+### Staging / feature branches
+
+Never point unfinished work at the production database. The API reads `COSMOS_DB_DATABASE` (default `Auditdata`) and `AZURE_BLOB_CONTAINER`, so a staging environment gets its own data by setting:
+
+```
+COSMOS_DB_DATABASE   = Auditdata-dev      (create it in the Cosmos account: container "Audits", partition key /id)
+AZURE_BLOB_CONTAINER = site-photos-dev
+```
+
+Recommended setup: a second Static Web App (Free tier) connected to the feature branch, with those two settings — it gets a stable URL that installs on an iPad as its own PWA. `scripts/seed-staging.mjs` copies the production projects into it through the public API. The production workflow also builds a preview environment for any pull request against `main`; that preview **inherits production settings**, so open the PR only when the branch is ready and set the two variables on the preview environment (Portal → Static Web App → Environment variables → pick the environment) before anyone uses its URL.
+
 **Size limit.** Cosmos allows **2 MB per document** — measured against the live API (2026-09-12): ~1,024 typical scope items or ~488 photo-heavy ones per project (a scope item costs ~2–4 KB; each photo is a ~170-byte blob URL, the image bytes never enter Cosmos). The largest real project was 318 KB. `saveProject` refuses anything over the limit with `413 {error:"too_large", bytes}`, the app warns from 75% and shows a red toast when a project is blocked, and **Admin → System → Cloud document sizes** lists every project against the limit. Run `node scripts/cosmos-label-backfill.mjs --apply` once after deploying a label change to stamp existing documents.
 - **Innergy integration** — `/api/innergy/*` proxies `app.innergy.com` server-side; the `INNERGY_API_KEY` lives in Azure app settings, never in the browser.
 - **Data hierarchy** — Folders (company brands) → Projects (jobs) → Sections → Scope Items (SIs).

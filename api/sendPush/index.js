@@ -19,7 +19,8 @@ const { CosmosClient } = require("@azure/cosmos");
 const webpush = require("web-push");
 
 const client    = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
-const database  = client.database("Auditdata");
+// COSMOS_DB_DATABASE lets a staging environment point at its own database (Auditdata-dev)
+const database  = client.database(process.env.COSMOS_DB_DATABASE || "Auditdata");
 const container = database.container("Audits");
 
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY ||
