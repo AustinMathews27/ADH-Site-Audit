@@ -5,6 +5,7 @@
 // Each user gets their own isolated document — adh-index-{userId}.
 // Falls back to adh-index-v1 for legacy data if the user index doesn't exist yet.
 
+const { requireUser } = require('../_shared/auth');
 const { CosmosClient } = require("@azure/cosmos");
 
 const client    = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
@@ -13,6 +14,10 @@ const database  = client.database(process.env.COSMOS_DB_DATABASE || "Auditdata")
 const container = database.container("Audits");
 
 module.exports = async function (context, req) {
+  // Sign-in is enforced at the edge; this parses the caller and applies the
+  // optional ALLOWED_EMAIL_DOMAINS allow-list (see api/_shared/auth.js).
+  if (!requireUser(context, req)) return;
+
   const userId  = (req.query.userId || '').trim();
   const indexId = userId ? `adh-index-${userId}` : 'adh-index-v1';
 

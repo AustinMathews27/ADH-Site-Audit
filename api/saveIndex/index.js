@@ -11,6 +11,7 @@
 // without deleted (or orphaned) IDs re-entering the index forever. Tombstones
 // are GC'd after TOMBSTONE_TTL_MS — by then every device has synced them.
 
+const { requireUser } = require('../_shared/auth');
 const { CosmosClient } = require("@azure/cosmos");
 
 const client      = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
@@ -28,6 +29,10 @@ const TOMBSTONE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const MAX_DOC_CHECKS = 40;
 
 module.exports = async function (context, req) {
+  // Sign-in is enforced at the edge; this parses the caller and applies the
+  // optional ALLOWED_EMAIL_DOMAINS allow-list (see api/_shared/auth.js).
+  if (!requireUser(context, req)) return;
+
   context.res = { headers: { "Content-Type": "application/json" } };
 
   if (req.method === "OPTIONS") {

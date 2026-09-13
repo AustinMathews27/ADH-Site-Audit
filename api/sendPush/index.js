@@ -15,6 +15,7 @@
 // Dead subscriptions (404/410 from the push service — user revoked, iOS
 // evicted, PWA uninstalled) are pruned from Cosmos on the spot.
 
+const { requireUser } = require('../_shared/auth');
 const { CosmosClient } = require("@azure/cosmos");
 const webpush = require("web-push");
 
@@ -27,6 +28,10 @@ const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY ||
   'BIQ1puaCqO_nwUIVMG5QRg_iHBsZvPY1b8g-R0-Y1Z1YFrWAVFld-K41iEViuRh4uofDPCaJrrR-X7SrzFHjrj8';
 
 module.exports = async function (context, req) {
+  // Sign-in is enforced at the edge; this parses the caller and applies the
+  // optional ALLOWED_EMAIL_DOMAINS allow-list (see api/_shared/auth.js).
+  if (!requireUser(context, req)) return;
+
   context.res = { headers: { "Content-Type": "application/json" } };
 
   const priv = process.env.VAPID_PRIVATE_KEY;

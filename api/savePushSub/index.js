@@ -9,6 +9,7 @@
 // (ignored notifications, PWA reinstall), so the doc is kept fresh rather
 // than written once.
 
+const { requireUser } = require('../_shared/auth');
 const { CosmosClient } = require("@azure/cosmos");
 
 const client    = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
@@ -17,6 +18,10 @@ const database  = client.database(process.env.COSMOS_DB_DATABASE || "Auditdata")
 const container = database.container("Audits");
 
 module.exports = async function (context, req) {
+  // Sign-in is enforced at the edge; this parses the caller and applies the
+  // optional ALLOWED_EMAIL_DOMAINS allow-list (see api/_shared/auth.js).
+  if (!requireUser(context, req)) return;
+
   context.res = { headers: { "Content-Type": "application/json" } };
 
   const body     = req.body || {};

@@ -1,21 +1,27 @@
 {
   "routes": [
-    {
-      "route": "/.auth/*",
-      "allowedRoles": ["anonymous"]
-    },
-    {
-      "route": "/api/*",
-      "allowedRoles": ["anonymous"]
-    },
-    {
-      "route": "/*",
-      "allowedRoles": ["anonymous"]
-    }
+    { "route": "/.auth/login/github", "statusCode": 404 },
+    { "route": "/.auth/*", "allowedRoles": ["anonymous"] },
+    { "route": "/manifest.json", "allowedRoles": ["anonymous"] },
+    { "route": "/sw.js", "allowedRoles": ["anonymous"] },
+    { "route": "/favicon.ico", "allowedRoles": ["anonymous"] },
+    { "route": "/icon-192.png", "allowedRoles": ["anonymous"] },
+    { "route": "/icon-512.png", "allowedRoles": ["anonymous"] },
+    { "route": "/logo.png", "allowedRoles": ["anonymous"] },
+    { "route": "/logo-white.png", "allowedRoles": ["anonymous"] },
+    { "route": "/logos/*", "allowedRoles": ["anonymous"] },
+    { "route": "/api/*", "allowedRoles": ["authenticated"] },
+    { "route": "/*", "allowedRoles": ["authenticated"] }
   ],
+  "responseOverrides": {
+    "401": {
+      "redirect": "/.auth/login/aad?post_login_redirect_uri=.referrer",
+      "statusCode": 302
+    }
+  },
   "navigationFallback": {
     "rewrite": "/index.html",
-    "exclude": ["/api/*", "/*.png", "/*.ico", "/*.json", "/*.js"]
+    "exclude": ["/api/*", "/*.png", "/*.ico", "/*.json", "/*.js", "/logos/*"]
   },
   "globalHeaders": {
     "Cache-Control": "no-store",
@@ -24,6 +30,7 @@
   },
   "mimeTypes": {
     ".json": "application/json",
-    ".js":   "application/javascript"
+    ".js":   "application/javascript",
+    ".svg":  "image/svg+xml"
   }
 }

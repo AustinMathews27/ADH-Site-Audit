@@ -3,6 +3,7 @@
 // Server-side proxy to app.innergy.com — keeps the API key out of the browser.
 // Set INNERGY_API_KEY in Azure Static Web Apps → Configuration → Application settings.
 
+const { requireUser } = require('../_shared/auth');
 const https = require('https');
 
 const INNERGY_BASE_HOST = 'app.innergy.com';
@@ -15,6 +16,10 @@ const CORS = {
 };
 
 module.exports = async function (context, req) {
+  // Sign-in is enforced at the edge; this parses the caller and applies the
+  // optional ALLOWED_EMAIL_DOMAINS allow-list (see api/_shared/auth.js).
+  if (!requireUser(context, req)) return;
+
   if (req.method === 'OPTIONS') {
     context.res = { status: 204, headers: CORS, body: '' };
     return;

@@ -12,6 +12,7 @@
 // a 10-minute read SAS minted here, per blob, and the destination is written
 // with the account key. Per-blob failures are reported, not fatal.
 
+const { requireUser } = require('../_shared/auth');
 const {
   BlobServiceClient,
   StorageSharedKeyCredential,
@@ -25,6 +26,10 @@ const CONCURRENCY = 8;
 const NAME_RE     = /^[a-zA-Z0-9_\-./]+$/;
 
 module.exports = async function (context, req) {
+  // Sign-in is enforced at the edge; this parses the caller and applies the
+  // optional ALLOWED_EMAIL_DOMAINS allow-list (see api/_shared/auth.js).
+  if (!requireUser(context, req)) return;
+
   if (req.method === 'OPTIONS') {
     context.res = { status: 204, headers: _corsHeaders(), body: '' };
     return;

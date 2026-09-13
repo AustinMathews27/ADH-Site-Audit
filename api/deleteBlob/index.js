@@ -5,12 +5,17 @@
 // The browser never gets delete permission in its SAS token —
 // all deletions go through this function.
 
+const { requireUser } = require('../_shared/auth');
 const {
   BlobServiceClient,
   StorageSharedKeyCredential,
 } = require('@azure/storage-blob');
 
 module.exports = async function (context, req) {
+  // Sign-in is enforced at the edge; this parses the caller and applies the
+  // optional ALLOWED_EMAIL_DOMAINS allow-list (see api/_shared/auth.js).
+  if (!requireUser(context, req)) return;
+
   if (req.method === 'OPTIONS') {
     context.res = { status: 204, headers: _corsHeaders(), body: '' };
     return;

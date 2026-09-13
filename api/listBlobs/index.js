@@ -6,6 +6,7 @@
 // them one by one. Returns name, url, size, and timestamps per blob.
 // Read-only — recovery re-links URLs; it never writes or deletes blobs.
 
+const { requireUser } = require('../_shared/auth');
 const {
   BlobServiceClient,
   StorageSharedKeyCredential,
@@ -14,6 +15,10 @@ const {
 const MAX_BLOBS = 20000; // safety cap — metadata only, ~150 bytes per entry
 
 module.exports = async function (context, req) {
+  // Sign-in is enforced at the edge; this parses the caller and applies the
+  // optional ALLOWED_EMAIL_DOMAINS allow-list (see api/_shared/auth.js).
+  if (!requireUser(context, req)) return;
+
   if (req.method === 'OPTIONS') {
     context.res = { status: 204, headers: _corsHeaders(), body: '' };
     return;

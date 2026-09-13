@@ -102,8 +102,10 @@ self.addEventListener('fetch', event => {
   if (url.protocol === 'chrome-extension:') return;
   if (url.protocol === 'blob:' || url.protocol === 'data:') return;
 
-  // Skip Azure API calls — never cache these
-  if (url.pathname.startsWith('/api/')) return;
+  // Skip Azure API calls and the Static Web Apps auth endpoints — never
+  // cache these. /.auth/me answers "who am I" and must always be live; the
+  // page keeps its own copy of the identity in IndexedDB for offline starts.
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/.auth/')) return;
 
   // For CDN requests: cache-first, fallback to network
   const isCDN = CDN_ORIGINS.some(o => url.origin === o || request.url.startsWith(o));

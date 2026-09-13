@@ -23,6 +23,16 @@ Every document starts with a human-readable `label` (`"Song Teller Amenities · 
 SELECT c.id, c.label, c.docType, c._savedAt FROM c ORDER BY c.label
 ```
 
+### Sign-in (Microsoft Entra ID)
+
+`staticwebapp.config.json` requires the `authenticated` role for `/*` and `/api/*`; unauthenticated requests are redirected to `/.auth/login/aad`. Everyone still works in ONE shared workspace — `userId` stays the workspace id, Entra only answers *who* is on the device (`_currentUser.principal`).
+
+**Offline rule:** a device that has signed in once keeps working offline indefinitely. `_getAuthUser` asks `/.auth/me` with a 4-second timeout and falls back to the identity cached in IndexedDB; only a definite "not signed in" answer redirects to login. A device that has *never* signed in and is offline sees a gate asking it to connect once. An expired session while working shows a "Session expired" gate the moment an API call fails; nothing local is lost.
+
+**Who may sign in.** The pre-configured Entra provider accepts any Microsoft account, so set `ALLOWED_EMAIL_DOMAINS` (comma-separated, e.g. `alleghenymillwork.com`) in the Static Web App's environment variables — `api/_shared/auth.js` rejects other accounts with 403 on every API call. For a true tenant restriction use a custom Entra registration (Standard plan). GitHub sign-in is blocked by route.
+
+**Scripts** (`scripts/*.mjs`) call the API anonymously and therefore stop working once sign-in is on for that environment; run them with a browser session cookie or against an environment without auth.
+
 ### Staging / feature branches
 
 Never point unfinished work at the production database. The API reads `COSMOS_DB_DATABASE` (default `Auditdata`) and `AZURE_BLOB_CONTAINER`, so a staging environment gets its own data by setting:

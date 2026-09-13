@@ -10,6 +10,7 @@
 //   AZURE_STORAGE_KEY      = key1 from Storage Account → Access keys
 //   AZURE_BLOB_CONTAINER   = your container name        (e.g. "site-photos")
 
+const { requireUser } = require('../_shared/auth');
 const {
   StorageSharedKeyCredential,
   generateBlobSASQueryParameters,
@@ -18,6 +19,10 @@ const {
 } = require('@azure/storage-blob');
 
 module.exports = async function (context, req) {
+  // Sign-in is enforced at the edge; this parses the caller and applies the
+  // optional ALLOWED_EMAIL_DOMAINS allow-list (see api/_shared/auth.js).
+  if (!requireUser(context, req)) return;
+
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     context.res = { status: 204, headers: _corsHeaders(), body: '' };

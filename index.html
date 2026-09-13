@@ -3529,25 +3529,138 @@ let _currentUser = null; // { userId, userDetails, userRoles }
  * - Offline                 → returns cached user from IDB (works after first login)
  * - localhost (dev)         → returns a dev identity, no redirect
  */
+// ── Identity model ──────────────────────────────────────────────────────────
+// Every device works in ONE shared workspace: `userId` is the workspace id
+// (the Cosmos index adh-index-{ADH_USER_ID} and every `ownedBy` stamp use it),
+// so sign-in never splits the data per person. Microsoft Entra ID answers
+// WHO is on the device: `principal` carries the signed-in person and is
+// cached in IndexedDB so an iPad that has signed in once keeps working
+// offline for as long as it likes. The Static Web App enforces sign-in at
+// the edge (staticwebapp.config.json: "/*" and "/api/*" need the
+// `authenticated` role); this function only decides what the page does.
+const ADH_USER_ID        = '25a348bbf3bb4e9087aefec8b88424b6';
+const AUTH_ME_TIMEOUT_MS = 4000;   // slow LTE must not stall startup — fall back to the cached identity
+const AUTH_LOGIN_URL     = '/.auth/login/aad';
+
+function _withWorkspace(principal, authSource) {
+  return {
+    userId:      ADH_USER_ID,
+    userDetails: principal.userDetails || '',
+    userRoles:   principal.userRoles || ['authenticated'],
+    principal:   { identityProvider: principal.identityProvider || 'aad', userId: principal.userId || '',
+                   userDetails: principal.userDetails || '', userRoles: principal.userRoles || [] },
+    authSource,
+    verifiedAt:  Date.now()
+  };
+}
+
+/**
+ * Resolve the current user.
+ *   localhost                       → dev identity, no network
+ *   offline, signed in before       → cached identity (full offline use)
+ *   offline, never signed in        → auth gate ("connect once to sign in")
+ *   online, /.auth/me says signed in→ fresh identity, cached
+ *   online, /.auth/me says NOT      → redirect to Entra login, returns null
+ *   online, /.auth/me slow/failing  → cached identity if any, else auth gate
+ * Only a definite "not signed in" answer triggers the login redirect —
+ * a timeout or a flaky network never throws a working device into a login
+ * loop it cannot complete.
+ */
 async function _getAuthUser() {
-  // ── AUTH DEACTIVATED · SHARED WORKSPACE ──────────────────
-  // No /.auth/me request, no Entra redirect — startup is instant.
-  // Every device resolves to ONE canonical identity so all clients
-  // read/write the same Cosmos index (adh-index-{ADH_USER_ID}) and
-  // stamp the same ownedBy. ADH_USER_ID is the OID the existing data
-  // already lives under, so no migration is needed. To repoint the
-  // entire workspace, change this single value.
-  const ADH_USER_ID = '25a348bbf3bb4e9087aefec8b88424b6';
+  const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
+  if (isLocal) {
+    return { userId: ADH_USER_ID, userDetails: 'dev@localhost', userRoles: ['authenticated'],
+             principal: null, authSource: 'local', verifiedAt: Date.now() };
+  }
 
-  let userDetails = 'field@adh.local';
+  let cached = null;
+  try { cached = await _idbGet('adh_user'); } catch (e) { /* no cache yet */ }
+  // Only a cache written by this identity model counts (pre-Entra caches had no principal)
+  if (cached && !cached.principal) cached = null;
+
+  if (!navigator.onLine) {
+    if (cached) return Object.assign({}, cached, { authSource: 'cache-offline' });
+    _showAuthGate('offline');
+    return null;
+  }
+
+  // Online: ask the Static Web App who we are, with a short timeout.
+  let me = 'unreachable';
   try {
-    const cached = await _idbGet('adh_user');
-    if (cached && cached.userDetails) userDetails = cached.userDetails;
-  } catch (e) { /* no cache yet */ }
+    me = await Promise.race([
+      fetch('/.auth/me', { cache: 'no-store', credentials: 'same-origin' })
+        .then(r => (r.ok ? r.json() : 'unreachable')).catch(() => 'unreachable'),
+      new Promise(res => setTimeout(() => res('timeout'), AUTH_ME_TIMEOUT_MS))
+    ]);
+  } catch (e) { me = 'unreachable'; }
 
-  const user = { userId: ADH_USER_ID, userDetails, userRoles: ['authenticated'] };
-  try { await _idbSet('adh_user', user); } catch (e) {}
-  return user;
+  if (me === 'timeout' || me === 'unreachable') {
+    console.warn('[Auth] /.auth/me ' + me + ' — using cached identity');
+    if (cached) return Object.assign({}, cached, { authSource: 'cache-' + me });
+    _showAuthGate('unreachable');
+    return null;
+  }
+
+  const principal = me && me.clientPrincipal;
+  if (principal && principal.userId) {
+    const user = _withWorkspace(principal, 'entra');
+    try { await _idbSet('adh_user', user); } catch (e) {}
+    return user;
+  }
+
+  // Definitely not signed in → Entra login, then back to where we were.
+  const back = location.pathname + location.search + location.hash;
+  location.replace(AUTH_LOGIN_URL + '?post_login_redirect_uri=' + encodeURIComponent(back || '/'));
+  return null;
+}
+
+// Full-screen gate for the cases the app cannot resolve on its own.
+//   'offline'     — never signed in on this device and no network right now
+//   'unreachable' — online but the auth endpoint did not answer and no cache
+//   'expired'     — the session lapsed while the app was open (API 401s)
+function _showAuthGate(reason) {
+  if (document.getElementById('auth-gate')) return;
+  const copy = {
+    offline:     ['No internet, no sign-in yet', 'This device has never signed in. Connect to the internet once and sign in with your Microsoft account — after that the app works fully offline.'],
+    unreachable: ['Cannot reach sign-in', 'The sign-in service did not answer. Check the connection and try again.'],
+    expired:     ['Session expired', 'Your sign-in has lapsed. Your work is saved on this device — sign in again to keep syncing.']
+  }[reason] || ['Sign in required', 'Sign in with your Microsoft account to continue.'];
+  const ov = document.createElement('div');
+  ov.id = 'auth-gate';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:990;background:rgba(0,0,0,0.78);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:26px 24px;max-width:380px;width:100%;text-align:center">
+      <div style="font-size:34px;margin-bottom:10px">🔐</div>
+      <div style="font-size:16px;font-weight:700;margin-bottom:8px">${copy[0]}</div>
+      <div style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:18px">${copy[1]}</div>
+      <button onclick="location.href='${AUTH_LOGIN_URL}?post_login_redirect_uri=/'"
+        style="width:100%;padding:12px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:700;font-size:14px;cursor:pointer">
+        Sign in with Microsoft
+      </button>
+      ${reason === 'expired' ? `<button onclick="document.getElementById('auth-gate').remove()" style="width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:12px;cursor:pointer">Keep working offline</button>` : ''}
+    </div>`;
+  document.body.appendChild(ov);
+}
+
+// API calls go through here so an expired session is noticed while the app
+// is open: a 401/403 or a fetch that dies in the login redirect triggers ONE
+// /.auth/me check per 5 minutes; a definite "not signed in" shows the gate.
+let _sessionCheckedAt = 0;
+async function _authFetch(url, init) {
+  let res;
+  try { res = await fetch(url, init); }
+  catch (e) { _noteApiFailure(0); throw e; }
+  if (res.status === 401 || res.status === 403) _noteApiFailure(res.status);
+  return res;
+}
+function _noteApiFailure(status) {
+  if (!navigator.onLine || !_currentUser || _currentUser.authSource === 'local') return;
+  if (Date.now() - _sessionCheckedAt < 5 * 60 * 1000) return;
+  _sessionCheckedAt = Date.now();
+  fetch('/.auth/me', { cache: 'no-store', credentials: 'same-origin' })
+    .then(r => (r.ok ? r.json() : null))
+    .then(me => { if (me && !me.clientPrincipal) _showAuthGate('expired'); })
+    .catch(() => {});
 }
 
 /** Display-friendly name from the Entra principal */
@@ -4031,14 +4144,14 @@ function _buildIndexPayload() {
 async function _apiGetIndex(ifTs) {
   const userId = _currentUser?.userId || '';
   const cond = ifTs > 0 ? `&ifTs=${ifTs}` : '';
-  const res = await fetch(`/api/getIndex?userId=${encodeURIComponent(userId)}${cond}`);
+  const res = await _authFetch(`/api/getIndex?userId=${encodeURIComponent(userId)}${cond}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`getIndex HTTP ${res.status}`);
   return res.json();
 }
 
 async function _apiSaveIndex(payload) {
-  const res = await fetch('/api/saveIndex', {
+  const res = await _authFetch('/api/saveIndex', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify(payload)  // payload already includes userId from _buildIndexPayload
@@ -4050,7 +4163,7 @@ async function _apiSaveIndex(payload) {
 // ifTs: same conditional-fetch contract as _apiGetIndex.
 async function _apiGetProject(pid, ifTs) {
   const cond = ifTs > 0 ? `&ifTs=${ifTs}` : '';
-  const res = await fetch(`/api/getProject?id=${encodeURIComponent(pid)}${cond}`);
+  const res = await _authFetch(`/api/getProject?id=${encodeURIComponent(pid)}${cond}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`getProject HTTP ${res.status} (${pid})`);
   return res.json();
@@ -4068,7 +4181,7 @@ async function _apiSaveProject(proj) {
     e.code = 'too_large'; e.bytes = bytes; throw e;
   }
   if (bytes > COSMOS_DOC_LIMIT * 0.75) _notifyCloudSize(proj, bytes, false);
-  const res = await fetch('/api/saveProject', {
+  const res = await _authFetch('/api/saveProject', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body
@@ -5297,9 +5410,9 @@ function showUserMenu() {
   const email = _currentUser?.userDetails || 'Unknown';
   const name  = _userName() || email;
   const isLocal = _currentUser?.userId === 'dev-local';
-  // Auth is deactivated (shared workspace, see _getAuthUser) — "/.auth/logout"
-  // does nothing meaningful, so hide Sign out until Entra login returns.
-  const isSharedWorkspace = !!_currentUser && _currentUser.userId === '25a348bbf3bb4e9087aefec8b88424b6';
+  // Sign out only makes sense when a real Entra principal is on the device
+  // (the workspace id is shared — see the identity model above _getAuthUser).
+  const isSharedWorkspace = !(_currentUser && _currentUser.principal);
 
   makeModal('Account', `
     <div style="text-align:center;padding:8px 0 16px">

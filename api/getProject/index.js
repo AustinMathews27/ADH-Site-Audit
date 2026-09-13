@@ -7,6 +7,7 @@
 // The Cosmos document ID is "adh-proj-{projectId}".
 // The original projectId is preserved in the "projectId" field.
 
+const { requireUser } = require('../_shared/auth');
 const { CosmosClient } = require("@azure/cosmos");
 
 const client    = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
@@ -15,6 +16,10 @@ const database  = client.database(process.env.COSMOS_DB_DATABASE || "Auditdata")
 const container = database.container("Audits");
 
 module.exports = async function (context, req) {
+  // Sign-in is enforced at the edge; this parses the caller and applies the
+  // optional ALLOWED_EMAIL_DOMAINS allow-list (see api/_shared/auth.js).
+  if (!requireUser(context, req)) return;
+
   const projectId = req.query.id;
 
   if (!projectId) {
