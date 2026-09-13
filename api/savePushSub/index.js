@@ -44,6 +44,7 @@ module.exports = async function (context, req) {
     }
 
     await container.items.upsert({
+      docType:      'push-sub',   // same convention as project/index docs (see saveProject)
       id:           docId,
       type:         'push-sub',
       deviceId:     deviceId,

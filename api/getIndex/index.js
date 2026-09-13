@@ -53,6 +53,19 @@ module.exports = async function (context, req) {
       return;
     }
 
+    // Conditional fetch: ?ifTs=<last merged _ts> lets the 15s poll skip
+    // re-downloading an unchanged index (only when the user doc exists —
+    // the 404/legacy-migration branches above are untouched).
+    const ifTs = Number(req.query.ifTs);
+    if (Number.isFinite(ifTs) && ifTs > 0 && (resource._ts || 0) <= ifTs) {
+      context.res = {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: { notModified: true, _ts: resource._ts }
+      };
+      return;
+    }
+
     context.res = {
       status: 200,
       headers: { "Content-Type": "application/json" },

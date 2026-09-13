@@ -155,6 +155,10 @@ module.exports = async function (context, req) {
       const mergedSettings = Object.assign({}, current.settings || {}, incoming.settings || {});
 
       const updated = {
+        // Readable identity first — Cosmos keeps property order, so this is
+        // the first thing shown when the doc is opened in Data Explorer.
+        docType:           'index',
+        label:             `INDEX · shared workspace · ${[...allProjectIds].length} projects · ${folderMap.size} folders · ${liveContacts.length} contacts`,
         id:                INDEX_ID,
         userId:            userId,
         folders:           [...folderMap.values()],

@@ -12,7 +12,22 @@
       "Bash(git commit -m ' *)",
       "Bash(git fetch *)",
       "Bash(git push *)",
-      "Bash(git ls-tree *)"
+      "Bash(git ls-tree *)",
+      "PowerShell(git push)",
+      "PowerShell(git stash pop)",
+      "PowerShell(git diff stash@{0} -- .claude/settings.local.json | Select-Object -First 30)",
+      "PowerShell(git checkout 'stash@{0}' -- .claude/settings.local.json)",
+      "PowerShell(git stash drop)",
+      "PowerShell(git restore --staged .claude/settings.local.json)",
+      "PowerShell(git add index.html sw.js)",
+      "PowerShell(git push origin main)",
+      "PowerShell(node \"C:\\\\Users\\\\acastro\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-acastro-Documents-GitHub-ADH-Site-Audit\\\\2b0670fa-e3ec-48d7-aec0-182cd97ad4c5\\\\scratchpad\\\\test-saveindex-merge.js\")",
+      "PowerShell(node \"C:\\\\Users\\\\acastro\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-acastro-Documents-GitHub-ADH-Site-Audit\\\\2b0670fa-e3ec-48d7-aec0-182cd97ad4c5\\\\scratchpad\\\\test-saveindex-devices.js\")",
+      "PowerShell($ec = [System.Security.Cryptography.ECDsa]::Create\\([System.Security.Cryptography.ECCurve]::CreateFromFriendlyName\\('nistP256'\\)\\); $p = $ec.ExportParameters\\($true\\); function B64Url\\([byte[]]$b\\){ [Convert]::ToBase64String\\($b\\).TrimEnd\\('='\\).Replace\\('+','-'\\).Replace\\('/','_'\\) }; $pub = New-Object byte[] 65; $pub[0]=4; [Array]::Copy\\($p.Q.X,0,$pub,1,32\\); [Array]::Copy\\($p.Q.Y,0,$pub,33,32\\); \"PUBLIC=$\\(B64Url $pub\\)\"; \"PRIVATE=$\\(B64Url $p.D\\)\")",
+      "PowerShell(az account show --query \"{name:name, user:user.name}\" -o json 2>$null)",
+      "PowerShell(if \\(-not $?\\) { \"AZ_NOT_AVAILABLE\" })",
+      "PowerShell(git add index.html sw.js api/package.json api/savePushSub api/sendPush)",
+      "PowerShell(gh run list --branch main --limit 1 --json databaseId,status,conclusion,displayTitle -q '.[0]')"
     ]
   }
 }

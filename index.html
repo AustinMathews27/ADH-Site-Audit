@@ -3514,7 +3514,7 @@ let store = JSON.parse(JSON.stringify(SEED));
 
 // Keep in lockstep with CACHE_VERSION in sw.js — shown in the Admin
 // Console header so a stale cached client is diagnosable at a glance.
-const APP_VERSION = '8.52';
+const APP_VERSION = '8.53';
 
 let _currentUser = null; // { userId, userDetails, userRoles }
 
@@ -3552,6 +3552,59 @@ function _userName() {
   const email = _currentUser.userDetails || '';
   return email.includes('@') ? email.split('@')[0] : email;
 }
+
+// ══════════════════════════════════════════
+// PROJECT IDS · CLOUD DOCUMENT SIZE
+// ══════════════════════════════════════════
+// proj_<name-slug>_<timestamp>. The Cosmos document id is "adh-proj-" + this,
+// and the Data Explorer item list shows ONLY the id — the name slug is what
+// makes a project recognisable there ("adh-proj-proj_song-teller-amenities_17…"
+// instead of "adh-proj-proj_1787752004305"). Same character set the API
+// validates (^[a-zA-Z0-9_-]+$); the timestamp keeps it unique. Older projects
+// keep their numeric ids — ids are immutable once they are in blob paths,
+// folders, tombstones and every device's store.
+function _newProjectId(name) {
+  let slug = String(name || '')
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')   // strip accents: e-acute -> e, n-tilde -> n
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  // Trim to ~30 chars on a word boundary ("indianapolis-convention", not
+  // "indianapolis-convention-cent").
+  if (slug.length > 30) { const cut = slug.lastIndexOf('-', 30); slug = slug.slice(0, cut > 12 ? cut : 30); }
+  return 'proj_' + (slug ? slug + '_' : '') + Date.now();
+}
+
+// Cosmos DB stores each project as ONE document with a hard 2 MB limit.
+// Measured 2026-09-12 against the live API: ~1,024 typical scope items or
+// ~488 photo-heavy ones per project before saves fail (photos themselves are
+// blob URLs, ~170 bytes each — the image bytes never count). The server
+// answers 413 {error:'too_large', bytes} instead of a generic 500; here we
+// pre-check before sending, warn from 75%, and surface the block in a toast
+// so a too-big project never fails silently in the sync loop.
+const COSMOS_DOC_LIMIT = 2 * 1024 * 1024;
+const _cloudBytes    = {};   // pid → last measured document size (session only, never synced)
+const _sizeWarnedAt  = {};   // pid → last toast time, throttled to one per 10 min
+function _fmtMB(b) { return (b / 1048576).toFixed(2) + ' MB'; }
+function _notifyCloudSize(proj, bytes, blocked) {
+  const now = Date.now();
+  if (now - (_sizeWarnedAt[proj.id] || 0) < 10 * 60 * 1000) return;
+  _sizeWarnedAt[proj.id] = now;
+  const name = (proj.name || proj.id).slice(0, 40);
+  showToast(blocked
+    ? `⚠️ "${name}" is too big to sync — ${_fmtMB(bytes)} (cloud limit 2 MB)`
+    : `⚠️ "${name}" is at ${_fmtMB(bytes)} of the 2 MB cloud limit`, 'red');
+  console.warn(`[Sync] ${proj.id} ${blocked ? 'BLOCKED' : 'near limit'}: ${bytes} bytes / ${COSMOS_DOC_LIMIT}`);
+}
+
+// Photo tombstones are keyed by the blob FILENAME (…/proj/si/<ts>-<rand>.jpg
+// → "<ts>-<rand>.jpg"), not the full URL — the filename alone is unique and
+// ~25 bytes instead of ~130. In the largest real project the tombstone map
+// was half the document (159 KB). Readers accept either form so maps written
+// by older builds keep working; the server collapses old keys on its next
+// merge.
+function _tombKey(url) { const s = String(url || ''); return s.slice(s.lastIndexOf('/') + 1) || s; }
+function _tombHit(tomb, url) { return !!(tomb && url && (tomb[url] || tomb[_tombKey(url)])); }
 
 // ══════════════════════════════════════════
 // DEVICE IDENTITY
@@ -3819,8 +3872,12 @@ function save() {
       console.error('[ADH] IndexedDB save failed:', err);
       showToast('⚠️ Error saving data locally');
     });
-    _idbSet('section_rules', SECTION_RULES).catch(() => {});
-  }, 80);
+    // SECTION_RULES is read-only after init — no need to rewrite it here.
+    // 800ms debounce: the store (with every local photo Blob) is structured-
+    // cloned into IndexedDB per write, so typing must not commit it per
+    // keystroke. flushAndSave on pagehide/hidden cancels the timer and
+    // writes immediately, so exit paths are unaffected.
+  }, 800);
 }
 
 // ── Payload builders ──────────────────────────────────────────────────────────
@@ -3903,9 +3960,13 @@ function _buildIndexPayload() {
 
 // ── API wrappers ──────────────────────────────────────────────────────────────
 
-async function _apiGetIndex() {
+// ifTs (optional): pass the last fully-merged _ts — when the cloud doc is
+// not newer, the server answers {notModified:true} (~60 bytes) instead of
+// the full document. Callers that omit it get the full doc as always.
+async function _apiGetIndex(ifTs) {
   const userId = _currentUser?.userId || '';
-  const res = await fetch(`/api/getIndex?userId=${encodeURIComponent(userId)}`);
+  const cond = ifTs > 0 ? `&ifTs=${ifTs}` : '';
+  const res = await fetch(`/api/getIndex?userId=${encodeURIComponent(userId)}${cond}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`getIndex HTTP ${res.status}`);
   return res.json();
@@ -3921,8 +3982,10 @@ async function _apiSaveIndex(payload) {
   return res.json();
 }
 
-async function _apiGetProject(pid) {
-  const res = await fetch(`/api/getProject?id=${encodeURIComponent(pid)}`);
+// ifTs: same conditional-fetch contract as _apiGetIndex.
+async function _apiGetProject(pid, ifTs) {
+  const cond = ifTs > 0 ? `&ifTs=${ifTs}` : '';
+  const res = await fetch(`/api/getProject?id=${encodeURIComponent(pid)}${cond}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`getProject HTTP ${res.status} (${pid})`);
   return res.json();
@@ -3930,13 +3993,32 @@ async function _apiGetProject(pid) {
 
 async function _apiSaveProject(proj) {
   const userId = _currentUser?.userId || '';
+  const body   = JSON.stringify({ project: { ...proj, ownedBy: proj.ownedBy || userId } });
+  // Pre-flight against the Cosmos 2 MB document limit: never ship a payload
+  // the server will refuse, and warn early when a project is getting close.
+  const bytes = new Blob([body]).size;
+  _cloudBytes[proj.id] = bytes;
+  if (bytes > COSMOS_DOC_LIMIT) {
+    const e = new Error(`saveProject: ${proj.id} is ${bytes} bytes — over the ${COSMOS_DOC_LIMIT}-byte Cosmos limit`);
+    e.code = 'too_large'; e.bytes = bytes; throw e;
+  }
+  if (bytes > COSMOS_DOC_LIMIT * 0.75) _notifyCloudSize(proj, bytes, false);
   const res = await fetch('/api/saveProject', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ project: { ...proj, ownedBy: proj.ownedBy || userId } })
+    body
   });
+  if (res.status === 413) {
+    // The server measures the MERGED document (it may hold items from other
+    // devices that this payload doesn't), so its byte count is the truth.
+    const j = await res.json().catch(() => ({}));
+    const e = new Error(`saveProject 413 (${proj.id}) — document too large`);
+    e.code = 'too_large'; e.bytes = j.bytes || bytes; throw e;
+  }
   if (!res.ok) throw new Error(`saveProject HTTP ${res.status} (${proj.id})`);
-  return res.json();
+  const json = await res.json();
+  if (json && json.bytes) _cloudBytes[proj.id] = json.bytes;
+  return json;
 }
 
 /** Every Azure URL an item references — SI photos + tower-room photos. */
@@ -4206,13 +4288,16 @@ function _mergeProjectIntoLocal(cloudProj) {
     // Photo tombstones (url → deletedAt) from both sides: a deletion made
     // anywhere beats a stale copy anywhere else. GC'd after 60 days.
     const tombCutoff = Date.now() - 60 * 86400000;
+    // Keys normalised to the short filename form (see _tombKey) — full-URL
+    // keys from older builds collapse into it here.
     const tomb = {};
     [(localItem && localItem.photoTombstones) || {}, item.photoTombstones || {}].forEach(m =>
       Object.entries(m).forEach(([u, ts]) => {
-        if (ts > tombCutoff && (!tomb[u] || ts > tomb[u])) tomb[u] = ts;
+        const k = _tombKey(u);
+        if (ts > tombCutoff && (!tomb[k] || ts > tomb[k])) tomb[k] = ts;
       }));
     // Cloud only has URL photos; local may also have Blob/base64 (not yet uploaded)
-    const cloudUrls    = (item.photos || []).filter(p => p.url && !tomb[p.url]);
+    const cloudUrls    = (item.photos || []).filter(p => p.url && !_tombHit(tomb, p.url));
     const cloudUrlSet  = new Set(cloudUrls.map(p => p.url));
     const localUrlSet  = new Set(local.map(p => p.url).filter(Boolean));
     const hasLocalData = p => (p.data instanceof Blob) || (typeof p.data === 'string' && p.data.startsWith('data:'));
@@ -4223,7 +4308,7 @@ function _mergeProjectIntoLocal(cloudProj) {
     // was deleted or replaced on another device. Dropping them here is what
     // lets every device self-heal instead of showing broken tiles forever.
     const keptLocal  = local.filter(p =>
-      !(p.url && tomb[p.url]) && (hasLocalData(p) || (p.url && cloudUrlSet.has(p.url))));
+      !_tombHit(tomb, p.url) && (hasLocalData(p) || (p.url && cloudUrlSet.has(p.url))));
     const freshCloud = cloudUrls.filter(p => !localUrlSet.has(p.url));
     out.photos = [...keptLocal, ...freshCloud];
     if (Object.keys(tomb).length) out.photoTombstones = tomb;
@@ -4235,12 +4320,12 @@ function _mergeProjectIntoLocal(cloudProj) {
       out.towerWork = Object.assign({}, out.towerWork, {
         rooms: out.towerWork.rooms.map(r => {
           const localRP = localRooms[r.id] || [];
-          const cloudRP = (r.photos || []).filter(p => p.url && !tomb[p.url]);
+          const cloudRP = (r.photos || []).filter(p => p.url && !_tombHit(tomb, p.url));
           if (!localRP.length && !cloudRP.length && !(r.photos && r.photos.length)) return r;
           const cloudSet = new Set(cloudRP.map(p => p.url));
           const localSet = new Set(localRP.map(p => p.url).filter(Boolean));
           const kept = localRP.filter(p =>
-            !(p.url && tomb[p.url]) && (hasLocalData(p) || (p.url && cloudSet.has(p.url))));
+            !_tombHit(tomb, p.url) && (hasLocalData(p) || (p.url && cloudSet.has(p.url))));
           return Object.assign({}, r, { photos: [...kept, ...cloudRP.filter(p => !localSet.has(p.url))] });
         })
       });
@@ -4496,6 +4581,9 @@ async function syncChanges(isAuto = false) {
         }
       } catch(err) {
         _dirtyProjectIds.add(proj.id);
+        // Stays dirty so it syncs the moment it is trimmed under the limit;
+        // the pre-flight in _apiSaveProject makes each retry a no-op.
+        if (err.code === 'too_large') _notifyCloudSize(proj, err.bytes, true);
         console.warn(`[Sync] Project ${proj.id} failed:`, err.message);
       }
     }
@@ -4574,6 +4662,7 @@ async function _syncSingleProject(pid) {
     } catch(err) {
       _dirtyProjectIds.add(pid);
       anyError = true;
+      if (err.code === 'too_large') _notifyCloudSize(proj, err.bytes, true);
       console.warn('[SyncProject] Push failed:', err.message);
     }
   }
@@ -4779,8 +4868,9 @@ async function _pollForRemoteChanges() {
 
   try {
     // ── 1. Check index ──────────────────────────────────────────────────────
-    const cloudIndex = await _apiGetIndex();
-    if (cloudIndex && (cloudIndex._ts || 0) > _cloudTs.index) {
+    // Conditional: the common no-change answer is ~60 bytes, not the full doc.
+    const cloudIndex = await _apiGetIndex(_cloudTs.index);
+    if (cloudIndex && !cloudIndex.notModified && (cloudIndex._ts || 0) > _cloudTs.index) {
       _mergeIndexIntoLocal(cloudIndex);
       _cloudTs.index = cloudIndex._ts;
       console.log('[Poll] Index updated from cloud');
@@ -4811,8 +4901,9 @@ async function _pollForRemoteChanges() {
     if (r.projectId) {
       const lastTs = _cloudTs.projects[r.projectId] || 0;
       try {
-        const cp = await _apiGetProject(r.projectId);
-        if (cp && (cp._ts || 0) > lastTs) {
+        // Conditional: skips re-downloading the full doc when unchanged.
+        const cp = await _apiGetProject(r.projectId, lastTs);
+        if (cp && !cp.notModified && (cp._ts || 0) > lastTs) {
           const changed = _mergeProjectIntoLocal(cp);
           _cloudTs.projects[r.projectId] = cp._ts;
           await _idbSet('fap_v3', store);
@@ -9500,7 +9591,9 @@ window.updateSIField = function(pid, sid, field, value) {
   const item = getSI(pid, sid);
   if (!item) return;
   item[field] = value;
-  markAsDirty(sid); save();
+  // markDirtyAndSave below is a strict superset of markAsDirty+save (it also
+  // stamps _fieldTs) — running both did the full dirty pipeline twice per
+  // keystroke on the oninput-wired fields.
   markDirtyAndSave(item, { [field]: value });
   scheduleAutoSave(pid, sid);
 };
@@ -9989,6 +10082,27 @@ function handleFileImport(e) {
 
 // Tokens are scoped to a single blob path server-side (create/write on that
 // blob only), so they are requested per upload and never cached.
+// Server-side copy of uploaded photos into new blob paths (duplicateProject).
+// list: [{ from: url, to: blobName }]. Returns Map<to, newUrl>; an entry that
+// is missing failed (a chunk-level network error fails its whole chunk).
+async function _copyBlobs(list) {
+  const out = new Map();
+  for (let i = 0; i < list.length; i += 100) {
+    const chunk = list.slice(i, i + 100);
+    try {
+      const res = await fetch('/api/copyBlobs', {
+        method : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body   : JSON.stringify({ copies: chunk })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const json = await res.json();
+      (json.results || []).forEach(r => { if (r.ok && r.url) out.set(r.to, r.url); });
+    } catch (e) { console.warn('[copyBlobs] chunk failed:', e.message); }
+  }
+  return out;
+}
+
 async function _getBlobSasUrl(blobName) {
   const res = await fetch('/api/getBlobSasUrl' + (blobName ? '?blob=' + encodeURIComponent(blobName) : ''));
   if (!res.ok) throw new Error(`SAS fetch failed: ${res.status}`);
@@ -10023,6 +10137,7 @@ async function preparePhotoForUpload(dbPhotoData) {
 //   onclick="event.stopPropagation();openAnnotation(pid,sid,idx)"
 // ══════════════════════════════════════════════════════════════════
 let _ann = null; // active annotation session
+let _annRafPending = false; // one queued repaint max — touchmove can fire at 120Hz
 
 async function openAnnotation(pid, sid, idx) {
   if(_photoIdxStale()) return;
@@ -10229,7 +10344,13 @@ function _annBindEvents() {
     } else if (a.type === 'arrow') {
       a.x2 = p.x; a.y2 = p.y;
     }
-    _annRedraw();
+    // Stroke data above is recorded for EVERY event; only the repaint is
+    // coalesced to display frames — a full-res drawImage per 120Hz touchmove
+    // floods the main thread and lags the ink.
+    if (!_annRafPending) {
+      _annRafPending = true;
+      requestAnimationFrame(() => { _annRafPending = false; if (_ann) _annRedraw(); });
+    }
   }
   function up(e) {
     if (!_ann || !_ann.drawing) return;
@@ -10561,7 +10682,7 @@ function deletePhoto(pid,sid,idx) {
   // the next push and every device shows a broken tile forever.
   if (removed && removed.url) {
     item.photoTombstones = item.photoTombstones || {};
-    item.photoTombstones[removed.url] = Date.now();
+    item.photoTombstones[_tombKey(removed.url)] = Date.now();
     markAsDirty(sid);
     fetch('/api/deleteBlob', {
       method : 'POST',
@@ -11004,7 +11125,7 @@ function _recRestoreSelected() {
     si.photos = si.photos || [];
     si.photos.push({ url: b.url, caption: '', takenAt: _recFmtDate(b.date) });
     // A deliberate restore beats any old deletion tombstone for this URL
-    if (si.photoTombstones) delete si.photoTombstones[b.url];
+    if (si.photoTombstones) { delete si.photoTombstones[b.url]; delete si.photoTombstones[_tombKey(b.url)]; }
     dirtySIs.add(si.id);
     restored++;
   });
@@ -11108,7 +11229,7 @@ function _admSweepDead() {
       it.photos = it.photos.filter(ph => !rm.has(ph));
       // Tombstone swept URLs so the cleanup propagates to every device
       g.dead.forEach(ph => {
-        if (ph.url) { it.photoTombstones = it.photoTombstones || {}; it.photoTombstones[ph.url] = Date.now(); }
+        if (ph.url) { it.photoTombstones = it.photoTombstones || {}; it.photoTombstones[_tombKey(ph.url)] = Date.now(); }
       });
       removed += before - it.photos.length;
       markAsDirty(g.sid);
@@ -11279,7 +11400,7 @@ function _admRestoreProject(pid) {
   // Resurrect as a fresh project id (see comment above _admRenderTrash)
   const ts = Date.now();
   const clone = JSON.parse(JSON.stringify(src, (k, v) => (v instanceof Blob ? undefined : v)));
-  clone.id = 'proj_' + ts;
+  clone.id = _newProjectId(src.name);
   delete clone._deleted; delete clone._deletedAt;
   clone._fieldTs = clone._fieldTs || {}; delete clone._fieldTs._deleted;
   clone.ownedBy = _currentUser?.userId || '';
@@ -11501,6 +11622,23 @@ function _admRenderSystem() {
   const liveProjects = (store.projects || []).filter(p => !p._deleted);
   liveProjects.forEach(p => (p.items || []).filter(i => !i._deleted).forEach(it => { siCount++; photoCount += (it.photos || []).length; }));
 
+  // Cloud document size per project — exactly what a push would send (photos
+  // and attachments already reduced to URLs/stubs), against the 2 MB limit.
+  const sizeRows = liveProjects.map(p => {
+    let b = 0;
+    try { b = new Blob([JSON.stringify({ project: _buildProjectPayload(p) })]).size; } catch (e) {}
+    return { p, b };
+  }).sort((a, b) => b.b - a.b);
+  const sizeHtml = sizeRows.map(({ p, b }) => {
+    const pct = Math.min(100, b / COSMOS_DOC_LIMIT * 100);
+    const col = pct >= 100 ? 'var(--red)' : pct >= 75 ? 'var(--yellow)' : pct >= 50 ? 'var(--accent)' : 'var(--green)';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
+      <div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_htmlEsc(p.name || '(unnamed)')}</div>
+      <div style="width:120px;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden;flex:none"><div style="width:${pct.toFixed(1)}%;height:100%;background:${col}"></div></div>
+      <div style="width:120px;text-align:right;font-family:var(--mono);flex:none;color:${pct >= 75 ? col : 'var(--text2)'}">${(b / 1024).toFixed(0)} KB · ${pct.toFixed(pct < 10 ? 1 : 0)}%</div>
+    </div>`;
+  }).join('');
+
   if (body) body.innerHTML = `
     <div class="adm-stat-grid">
       <div class="adm-stat"><b>${liveProjects.length}</b><span>projects</span></div>
@@ -11508,6 +11646,14 @@ function _admRenderSystem() {
       <div class="adm-stat"><b>${photoCount}</b><span>photo entries</span></div>
       <div class="adm-stat"><b id="adm-sys-cache">…</b><span>app cache version</span></div>
       <div class="adm-stat"><b id="adm-sys-storage" style="font-size:13px">…</b><span>device storage used</span></div>
+    </div>
+    <div class="adm-section">
+      <div class="adm-section-title">☁️ Cloud document sizes</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px">
+        Each project syncs as one Cosmos DB document with a hard <strong>2 MB</strong> limit — roughly 1,000 scope items with notes and photo links.
+        Photo and attachment files live in Blob Storage and do not count. Over 75% shows a warning toast; over 100% the project stops syncing until it is trimmed or split.
+      </div>
+      ${sizeHtml || '<div style="font-size:12px;color:var(--text3)">No projects</div>'}
     </div>
     <div class="adm-section">
       <div class="adm-section-title">🪪 Device identity</div>
@@ -11674,7 +11820,7 @@ function showNewProjectModal(fid) {
     const name=document.getElementById('m-name')?.value.trim();
     if(!name) return showToast('Project name required');
     const proj={
-      id:'proj_'+Date.now(),name,
+      id:_newProjectId(name),name,
       ownedBy: _currentUser?.userId || '',
       client:document.getElementById('m-client')?.value||'—',
       company:document.getElementById('m-company')?.value||'—',
@@ -12764,12 +12910,12 @@ function showDuplicateOptionsModal(pid,fid) {
 }
 
 // ── DUPLICATE PROJECT ─────────────────────
-function duplicateProject(pid,fid,opts) {
+async function duplicateProject(pid,fid,opts) {
   const src=getProject(pid); if(!src) return;
   const ts=Date.now();
   const newProj=JSON.parse(JSON.stringify(src));
-  newProj.id='proj_'+ts;
   newProj.name=src.name+' (Copy)';
+  newProj.id=_newProjectId(newProj.name);
   // Remap section IDs
   const secMap={};
   newProj.sections=newProj.sections.map(s=>{
@@ -12785,7 +12931,19 @@ function duplicateProject(pid,fid,opts) {
       sectionId:secMap[item.sectionId]||item.sectionId,
       // Status preserved from original
     };
-    if(!opts.keepPhotos) nitem.photos=[];
+    // Photo tombstones are the ORIGINAL's deletion history — in the largest
+    // real project they were half the document (159 KB) and every "(Copy)"
+    // inherited them. The copy's cloud doc is brand new, so nothing can
+    // resurrect there; just make sure no already-deleted URL rides along.
+    // Only UPLOADED photos can be copied (a pending local Blob was dropped by
+    // the JSON round-trip above anyway); tower room photos follow the same rule.
+    const tomb=item.photoTombstones||{};
+    const copyable=ph=>(ph||[]).filter(p=>p.url&&!_tombHit(tomb,p.url)).map(p=>({...p}));
+    nitem.photos=opts.keepPhotos?copyable(nitem.photos):[];
+    if(nitem.towerWork&&nitem.towerWork.rooms){
+      nitem.towerWork={...nitem.towerWork,rooms:nitem.towerWork.rooms.map(r=>({...r,photos:opts.keepPhotos?copyable(r.photos):[]}))};
+    }
+    delete nitem.photoTombstones;
     if(!opts.keepNotes){ nitem.notes=''; nitem.tags=[]; nitem.assignedTo=''; nitem.dueDate=''; }
     return nitem;
   });
@@ -12794,6 +12952,35 @@ function duplicateProject(pid,fid,opts) {
   newProj.ownedBy = _currentUser?.userId || '';
   // Don't copy tombstoned (deleted) scope items into the fresh copy
   newProj.items = newProj.items.filter(i => !i._deleted);
+
+  // ── Give the copy its OWN blob files ──────────────────────────────────
+  // Before v8.53 the copy pointed at the original's blob URLs, so deleting a
+  // photo in EITHER project deleted the file the other one still showed.
+  // Server-side copy into <newProjectId>/<newSiId>/<same filename>, then
+  // rewrite the URLs. A photo whose copy fails is dropped — never shared.
+  // Done BEFORE the project enters the store so no device ever syncs a doc
+  // with borrowed URLs.
+  if (opts.keepPhotos) {
+    const jobs = [];   // { from, to, photo }
+    newProj.items.forEach(it => {
+      const plan = p => jobs.push({ from: p.url, to: `${newProj.id}/${it.id}/${_tombKey(p.url)}`, photo: p });  // _tombKey = blob filename
+      (it.photos || []).forEach(plan);
+      if (it.towerWork && it.towerWork.rooms) it.towerWork.rooms.forEach(r => (r.photos || []).forEach(plan));
+    });
+    if (jobs.length) {
+      showToast(`Copying ${jobs.length} photo${jobs.length === 1 ? '' : 's'}…`);
+      const copied = await _copyBlobs(jobs.map(j => ({ from: j.from, to: j.to })));
+      let dropped = 0;
+      jobs.forEach(j => { const u = copied.get(j.to); if (u) j.photo.url = u; else { j.photo.url = null; dropped++; } });
+      const alive = ph => (ph || []).filter(p => p.url);
+      newProj.items.forEach(it => {
+        it.photos = alive(it.photos);
+        if (it.towerWork && it.towerWork.rooms) it.towerWork.rooms.forEach(r => { r.photos = alive(r.photos); });
+      });
+      if (dropped) showToast(`⚠️ ${dropped} of ${jobs.length} photo${jobs.length === 1 ? '' : 's'} could not be copied — duplicated without ${dropped === 1 ? 'it' : 'them'}`, 'red');
+    }
+  }
+
   store.projects.push(newProj);
   // Add to same folder
   if(fid){ const f=getFolder(fid); if(f){ f.projects.push(newProj.id); _touchFolder(f); } }
@@ -13345,7 +13532,8 @@ function handleXLSImport(e) {
 }
 
 function createProjectFromImport(items, folderId) {
-  const pid = 'proj_' + Date.now();
+  const pname = 'Imported Project ' + new Date().toLocaleDateString();
+  const pid = _newProjectId(pname);
   const sections = {};
   const siItems = [];
 
@@ -13372,7 +13560,7 @@ function createProjectFromImport(items, folderId) {
 
   const project = {
     id: pid,
-    name: 'Imported Project ' + new Date().toLocaleDateString(),
+    name: pname,
     ownedBy: _currentUser?.userId || '',
     client: '',
     company: '',
@@ -13577,10 +13765,17 @@ document.addEventListener('keydown', e => {
 // UTILS
 // ══════════════════════════════════════════
 // ══════════════════════════════════════════
-function handleSearch(val) {
-  // val comes from oninput — no need to re-query the DOM
-  renderLeft(route());
-  if (route().view === 'contacts') buildContactBookView();
+let _searchTimer = null;
+function handleSearch() {
+  // Debounced: the global search rescans every SI in every project and
+  // rebuilds the panel via innerHTML — doing that per keystroke lags input.
+  // renderLeft/buildContactBookView re-read #search-input live, so the final
+  // render always reflects the current text.
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(() => {
+    renderLeft(route());
+    if (route().view === 'contacts') buildContactBookView();
+  }, 150);
 }
 
 let _tt;
@@ -14041,7 +14236,7 @@ window.deleteTowerRoom = function(pid, sid, roomId) {
     item.photoTombstones = item.photoTombstones || {};
     room.photos.forEach(p => {
       _freePhotoObjUrl(p);
-      if (p.url) item.photoTombstones[p.url] = Date.now();
+      if (p.url) item.photoTombstones[_tombKey(p.url)] = Date.now();
     });
     _deleteBlobUrls(room.photos.map(p => p.url));
   }
@@ -14151,7 +14346,7 @@ window.deleteTowerRoomPhoto = function(idx) {
   // tombstone the cloud copy resurrects the URL on the next merge.
   if (removed && removed.url) {
     item.photoTombstones = item.photoTombstones || {};
-    item.photoTombstones[removed.url] = Date.now();
+    item.photoTombstones[_tombKey(removed.url)] = Date.now();
     markAsDirty(_twp.sid);
     fetch('/api/deleteBlob', {
       method : 'POST',
@@ -14984,7 +15179,7 @@ function _woPopulateSchedule(project, items) {
 }
 
 function createProjectFromWorkOrders(items, projectName, folderId) {
-  const pid = 'proj_' + Date.now();
+  const pid = _newProjectId(projectName);
   const section = { id: 'sec_imported_' + Date.now(), name: 'Imported Work Orders' };
   const siItems = items.map(it => _woBuildSIItem(it, section.id));
   const project = {
@@ -16388,7 +16583,7 @@ function _innergyCreateProject() {
       .reduce((s, w) => s + (_innergyParseHours(w.EstimatedHours) || 0), 0);
 
     const proj = {
-      id: 'proj_' + Date.now(),
+      id: _newProjectId(name),
       name,
       ownedBy: _currentUser?.userId || '',
       client:      document.getElementById('m-client')?.value.trim()  || client || '—',

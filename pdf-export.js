@@ -810,7 +810,11 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
             ctx.quadraticCurveTo(bx,by,bx+r2,by); ctx.closePath(); ctx.fill();
             ctx.fillStyle = '#ffffff'; ctx.fillText(ts, bx+pad, by+fsize+pad*0.6);
           }
-          try { res(canvas.toDataURL('image/jpeg', q)); } catch (e) { res(null); }
+          try {
+            const out = canvas.toDataURL('image/jpeg', q);
+            canvas.width = canvas.height = 0; // free Safari's canvas pool immediately
+            res(out);
+          } catch (e) { res(null); }
         };
         img.onerror = () => res(null); img.src = dataUrl;
       });
@@ -832,7 +836,11 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
           const canvas = document.createElement('canvas');
           canvas.width = w; canvas.height = h;
           canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
-          try { res(canvas.toDataURL('image/jpeg', q)); } catch (e) { res(dataUrl); }
+          try {
+            const out = canvas.toDataURL('image/jpeg', q);
+            canvas.width = canvas.height = 0; // free Safari's canvas pool immediately
+            res(out);
+          } catch (e) { res(dataUrl); }
         };
         img.onerror = () => res(dataUrl); img.src = dataUrl;
       });
@@ -1489,7 +1497,9 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
     // ── DISPATCH: cover ───────────────────────────────────────────────────────
     // The cover can be a blob-storage URL (synced like SI photos) — jsPDF's
     // addImage cannot fetch remote URLs, so convert it to a data URL first.
-    let coverImg = proj.coverPhoto || null;
+    // Only fetch/decode/re-encode the cover when the cover page is included —
+    // coverImg is consumed exclusively by coverGrid()/coverFlow().
+    let coverImg = inclCover ? (proj.coverPhoto || null) : null;
     if (coverImg && /^https?:/.test(coverImg)) coverImg = await compressImage(coverImg, 0.9);
     // Crop to the frame the style draws it into — the full-width hero band on
     // flow/photo, the portrait card on grid/compact.
@@ -1524,7 +1534,11 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
               ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
               ctx.fillText(String(i + 1), px, py + r * 0.05);
             });
-            try { res({ data: cv.toDataURL('image/jpeg', 0.85), w, h }); } catch (e) { res(null); }
+            try {
+              const out = cv.toDataURL('image/jpeg', 0.85);
+              cv.width = cv.height = 0; // free Safari's canvas pool immediately
+              res({ data: out, w, h });
+            } catch (e) { res(null); }
           };
           img.onerror = () => res(null);
           img.src = proj.floorPlan.imageData;
@@ -1665,6 +1679,7 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
             const abv = maxT!==undefined && (data[i-1].v>maxT || data[i].v>maxT);
             ctx.beginPath(); ctx.strokeStyle=abv?'#ef4444':lc; ctx.lineWidth=abv?1.2:0.9; ctx.moveTo(x0,y0); ctx.lineTo(x1,y1); ctx.stroke(); }
           doc.addImage(cv.toDataURL('image/jpeg',0.92),'JPEG',x,y,w,h,'','FAST');
+          cv.width = cv.height = 0; // free Safari's canvas pool immediately
         }
         for (const [si,s] of (env.sensors||[]).entries()) {
           const flt = gef(proj.id,si), td = fd(s.temperature||[],flt.startPct,flt.endPct), hd = fd(s.humidity||[],flt.startPct,flt.endPct);
