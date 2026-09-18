@@ -4,10 +4,25 @@
 - **Date:** 2026-09-18
 - **Device:** Claude Code web (cloud session)
 - **Branch:** `feature/company-profiles` (8 commits ahead of `main`, no PR yet)
-- **Summary:** Reconstructed pending work from commits after a Windows chat was
-  lost. Added `CLAUDE.md` + this handoff so every future session reads/writes it.
+- **Summary:** Added `ios-app/` — a Capacitor iOS shell so the PWA can ship as
+  an IPA. Xcode project is generated and committed; next steps happen on the Mac.
 
 ## Pending
+- [ ] **iOS app: first build on the Mac** — set the production hostname in
+      `ios-app/capacitor.config.json` (`server.url`) and
+      `ios-app/ios/App/App/Info.plist` (`WKAppBoundDomains`), then
+      `npm install && npx cap sync ios && npx cap open ios`, set the signing
+      Team, run on a device. Steps in `ios-app/README.md`.
+- [ ] **iOS app: Apple Developer Program** — needed for TestFlight / ad hoc /
+      App Store archive. Organization account needs the company D-U-N-S number.
+- [ ] **iOS app: closed-app push** — WKWebView has no Web Push. Needs
+      `@capacitor/push-notifications` + APNs sending in `api/sendPush`
+      (device token stored beside the web subscription in `savePushSub`).
+- [ ] **iOS app: `<a download>` exports** — VCF contact export and similar
+      blob downloads don't work in WKWebView; give them the Share-sheet
+      fallback the PDF export already uses.
+- [ ] **iOS app: real 1024px icon** — current AppIcon is upscaled from
+      `icon-512.png` (`scripts/make-assets.py` regenerates).
 - [ ] **Company profiles slice 2+** — slice 1 only gates import buttons per
       company (`COMPANY_PROFILES` in `index.html`). Decide and build what else a
       profile controls (branding, PDF defaults, project types, etc.).
@@ -24,6 +39,8 @@
 - [ ] **Stale PR #3 "task 1"** (`hardening/deps-offline`, July) — close or rebase.
 
 ## Done (recent)
+- `9dbc2a6` Capacitor iOS shell (`ios-app/`), Info.plist permissions + app-bound
+  domains, icon/splash, `_isNativeShell()` gating in `index.html`
 - `ece9678` Entra ID sign-in with offline-first identity (staging)
 - `73c54b8` AML temporary SVG wordmark
 - `96dfe2b` Rename company ADH → AML (legacy id `adh` kept)
@@ -31,6 +48,9 @@
 - `ff0f28c` Staging: configurable Cosmos DB name + seed script
 
 ## Decisions
+- 2026-09-18 — iOS app loads the **hosted** site (Capacitor `server.url`), not a
+  bundled copy, so SWA cookie auth and `/api/*` stay unchanged and web deploys
+  reach the app without an App Store release.
 - 2026-09-18 — Every session must read/update this file and push (see `CLAUDE.md`).
 - 2026-09-12 — AMI is the only company on Innergy; others import from spreadsheet or manual entry.
 - 2026-09-12 — Everyone shares ONE workspace; Entra only identifies who is on the device.
