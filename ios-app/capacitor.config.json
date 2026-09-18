@@ -1,0 +1,23 @@
+{
+  "appId": "com.adh.fieldaudit",
+  "appName": "ADH Audit",
+  "webDir": "www",
+  "backgroundColor": "#16181d",
+  "server": {
+    "url": "https://CHANGE-ME.azurestaticapps.net",
+    "allowNavigation": [
+      "login.microsoftonline.com",
+      "login.microsoft.com",
+      "login.live.com",
+      "*.azurestaticapps.net"
+    ]
+  },
+  "ios": {
+    "contentInset": "never",
+    "scrollEnabled": true,
+    "limitsNavigationsToAppBoundDomains": true,
+    "appendUserAgent": "ADHAuditNative",
+    "backgroundColor": "#16181d",
+    "preferredContentMode": "mobile"
+  }
+}

@@ -3380,6 +3380,23 @@ html.dark .folder-logo-img.logo-dark-bg{ background:#1c1c1e !important; padding:
 
 <script>
 // ══════════════════════════════════════════════════════════════
+// NATIVE SHELL DETECTION
+// True when the page is running inside the Capacitor iOS app
+// (ios-app/). The shell loads this same hosted page in a WKWebView,
+// injects window.Capacitor, and appends "ADHAuditNative" to the UA
+// (capacitor.config.json → ios.appendUserAgent). Anything that only
+// makes sense in Safari / the Home Screen PWA (install hints, Web Push)
+// checks this first.
+// ══════════════════════════════════════════════════════════════
+function _isNativeShell(){
+  try{
+    if (window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()) return true;
+  }catch(e){}
+  return /ADHAuditNative/.test(navigator.userAgent);
+}
+document.documentElement.classList.toggle('is-native', _isNativeShell());
+
+// ══════════════════════════════════════════════════════════════
 // PHONE LAYOUT DETECTION v1
 // Toggles `is-phone` on <html> based on viewport. Mobile-only
 // CSS overrides are scoped under html.is-phone in the stylesheet.
@@ -14166,7 +14183,7 @@ function _initMobileQoL() {
 // ── iOS INSTALL HINT ──────────────────────
 (function() {
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  const isStandalone = window.navigator.standalone === true;
+  const isStandalone = window.navigator.standalone === true || _isNativeShell();
   const hintShown = localStorage.getItem('adh_install_hint');
   if (isIOS && !isStandalone && !hintShown) {
     setTimeout(() => {
@@ -15589,7 +15606,9 @@ function toggleNotifications(){
       // every iPad. _localNotify goes through the SW instead.
       _ensurePushSubscription().then(st=>{
         if(st==='ok') showToast('🔔 Notifications on — push registered','green');
-        else if(st==='unsupported') showToast('🔔 On (in-app only — push needs the Home Screen app)');
+        else if(st==='unsupported') showToast(_isNativeShell()
+          ? '🔔 On (in-app only — closed-app push is not wired up in the iOS app yet)'
+          : '🔔 On (in-app only — push needs the Home Screen app)');
         else showToast('🔔 On, but push setup failed — '+st,'red');
       });
       _localNotify('ADH Audit','You will be notified when a message is sent to this device.');

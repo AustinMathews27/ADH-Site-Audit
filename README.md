@@ -77,3 +77,9 @@ Pushes to `main` deploy via the GitHub Action (Azure Static Web Apps, `app_locat
 ## Versioning
 
 The app version is the service-worker cache string (`adh-audit-v8.xx`). Current: **v8.26**.
+
+## iOS app (IPA)
+
+`ios-app/` holds a Capacitor shell that loads the deployed site in a native
+iPhone/iPad app. See [ios-app/README.md](ios-app/README.md) for the Xcode
+steps, signing, and how to produce a TestFlight / ad-hoc / App Store build.

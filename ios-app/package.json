@@ -1,0 +1,19 @@
+{
+  "name": "adh-audit-ios",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Native iOS shell (Capacitor) for the ADH Field Audit Tool PWA",
+  "scripts": {
+    "add:ios": "cap add ios",
+    "sync": "cap sync ios",
+    "open": "cap open ios",
+    "doctor": "cap doctor"
+  },
+  "dependencies": {
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.2"
+  }
+}
