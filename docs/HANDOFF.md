@@ -1,18 +1,20 @@
 # Handoff — read this first, update it before you stop
 
 ## Last session
-- **Date:** 2026-09-18
 - **Device:** Claude Code web (cloud session)
 - **Branch:** `feature/company-profiles` (8 commits ahead of `main`, no PR yet)
+- **Date:** 2026-09-19
 - **Summary:** Added `ios-app/` — a Capacitor iOS shell so the PWA can ship as
-  an IPA. Xcode project is generated and committed; next steps happen on the Mac.
+  an IPA. Hostname set to the staging SWA; first Xcode build pending on the Mac.
 
 ## Pending
-- [ ] **iOS app: first build on the Mac** — set the production hostname in
-      `ios-app/capacitor.config.json` (`server.url`) and
-      `ios-app/ios/App/App/Info.plist` (`WKAppBoundDomains`), then
-      `npm install && npx cap sync ios && npx cap open ios`, set the signing
-      Team, run on a device. Steps in `ios-app/README.md`.
+- [ ] **iOS app: first build on the Mac** — repo is cloned at
+      `~/adh-site-audit`; Node was missing (install from nodejs.org), then
+      `cd ios-app && npm install && npx cap sync ios && npx cap open ios`,
+      set the signing Team, run on a device. Steps in `ios-app/README.md`.
+- [ ] **iOS app: point at production before release** — shell currently loads
+      the staging SWA (`proud-moss-067ef8e0f.6.azurestaticapps.net`); swap the
+      hostname in `capacitor.config.json` + `Info.plist` for the prod URL.
 - [ ] **iOS app: Apple Developer Program** — needed for TestFlight / ad hoc /
       App Store archive. Organization account needs the company D-U-N-S number.
 - [ ] **iOS app: closed-app push** — WKWebView has no Web Push. Needs
@@ -48,6 +50,7 @@
 - `ff0f28c` Staging: configurable Cosmos DB name + seed script
 
 ## Decisions
+- 2026-09-19 — iOS shell targets the staging URL for now; switch to prod before any TestFlight/App Store build.
 - 2026-09-18 — iOS app loads the **hosted** site (Capacitor `server.url`), not a
   bundled copy, so SWA cookie auth and `/api/*` stay unchanged and web deploys
   reach the app without an App Store release.

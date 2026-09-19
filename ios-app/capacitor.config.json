@@ -4,7 +4,7 @@
   "webDir": "www",
   "backgroundColor": "#16181d",
   "server": {
-    "url": "https://CHANGE-ME.azurestaticapps.net",
+    "url": "https://proud-moss-067ef8e0f.6.azurestaticapps.net",
     "allowNavigation": [
       "login.microsoftonline.com",
       "login.microsoft.com",

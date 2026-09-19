@@ -15,7 +15,10 @@ The web page detects the shell via `_isNativeShell()` in `index.html`
 
 1. Install Node 20+ and Xcode (with the iOS platform + simulator downloaded:
    Xcode → Settings → Components).
-2. Set the production hostname in **two** places:
+2. The app points at the staging site
+   (`proud-moss-067ef8e0f.6.azurestaticapps.net`, deployed from
+   `feature/company-profiles`). To ship against production, change the
+   hostname in **two** places:
    - `capacitor.config.json` → `server.url`
    - `ios/App/App/Info.plist` → first entry of `WKAppBoundDomains`
    (`WKAppBoundDomains` is what lets the service worker — offline mode — run

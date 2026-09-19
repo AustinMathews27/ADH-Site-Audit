@@ -75,7 +75,7 @@
 	<key>WKAppBoundDomains</key>
 	<array>
 		<!-- Replace the first entry with the production hostname (custom domain or *.azurestaticapps.net). Max 10 entries; subdomains are included automatically. -->
-		<string>CHANGE-ME.azurestaticapps.net</string>
+		<string>proud-moss-067ef8e0f.6.azurestaticapps.net</string>
 		<string>login.microsoftonline.com</string>
 		<string>login.microsoft.com</string>
 		<string>login.live.com</string>
