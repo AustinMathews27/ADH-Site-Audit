@@ -4,11 +4,15 @@
 - **Device:** Claude Code web (cloud session)
 - **Branch:** `feature/company-profiles` (8 commits ahead of `main`, no PR yet)
 - **Date:** 2026-09-19
-- **Summary:** `ios-app/` Capacitor shell builds on the Mac and signs in
-  end-to-end in the iPhone simulator against the staging SWA. Next: real
-  device, Apple Developer account, then TestFlight/ad hoc IPA.
+- **Summary:** `ios-app/` shell signs in end-to-end in the simulator. Agreed
+  the next phase: bundled app + MSAL/bearer auth for true offline start-up —
+  see `docs/IOS-OFFLINE-PLAN.md`. Start at Phase A next session.
 
 ## Pending
+- [ ] **iOS offline plan — start Phase A** — `docs/IOS-OFFLINE-PLAN.md`: bundle
+      the web app inside the IPA + MSAL sign-in + bearer-token API. Phase A is
+      backend-only and backward compatible (Entra app registration, `verifyBearer`
+      in `api/_shared/auth.js`, `/api/*` → anonymous at the edge).
 - [ ] **iOS app: point at production before release** — shell currently loads
       the staging SWA (`proud-moss-067ef8e0f.6.azurestaticapps.net`); swap the
       hostname in `capacitor.config.json` + `Info.plist` for the prod URL.
@@ -52,6 +56,9 @@
 - `ff0f28c` Staging: configurable Cosmos DB name + seed script
 
 ## Decisions
+- 2026-09-19 — Keep IndexedDB + the existing sync engine (no move to localStorage).
+  "Bullet-proof offline" = bundle the web files in the IPA and switch the native
+  app to MSAL + bearer tokens; plan in `docs/IOS-OFFLINE-PLAN.md`.
 - 2026-09-19 — iOS shell targets the staging URL for now; switch to prod before any TestFlight/App Store build.
 - 2026-09-18 — iOS app loads the **hosted** site (Capacitor `server.url`), not a
   bundled copy, so SWA cookie auth and `/api/*` stay unchanged and web deploys
