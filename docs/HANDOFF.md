@@ -9,10 +9,14 @@
   see `docs/IOS-OFFLINE-PLAN.md`. Start at Phase A next session.
 
 ## Pending
-- [ ] **iOS offline plan — start Phase A** — `docs/IOS-OFFLINE-PLAN.md`: bundle
-      the web app inside the IPA + MSAL sign-in + bearer-token API. Phase A is
-      backend-only and backward compatible (Entra app registration, `verifyBearer`
-      in `api/_shared/auth.js`, `/api/*` → anonymous at the edge).
+- [ ] **iOS offline plan — Phase A BLOCKED on Entra permissions** —
+      `docs/IOS-OFFLINE-PLAN.md`. Austin has no rights to create an App
+      registration in the company tenant; access (Application Developer role, or
+      an admin-created registration named "ADH Audit Native", platform iOS,
+      bundle id `com.adh.fieldaudit`) has been requested. Once granted, the
+      values needed are the Application (client) ID and Directory (tenant) ID.
+      Steps A.2–A.4 (`verifyBearer` in `api/_shared/auth.js`, `/api/*` →
+      anonymous) can be coded before then; only testing needs the IDs.
 - [ ] **iOS app: point at production before release** — shell currently loads
       the staging SWA (`proud-moss-067ef8e0f.6.azurestaticapps.net`); swap the
       hostname in `capacitor.config.json` + `Info.plist` for the prod URL.
