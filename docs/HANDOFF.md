@@ -4,18 +4,16 @@
 - **Device:** Claude Code web (cloud session)
 - **Branch:** `feature/company-profiles` (8 commits ahead of `main`, no PR yet)
 - **Date:** 2026-09-19
-- **Summary:** Added `ios-app/` — a Capacitor iOS shell so the PWA can ship as
-  an IPA. Hostname set to the staging SWA; first Xcode build pending on the Mac.
+- **Summary:** `ios-app/` Capacitor shell builds on the Mac and signs in
+  end-to-end in the iPhone simulator against the staging SWA. Next: real
+  device, Apple Developer account, then TestFlight/ad hoc IPA.
 
 ## Pending
-- [ ] **iOS app: sign-in inside the shell** — builds and runs in the simulator.
-      Two wrapper bugs fixed: Capacitor's allowNavigation wildcard needs matching
-      segment counts (identity hop was bounced to Safari), and WKAppBoundDomains
-      must name each SWA host in full (`azurestaticapps.net` is a public suffix →
-      ignored → `about:blank`). Verify sign-in completes in-app after pull + sync.
 - [ ] **iOS app: point at production before release** — shell currently loads
       the staging SWA (`proud-moss-067ef8e0f.6.azurestaticapps.net`); swap the
       hostname in `capacitor.config.json` + `Info.plist` for the prod URL.
+- [ ] **iOS app: run on a real iPad/iPhone** — plug in, pick it in Xcode's device
+      picker, Run (free Apple ID works for 7-day dev builds).
 - [ ] **iOS app: Apple Developer Program** — needed for TestFlight / ad hoc /
       App Store archive. Organization account needs the company D-U-N-S number.
 - [ ] **iOS app: closed-app push** — WKWebView has no Web Push. Needs
@@ -42,6 +40,9 @@
 - [ ] **Stale PR #3 "task 1"** (`hardening/deps-offline`, July) — close or rebase.
 
 ## Done (recent)
+- `260eaad` iOS shell runs in the simulator with Entra sign-in completing in-app
+  (fixes: allowNavigation segment-count wildcards; WKAppBoundDomains must name
+  each SWA host in full because azurestaticapps.net is a public suffix)
 - `9dbc2a6` Capacitor iOS shell (`ios-app/`), Info.plist permissions + app-bound
   domains, icon/splash, `_isNativeShell()` gating in `index.html`
 - `ece9678` Entra ID sign-in with offline-first identity (staging)
