@@ -8,10 +8,10 @@
   an IPA. Hostname set to the staging SWA; first Xcode build pending on the Mac.
 
 ## Pending
-- [ ] **iOS app: first build on the Mac** — repo is cloned at
-      `~/adh-site-audit`; Node was missing (install from nodejs.org), then
-      `cd ios-app && npm install && npx cap sync ios && npx cap open ios`,
-      set the signing Team, run on a device. Steps in `ios-app/README.md`.
+- [ ] **iOS app: sign-in inside the shell** — builds and runs in the simulator;
+      the SWA login hop (`identity.6.azurestaticapps.net`) was being bounced
+      to Safari because Capacitor's wildcard needs matching segment counts.
+      Fixed in allowNavigation; verify sign-in completes in-app after pull + sync.
 - [ ] **iOS app: point at production before release** — shell currently loads
       the staging SWA (`proud-moss-067ef8e0f.6.azurestaticapps.net`); swap the
       hostname in `capacitor.config.json` + `Info.plist` for the prod URL.

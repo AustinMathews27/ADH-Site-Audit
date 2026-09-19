@@ -6,10 +6,13 @@
   "server": {
     "url": "https://proud-moss-067ef8e0f.6.azurestaticapps.net",
     "allowNavigation": [
+      "*.azurestaticapps.net",
+      "*.*.azurestaticapps.net",
       "login.microsoftonline.com",
+      "*.login.microsoftonline.com",
       "login.microsoft.com",
       "login.live.com",
-      "*.azurestaticapps.net"
+      "*.login.live.com"
     ]
   },
   "ios": {

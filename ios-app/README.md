@@ -66,6 +66,15 @@ Regenerate both after changing the source logo (Pillow):
 python3 scripts/make-assets.py   # from the repo root
 ```
 
+## Sign-in hosts (`server.allowNavigation`)
+
+Capacitor's host matcher is segment-by-segment: `*.azurestaticapps.net` has
+three parts, so it does **not** match `identity.6.azurestaticapps.net` or
+`proud-moss-….6.azurestaticapps.net` (four parts). Any host the login round
+trip visits and that is not matched is opened in Safari instead of the app,
+which strands the auth cookie outside the app. Keep both the `*.` and `*.*.`
+forms listed, and add any new hop (a custom domain, a federated IdP) here.
+
 ## What works / what doesn't in the shell
 
 | Feature | Status |
