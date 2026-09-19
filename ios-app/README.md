@@ -20,10 +20,11 @@ The web page detects the shell via `_isNativeShell()` in `index.html`
    `feature/company-profiles`). To ship against production, change the
    hostname in **two** places:
    - `capacitor.config.json` → `server.url`
-   - `ios/App/App/Info.plist` → `WKAppBoundDomains`, only if production moves
-     to a custom domain (`azurestaticapps.net` already covers every SWA host,
-     including the `identity.<n>.azurestaticapps.net` hop that `/.auth/login`
-     goes through).
+   - `ios/App/App/Info.plist` → `WKAppBoundDomains`: the site host, plus
+     `identity.<n>.azurestaticapps.net` (same `<n>` as the site), which
+     `/.auth/login` bounces through. `azurestaticapps.net` and
+     `<n>.azurestaticapps.net` are public suffixes, so a bare entry for them
+     is ignored by WebKit and the webview ends up on `about:blank`.
    (`WKAppBoundDomains` is what lets the service worker — offline mode — run
    inside WKWebView. The Microsoft login hosts are listed so the Entra
    redirect is allowed to navigate.)

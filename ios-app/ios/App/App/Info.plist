@@ -74,11 +74,13 @@
 	<false/>
 	<key>WKAppBoundDomains</key>
 	<array>
-		<!-- Subdomains are included automatically, so the bare azurestaticapps.net
-		     entry covers the site host AND identity.<n>.azurestaticapps.net, which
-		     Static Web Apps bounces through on every /.auth/login. Add the custom
-		     domain here if production moves to one. Max 10 entries. -->
-		<string>azurestaticapps.net</string>
+		<!-- azurestaticapps.net and <n>.azurestaticapps.net are PUBLIC SUFFIXES
+		     (like .com), so WebKit silently ignores them here. Each SWA host must
+		     be listed in full: the site itself and identity.<n>.azurestaticapps.net,
+		     which /.auth/login bounces through. Change the first entry (and add
+		     the custom domain) when production moves. Max 10 entries. -->
+		<string>proud-moss-067ef8e0f.6.azurestaticapps.net</string>
+		<string>identity.6.azurestaticapps.net</string>
 		<string>login.microsoftonline.com</string>
 		<string>login.microsoft.com</string>
 		<string>login.live.com</string>

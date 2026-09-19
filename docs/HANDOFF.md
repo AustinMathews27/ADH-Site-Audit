@@ -8,10 +8,11 @@
   an IPA. Hostname set to the staging SWA; first Xcode build pending on the Mac.
 
 ## Pending
-- [ ] **iOS app: sign-in inside the shell** — builds and runs in the simulator;
-      the SWA login hop (`identity.6.azurestaticapps.net`) was being bounced
-      to Safari because Capacitor's wildcard needs matching segment counts.
-      Fixed in allowNavigation; verify sign-in completes in-app after pull + sync.
+- [ ] **iOS app: sign-in inside the shell** — builds and runs in the simulator.
+      Two wrapper bugs fixed: Capacitor's allowNavigation wildcard needs matching
+      segment counts (identity hop was bounced to Safari), and WKAppBoundDomains
+      must name each SWA host in full (`azurestaticapps.net` is a public suffix →
+      ignored → `about:blank`). Verify sign-in completes in-app after pull + sync.
 - [ ] **iOS app: point at production before release** — shell currently loads
       the staging SWA (`proud-moss-067ef8e0f.6.azurestaticapps.net`); swap the
       hostname in `capacitor.config.json` + `Info.plist` for the prod URL.
