@@ -74,8 +74,11 @@
 	<false/>
 	<key>WKAppBoundDomains</key>
 	<array>
-		<!-- Replace the first entry with the production hostname (custom domain or *.azurestaticapps.net). Max 10 entries; subdomains are included automatically. -->
-		<string>proud-moss-067ef8e0f.6.azurestaticapps.net</string>
+		<!-- Subdomains are included automatically, so the bare azurestaticapps.net
+		     entry covers the site host AND identity.<n>.azurestaticapps.net, which
+		     Static Web Apps bounces through on every /.auth/login. Add the custom
+		     domain here if production moves to one. Max 10 entries. -->
+		<string>azurestaticapps.net</string>
 		<string>login.microsoftonline.com</string>
 		<string>login.microsoft.com</string>
 		<string>login.live.com</string>
