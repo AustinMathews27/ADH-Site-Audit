@@ -3527,7 +3527,7 @@ let store = JSON.parse(JSON.stringify(SEED));
 
 // Keep in lockstep with CACHE_VERSION in sw.js — shown in the Admin
 // Console header so a stale cached client is diagnosable at a glance.
-const APP_VERSION = '8.55';
+const APP_VERSION = '8.56';
 
 let _currentUser = null; // { userId, userDetails, userRoles }
 
@@ -4487,8 +4487,10 @@ async function _flushPendingPhotos(proj) {
   // syncs to other devices through the project document.
   if (proj.coverPhoto && proj.coverPhoto.startsWith('data:')) {
     try {
-      const coverUrl = await _uploadPhotoToAzureBlob(proj.coverPhoto, proj.id, 'cover');
-      if (coverUrl) proj.coverPhoto = coverUrl;
+      const coverData = proj.coverPhoto;
+      const coverUrl = await _uploadPhotoOnce(coverData, proj.id, 'cover');
+      // Only swap if the cover wasn't changed/removed while the upload ran
+      if (coverUrl && proj.coverPhoto === coverData) proj.coverPhoto = coverUrl;
     } catch(e) {
       console.warn('[Sync] Cover photo upload failed:', e.message);
     }
@@ -4503,8 +4505,11 @@ async function _flushPendingPhotos(proj) {
     // still pending (_needsUpload — photo.url points at the pre-markup copy)
     if ((!p.url || isTemporaryUrl || p._needsUpload) && p.data) {
       try {
-        const newUrl = await _uploadPhotoToAzureBlob(p.data, proj.id, siId);
-        if (newUrl) {
+        const sentData = p.data;
+        const newUrl = await _uploadPhotoOnce(sentData, proj.id, siId);
+        // p.data !== sentData: the photo was marked up again mid-upload — that
+        // newer image has its own pending upload, so don't point url at this one.
+        if (newUrl && p.data === sentData) {
           const staleUrl = (p._replaceUrl && p._replaceUrl !== newUrl) ? p._replaceUrl : null;
           p.url = newUrl; // Overwrite the temporary string with the real Azure link
           delete p._needsUpload;
@@ -10075,7 +10080,7 @@ function handleFileImport(e) {
 
             // Then upload to Azure Blob Storage in the background
             try {
-              const blobUrl = await _uploadPhotoToAzureBlob(blob, _pt.pid, _pt.sid);
+              const blobUrl = await _uploadPhotoOnce(blob, _pt.pid, _pt.sid);
               if (blobUrl) {
                 // Swap data→url so CosmosDB sync picks it up (data stays for offline display)
                 photoEntry.url = blobUrl;
@@ -10539,8 +10544,8 @@ async function _annSave() {
     // Re-upload the annotated version to Azure Blob (background), then bin the old one
     (async () => {
       try {
-        const newUrl = await _uploadPhotoToAzureBlob(blob, pid, sid);
-        if (newUrl) {
+        const newUrl = await _uploadPhotoOnce(blob, pid, sid);
+        if (newUrl && photo.data === blob) { // skip if marked up again meanwhile
           photo.url = newUrl;
           delete photo._needsUpload;
           delete photo._replaceUrl;
@@ -10573,6 +10578,41 @@ async function _annSave() {
       showToast('Save failed', 'red');
     }
   }
+}
+
+// ── Single-flight uploads ────────────────────────────────────────────────────
+// ALWAYS upload through _uploadPhotoOnce. The same pending photo is reachable
+// from several places at once — the capture/markup background upload and every
+// overlapping sync pass (_flushPendingPhotos runs before the project's dirty
+// flag clears, so on a slow connection passes pile up behind each other). Each
+// used to PUT its own copy under a fresh random name; the last to finish won
+// photo.url and the rest stayed in Blob Storage forever (≈4,600 duplicate files
+// / 1.4 GB by Sept 2026 — far more than the deleteBlob bug ever leaked).
+// Keyed by the image data itself + destination folder: concurrent callers share
+// one PUT, and later callers get the same URL back instead of re-uploading.
+// A failed upload is forgotten so the next sync retries it.
+const _photoUploadsByBlob = new WeakMap(); // Blob → Map<"pid/siId", Promise<url>>
+const _photoUploadsByStr  = new Map();     // "pid/siId|data:…" → Promise<url>
+function _uploadPhotoOnce(data, projectId, siId) {
+  const dest  = `${projectId}/${siId}`;
+  const isObj = !!data && typeof data === 'object';
+  let cache, key;
+  if (isObj) {
+    cache = _photoUploadsByBlob.get(data);
+    if (!cache) _photoUploadsByBlob.set(data, cache = new Map());
+    key = dest;
+  } else {
+    cache = _photoUploadsByStr;
+    key = dest + '|' + data;
+  }
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const up = _uploadPhotoToAzureBlob(data, projectId, siId);
+  cache.set(key, up);
+  up.catch(() => { if (cache.get(key) === up) cache.delete(key); });
+  // base64 keys pin the whole string in memory — keep only the most recent few
+  if (!isObj && cache.size > 20) cache.delete(cache.keys().next().value);
+  return up;
 }
 
 async function _uploadPhotoToAzureBlob(dbPhotoData, projectId, siId) {
