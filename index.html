@@ -3126,6 +3126,19 @@ textarea.field-input { min-height: 88px !important; line-height: 1.6 !important;
   transition:background 0.15s,color 0.15s;
 }
 .exv-jump:hover{ background:var(--accent,#3b82f6); color:#fff; }
+/* Admin-only "Export Anyway" override strip */
+.exv-admin{
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  background:var(--surface2,#1e293b); border:1px dashed var(--amber,#d97706);
+  border-radius:10px; padding:10px 14px; margin-bottom:14px;
+}
+.exv-admin-note{ flex:1; min-width:180px; font-size:12px; line-height:1.45; color:var(--text2,#94a3b8); }
+.exv-admin-btn{
+  flex-shrink:0; font-size:13px; font-weight:700; color:#fff;
+  background:var(--amber,#d97706); border:none;
+  padding:8px 16px; border-radius:8px; cursor:pointer;
+}
+.exv-admin-btn:hover{ filter:brightness(1.08); }
 
 </style>
 
@@ -3514,7 +3527,7 @@ let store = JSON.parse(JSON.stringify(SEED));
 
 // Keep in lockstep with CACHE_VERSION in sw.js — shown in the Admin
 // Console header so a stale cached client is diagnosable at a glance.
-const APP_VERSION = '8.54';
+const APP_VERSION = '8.55';
 
 let _currentUser = null; // { userId, userDetails, userRoles }
 
@@ -16147,8 +16160,21 @@ window.showExportValidationModal = function(pid, missing){
       Each incomplete item needs a <strong>Field Check</strong>, <strong>Field Notes</strong>, and at least one <strong>Photo</strong>.
       Tap <strong>Open ›</strong> to jump to an item — the missing fields are outlined in red.
     </div>
+    ${isAdmin ? `
+    <div class="exv-admin">
+      <div class="exv-admin-note">🔐 <strong>Admin override</strong> — export the report as-is. Missing fields will simply be blank in the PDF.</div>
+      <button class="exv-admin-btn" onclick="adminExportAnyway('${pid}')">Export Anyway</button>
+    </div>` : ''}
     ${rows}`;
   makeModal('⚠ Cannot Export — Required Fields Missing', body, null, true);
+};
+
+// Admin-only: bypass the required-field gate. exportPDF re-checks isAdmin, so
+// this is a no-op (re-shows the modal) if the admin session was locked meanwhile.
+window.adminExportAnyway = function(pid){
+  if (!isAdmin) { showToast('Admin access required', 'red'); return; }
+  closeModal();
+  exportPDF(pid, { adminOverride: true });
 };
 
 // ── Highlight missing required fields inside the SI editor ───────────
