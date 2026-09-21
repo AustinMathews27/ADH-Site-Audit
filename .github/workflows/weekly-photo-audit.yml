@@ -1,0 +1,76 @@
+name: Weekly photo storage audit
+
+# Read-only health check of photo storage (scripts/photo-audit.mjs): every photo
+# the projects reference must exist in Blob Storage, and no new duplicate uploads
+# may appear after the v8.56 single-upload fix. Uses the public API — no secrets.
+#
+# THIS REPO IS PUBLIC, so this workflow's logs and the issue it opens are too.
+# Always run the script with --ci (counts only: no project names, no photo URLs)
+# and never upload its --out report as an artifact.
+
+on:
+  schedule:
+    - cron: '0 13 * * 1'   # Mondays 13:00 UTC (6 am Pacific / 9 am Eastern)
+  workflow_dispatch:        # "Run workflow" button in the Actions tab
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: weekly-photo-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Photo storage audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run audit
+        run: |
+          set -o pipefail
+          node scripts/photo-audit.mjs --check --ci | tee audit.txt
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo '### Photo storage audit'
+            echo '```'
+            cat audit.txt 2>/dev/null || echo 'The audit produced no output (it could not reach the API).'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # One tracking issue: opened on the first failure, commented on after that.
+      - name: Open or update the regression issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE='Photo storage audit failed'
+          {
+            echo "The weekly photo storage audit failed: $RUN_URL"
+            echo
+            echo '```'
+            cat audit.txt 2>/dev/null || echo 'No output — the audit could not reach the API.'
+            echo '```'
+            echo
+            echo 'Run `node scripts/photo-audit.mjs` locally for project names and file lists (kept out of this public repo on purpose).'
+            echo '- **Spare copies uploaded since the v8.56 fix** — a device is on an old build (Admin → Users shows versions) or an upload path bypasses `_uploadPhotoOnce`.'
+            echo '- **Live pictures missing from storage** — a file a project still shows was deleted; check Admin → Dead Photos / Recovery.'
+          } > body.md
+          NUM=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "in:title \"$TITLE\"" --json number,title \
+                --jq "map(select(.title == \"$TITLE\")) | .[0].number // empty")
+          if [ -n "$NUM" ]; then
+            gh issue comment "$NUM" --repo "$GITHUB_REPOSITORY" --body-file body.md
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file body.md
+          fi

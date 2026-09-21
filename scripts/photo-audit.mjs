@@ -13,6 +13,9 @@
 //         node scripts/photo-audit.mjs --check             exit 1 on a regression: a live picture missing
 //                                                          from storage, or spare copies uploaded after the
 //                                                          v8.56 single-upload fix (for a scheduled run)
+//         node scripts/photo-audit.mjs --check --ci        counts only — no project names or photo URLs.
+//                                                          The repo is PUBLIC, so are its Actions logs:
+//                                                          the weekly workflow must always pass --ci.
 //         BASE=https://gray-stone-03fbce60f.7.azurestaticapps.net node scripts/photo-audit.mjs
 
 import { writeFileSync } from 'node:fs';
@@ -20,6 +23,7 @@ import { writeFileSync } from 'node:fs';
 const BASE = process.env.BASE || 'https://adhsiteaudit.com';
 const UID  = process.env.ADH_USER_ID || '25a348bbf3bb4e9087aefec8b88424b6';
 const OUT  = process.argv.includes('--out') ? process.argv[process.argv.indexOf('--out') + 1] : null;
+const CI   = process.argv.includes('--ci');
 const MB   = b => (b / 1048576).toFixed(1);
 const getJson = async url => { const r = await fetch(url); return { status: r.status, json: r.status === 200 ? await r.json() : null }; };
 
@@ -128,7 +132,7 @@ const rows = [...allIds].map(pid => {
     orphans: orph.length, orphanMB: +MB(orph.reduce((s, b) => s + b.size, 0)),
   };
 }).sort((a, b) => b.MISSING - a.MISSING || b.orphanMB - a.orphanMB);
-console.table(rows);
+if (!CI) console.table(rows);
 
 const byClass = { duplicate: [], tombstoned: [], mentioned: [], UNSHOWN: [] };
 orphans.forEach(b => byClass[classify(b)].push(b));
@@ -138,8 +142,8 @@ console.log(`\nPICTURE HEALTH`);
 console.log(`  missing from storage : ${missing.length}`);
 console.log(`  zero-byte files      : ${empty.length}`);
 console.log(`  never uploaded (no url in cloud doc): ${noCloudCopy.length}`);
-[...missing, ...empty].slice(0, 25).forEach(m => console.log(`    ✗ ${m.project} · ${m.where} · ${m.url}`));
-noCloudCopy.slice(0, 25).forEach(m => console.log(`    ⧗ ${m.project} · ${m.where} · photo ${m.photoId}${m.hasInlineData ? ' (inline data in doc)' : ''}`));
+if (!CI) [...missing, ...empty].slice(0, 25).forEach(m => console.log(`    ✗ ${m.project} · ${m.where} · ${m.url}`));
+if (!CI) noCloudCopy.slice(0, 25).forEach(m => console.log(`    ⧗ ${m.project} · ${m.where} · photo ${m.photoId}${m.hasInlineData ? ' (inline data in doc)' : ''}`));
 const twiceN = shownTwice.reduce((s, r) => s + r.extra, 0);
 console.log(`  same picture listed more than once in an item: ${twiceN} extra photos in ${shownTwice.length} items`);
 console.log(`\nORPHANED FILES: ${sum(orphans)}`);
@@ -151,7 +155,7 @@ byClass.UNSHOWN.forEach(b => { const k = picKey(b); if (!unshownPics.has(k)) uns
 console.log(`  ⚠ NOT shown anywhere, NOT deliberately deleted (DO NOT delete — may be lost pictures): ${sum(byClass.UNSHOWN)} = ${unshownPics.size} distinct pictures`);
 const unshownBy = {};
 for (const b of unshownPics.values()) { const [pid, si] = b.name.split('/'); const k = `${projects.get(pid)?.name || pid} · ${si || ''}`; unshownBy[k] = (unshownBy[k] || 0) + 1; }
-Object.entries(unshownBy).sort((a, b) => b[1] - a[1]).forEach(([k, n]) => console.log(`      ${String(n).padStart(3)} pictures  ${k}`));
+if (!CI) Object.entries(unshownBy).sort((a, b) => b[1] - a[1]).forEach(([k, n]) => console.log(`      ${String(n).padStart(3)} pictures  ${k}`));
 const ages = orphans.map(b => new Date(b.createdOn || b.lastModified).getTime()).filter(Boolean).sort((a, b) => a - b);
 if (ages.length) console.log(`  oldest ${new Date(ages[0]).toISOString().slice(0, 10)} · newest ${new Date(ages.at(-1)).toISOString().slice(0, 10)}`);
 
@@ -165,7 +169,11 @@ console.log(`
 REGRESSION CHECK
   spare copies uploaded since the v8.56 fix: ${newDup.length}${newDup.length ? '  ✗' : '  ✓'}
   live pictures missing from storage       : ${liveMissing.length}${liveMissing.length ? '  ✗' : '  ✓'}`);
-newDup.slice(0, 10).forEach(b => console.log(`    ${b.createdOn}  ${b.name}`));
+if (!CI) newDup.slice(0, 10).forEach(b => console.log(`    ${b.createdOn}  ${b.name}`));
+const clearable = byClass.duplicate.length + byClass.tombstoned.length;
+if (clearable > 200) console.log(`
+REMINDER: ${clearable} leftover files (${MB([...byClass.duplicate, ...byClass.tombstoned].reduce((n, b) => n + b.size, 0))} MB) are safe to clear — Admin → Storage → Orphaned files.`);
+if (shownTwice.length) console.log(`REMINDER: ${shownTwice.reduce((n, r) => n + r.extra, 0)} duplicate photos inside items — Admin → Storage → Duplicate photos.`);
 if (process.argv.includes('--check') && (newDup.length || liveMissing.length)) process.exitCode = 1;
 
 if (OUT) {
