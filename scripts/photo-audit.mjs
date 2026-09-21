@@ -10,6 +10,9 @@
 //
 // Usage:  node scripts/photo-audit.mjs                 summary
 //         node scripts/photo-audit.mjs --out report.json   + full lists as JSON
+//         node scripts/photo-audit.mjs --check             exit 1 on a regression: a live picture missing
+//                                                          from storage, or spare copies uploaded after the
+//                                                          v8.56 single-upload fix (for a scheduled run)
 //         BASE=https://gray-stone-03fbce60f.7.azurestaticapps.net node scripts/photo-audit.mjs
 
 import { writeFileSync } from 'node:fs';
@@ -47,6 +50,7 @@ const mentioned = new Set();   // norm(url) of ANY storage URL anywhere in any d
 const tombFiles = new Set();   // filenames the app deliberately deleted (photo tombstones)
 const noCloudCopy = [];        // photos with no url at all — never uploaded
 const projects = new Map();    // pid -> { name, deleted, status }
+const shownTwice = [];         // items listing the same picture (same content) more than once
 
 const deepScan = v => {
   if (typeof v === 'string') { if (blobHost && v.includes(blobHost)) mentioned.add(norm(v)); }
@@ -67,6 +71,12 @@ for (const pid of allIds) {
     const tag = `${it.num || 'SI'}${it._deleted ? ' (deleted item)' : ''}`;
     const photoSets = [[it.photos || [], tag]];
     ((it.towerWork && it.towerWork.rooms) || []).forEach(r => photoSets.push([r.photos || [], `${tag} room ${r.number ?? ''}`]));
+    if (!it._deleted && !p._deleted && indexIds.has(pid)) for (const [list, where] of photoSets) {
+      const seen = new Map();
+      for (const ph of list) { const b = ph.url && findBlob(ph.url); if (b) { const k = b.md5 || b.size; seen.set(k, (seen.get(k) || 0) + 1); } }
+      const extra = [...seen.values()].reduce((n, c) => n + c - 1, 0);
+      if (extra) shownTwice.push({ pid, project: p.name, where, extra });
+    }
     for (const [list, where] of photoSets) for (const ph of list) {
       if (ph.url && /^https?:/.test(ph.url)) addLive(ph.url, where);
       else noCloudCopy.push({ pid, project: p.name, where, photoId: ph.id || null, hasInlineData: !!ph.data, url: ph.url || null });
@@ -101,18 +111,8 @@ const classify = b => livePics.has(picKey(b)) ? 'duplicate'
   : (tombFiles.has(b.name.split('/').pop()) || tombPics.has(picKey(b))) ? 'tombstoned'
   : mentioned.has(norm(b.url)) ? 'mentioned' : 'UNSHOWN';
 
-// The same race could also leave one picture listed twice inside an item.
-const shownTwice = [];
-for (const pid of indexIds) {
-  const seen = new Map();
-  for (const [url, ref] of live) {
-    if (ref.pid !== pid || ref.where === 'cover photo' || ref.where.includes('(deleted item)')) continue;
-    const b = findBlob(url); if (!b) continue;
-    const k = ref.where + '|' + (b.md5 || b.size);
-    seen.set(k, (seen.get(k) || 0) + 1);
-  }
-  for (const [k, n] of seen) if (n > 1) shownTwice.push({ pid, project: projects.get(pid)?.name, where: k.split('|')[0], extra: n - 1 });
-}
+// The same race could also leave one picture listed twice inside an item
+// (counted per item while reading the docs — see shownTwice above).
 
 // ── 4. Report ────────────────────────────────────────────────────────────────
 const rows = [...allIds].map(pid => {
@@ -154,6 +154,19 @@ for (const b of unshownPics.values()) { const [pid, si] = b.name.split('/'); con
 Object.entries(unshownBy).sort((a, b) => b[1] - a[1]).forEach(([k, n]) => console.log(`      ${String(n).padStart(3)} pictures  ${k}`));
 const ages = orphans.map(b => new Date(b.createdOn || b.lastModified).getTime()).filter(Boolean).sort((a, b) => a - b);
 if (ages.length) console.log(`  oldest ${new Date(ages[0]).toISOString().slice(0, 10)} · newest ${new Date(ages.at(-1)).toISOString().slice(0, 10)}`);
+
+// ── 5. Regression check ──────────────────────────────────────────────────────
+// Devices were given until 2026-09-23 to pick up v8.56; a spare copy uploaded
+// after that means the single-upload guard is being bypassed somewhere.
+const FIX_TS = Date.UTC(2026, 8, 23);
+const newDup = byClass.duplicate.filter(b => new Date(b.createdOn || b.lastModified).getTime() > FIX_TS);
+const liveMissing = [...missing, ...empty].filter(m => !m.where.includes('(deleted item)'));
+console.log(`
+REGRESSION CHECK
+  spare copies uploaded since the v8.56 fix: ${newDup.length}${newDup.length ? '  ✗' : '  ✓'}
+  live pictures missing from storage       : ${liveMissing.length}${liveMissing.length ? '  ✗' : '  ✓'}`);
+newDup.slice(0, 10).forEach(b => console.log(`    ${b.createdOn}  ${b.name}`));
+if (process.argv.includes('--check') && (newDup.length || liveMissing.length)) process.exitCode = 1;
 
 if (OUT) {
   writeFileSync(OUT, JSON.stringify({ generated: new Date().toISOString(), base: BASE, missing, empty, noCloudCopy, shownTwice,
