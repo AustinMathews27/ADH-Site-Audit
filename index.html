@@ -9,8 +9,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ADH Audit">
-<meta name="theme-color" content="#f1f5f9" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0b0f14" media="(prefers-color-scheme: dark)">
+<!-- Same charcoal as the nav bar, so the OS status bar / PWA title bar reads as part of it -->
+<meta name="theme-color" content="#1c2027">
 <meta name="description" content="ADH Field Audit Tool — field conditions audit for construction and installation teams">
 <meta name="mobile-web-app-capable" content="yes">
 
@@ -670,10 +670,6 @@ select.field-input { cursor:pointer; }
   padding-bottom: calc(9px + var(--sab));
 }
 .save-bar .btn-save { display:none; }
-.si-mobile-back-bar {
-  display:none; padding:0 16px calc(8px + var(--sab));
-  background:var(--surface); border-top:none; flex-shrink:0;
-}
 .btn-nav {
   flex:1; padding:10px 13px; background:var(--surface2); color:var(--text2);
   border:1px solid var(--border); border-radius:9px;
@@ -1337,30 +1333,10 @@ input[type="radio"] {
 
 /* ── RESPONSIVE BREAKPOINTS ── */
 
-/* Mobile bottom nav */
-.mobile-bottom-nav {
-  display:none;
-  position:fixed; bottom:0; left:0; right:0;
-  background:var(--surface); border-top:1px solid var(--border);
-  padding:8px 0 calc(8px + var(--sab));
-  z-index:300;
-  grid-template-columns:repeat(5,1fr);
-}
-.mbn-item {
-  display:flex; flex-direction:column; align-items:center; gap:3px;
-  cursor:pointer; padding:4px 0;
-  color:var(--text3); transition:color 0.15s;
-}
-.mbn-item.active { color:var(--accent); }
-.mbn-icon { font-size:20px; }
-.mbn-label { font-size:10px; font-family:var(--mono); letter-spacing:0.5px; }
-
 /* Phone: stack vertically, hide left panel, show bottom nav */
 @media (max-width:640px) {
   .app-body { flex-direction:column; }
   .right-panel { flex:1; overflow:hidden; }
-  .mobile-bottom-nav { display:grid; }
-  body { padding-bottom: calc(56px + var(--sab)); }
   .grid-wrap { padding:12px; }
   .folder-grid { grid-template-columns:repeat(2,1fr); gap:8px; }
   .proj-grid { grid-template-columns:1fr; gap:8px; }
@@ -1380,7 +1356,6 @@ input[type="radio"] {
   .status-pills { flex-wrap:wrap; gap:4px; }
   .edit-header { padding:10px 12px; }
   .save-bar { padding:8px 12px calc(8px + var(--sab)); }
-  .si-mobile-back-bar { display:flex; }
 }
 
 /* Tablet: narrower left panel */
@@ -1906,17 +1881,18 @@ body.theme-dark .sched-current-week {
 .fp-pin:hover { transform:translate(-50%,-50%) scale(1.3); }
 .fp-pin-label { position:absolute;top:100%;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:2px 6px;font-size:10px;font-family:var(--mono);color:var(--accent);white-space:nowrap;pointer-events:none;margin-top:2px; }
 /* ════════════════════════════════════════════════════════════════
-   ── PHONE LAYOUT v1 ──
+   ── PHONE LAYOUT v1 (icons, cards, polish) ──
    Mobile-only overrides scoped under html.is-phone.
    No effect on iPad / desktop. Toggled via JS at runtime
    based on matchMedia('(max-width:640px)'). To preview on desktop:
      document.documentElement.classList.add('is-phone')
+   The v2 block at the end of the stylesheet (status bar, top bar,
+   SI list page, menu sheet) overrides anything here.
    ════════════════════════════════════════════════════════════════ */
 
 /* Shared phone-icon mask base */
 html.is-phone .nav-actions .btn-icon::before,
 html.is-phone .nav-back-btn::before,
-html.is-phone .mbn-item .mbn-icon::before,
 html.is-phone .camera-fab::before {
   content: '';
   display: block;
@@ -1927,39 +1903,6 @@ html.is-phone .camera-fab::before {
   mask-position: center;
   mask-repeat: no-repeat;
   mask-size: contain;
-}
-
-/* ── PHONE LEFT-PANEL DRAWER ────────────────────────────────── */
-/* On phones the left panel (folders / SI list / bulk actions) becomes
-   an off-canvas drawer, opened via the Browse tab in the bottom nav. */
-html.is-phone .left-panel {
-  position: fixed; top: 0; left: 0; bottom: 0;
-  width: min(84vw, 340px);
-  z-index: 700;
-  transform: translateX(-105%);
-  transition: transform 0.26s ease;
-  border-right: 1px solid var(--border);
-  box-shadow: none;
-  padding-bottom: var(--sab);
-}
-html.is-phone body.drawer-open .left-panel {
-  transform: translateX(0);
-  box-shadow: 12px 0 34px rgba(0,0,0,0.28);
-}
-.drawer-overlay {
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,0.45);
-  z-index: 690;
-  opacity: 0; pointer-events: none;
-  transition: opacity 0.26s ease;
-}
-body.drawer-open .drawer-overlay { opacity: 1; pointer-events: auto; }
-.drawer-close-btn { display: none; }
-html.is-phone .drawer-close-btn {
-  display: flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px; border-radius: 10px;
-  border: 1px solid var(--border); background: var(--surface2);
-  color: var(--text2); font-size: 14px; cursor: pointer;
 }
 
 /* ── PHONE NAV BAR ──────────────────────────────────────────── */
@@ -2073,67 +2016,6 @@ html.is-phone .notif-badge {
   top: 6px; right: 6px;
   width: 9px; height: 9px;
   border: 2px solid var(--surface);
-}
-
-/* ── PHONE BOTTOM NAV ───────────────────────────────────────── */
-html.is-phone .mobile-bottom-nav {
-  display: grid !important;
-  grid-template-columns: repeat(5, 1fr) !important;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-  padding: 8px 4px calc(8px + var(--sab));
-  gap: 0;
-}
-html.is-phone .mbn-item {
-  padding: 8px 4px;
-  border-radius: 12px;
-  gap: 5px;
-  min-height: 56px;
-  color: var(--text3);
-}
-html.is-phone .mbn-item:active {
-  background: var(--surface2);
-}
-html.is-phone .mbn-item.active { color: var(--accent); }
-html.is-phone .mbn-icon {
-  font-size: 0;
-  width: 24px; height: 24px;
-  display: inline-block;
-  position: relative;
-}
-html.is-phone .mbn-item .mbn-icon::before {
-  position: absolute;
-  inset: 0;
-  width: 100%; height: 100%;
-}
-html.is-phone .mbn-label {
-  font-family: var(--sans);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.2px;
-  text-transform: none;
-}
-
-/* Specific bottom-nav SVG icons */
-html.is-phone #mbn-home .mbn-icon::before {
-  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 9.5 12 3l9 6.5'/><path d='M5 9v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9'/><path d='M9 21V12h6v9'/></svg>");
-          mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 9.5 12 3l9 6.5'/><path d='M5 9v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9'/><path d='M9 21V12h6v9'/></svg>");
-}
-html.is-phone #mbn-browse .mbn-icon::before {
-  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M8 6h13'/><path d='M8 12h13'/><path d='M8 18h13'/><path d='M3 6h.01'/><path d='M3 12h.01'/><path d='M3 18h.01'/></svg>");
-          mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M8 6h13'/><path d='M8 12h13'/><path d='M8 18h13'/><path d='M3 6h.01'/><path d='M3 12h.01'/><path d='M3 18h.01'/></svg>");
-}
-html.is-phone #mbn-contacts .mbn-icon::before {
-  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/><circle cx='9' cy='7' r='4'/><path d='M22 21v-2a4 4 0 0 0-3-3.87'/><path d='M16 3.13a4 4 0 0 1 0 7.75'/></svg>");
-          mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/><circle cx='9' cy='7' r='4'/><path d='M22 21v-2a4 4 0 0 0-3-3.87'/><path d='M16 3.13a4 4 0 0 1 0 7.75'/></svg>");
-}
-html.is-phone #mbn-add .mbn-icon::before {
-  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M5 12h14'/><path d='M12 5v14'/></svg>");
-          mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M5 12h14'/><path d='M12 5v14'/></svg>");
-}
-html.is-phone #mbn-share .mbn-icon::before {
-  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/><path d='m17 8-5-5-5 5'/><path d='M12 3v12'/></svg>");
-          mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/><path d='m17 8-5-5-5 5'/><path d='M12 3v12'/></svg>");
 }
 
 /* ── PHONE CAMERA FAB ───────────────────────────────────────── */
@@ -2268,7 +2150,6 @@ html.is-phone .update-banner {
 }
 
 /* ── PHONE MISC POLISH ──────────────────────────────────────── */
-html.is-phone body { padding-bottom: calc(64px + var(--sab)); }
 html.is-phone .empty-state { padding: 40px 24px; }
 html.is-phone .empty-state-icon { font-size: 48px; }
 html.is-phone .empty-state-text { font-size: 14px; }
@@ -2277,10 +2158,6 @@ html.is-phone .empty-state-text { font-size: 14px; }
 html.is-phone body.theme-dark .nav-bar {
   background: var(--surface);
   border-bottom-color: var(--border);
-}
-html.is-phone body.theme-dark .mobile-bottom-nav {
-  background: var(--surface);
-  border-top-color: var(--border);
 }
 
 /* Touch-target safety */
@@ -2980,15 +2857,6 @@ textarea.field-input { min-height: 88px !important; line-height: 1.6 !important;
 .schedule-export-btn { border-radius: var(--r-pill) !important; }
 .sched-nav-btn { border-radius: var(--r-sm) !important; }
 
-/* ── MOBILE BOTTOM NAV ───────────────────────────────────────── */
-.mobile-bottom-nav {
-  background: var(--glass) !important;
-  backdrop-filter: blur(14px) !important;
-  -webkit-backdrop-filter: blur(14px) !important;
-  border-top: 1px solid var(--glass-border) !important;
-}
-.mbn-label { font-size: 9px !important; letter-spacing: 0.3px !important; }
-
 /* ── SECTION MANAGER ─────────────────────────────────────────── */
 .section-mgr-item { border-radius: var(--r-sm) !important; }
 .section-mgr-move { border-radius: var(--r-xs) !important; }
@@ -3236,6 +3104,156 @@ html.dark .folder-logo-img.logo-dark-bg{ background:#1c1c1e !important; padding:
 /* Cleaner status indicators (drop the neon glow) */
 .si-status{ box-shadow:none !important; width:8px !important; height:8px !important; }
 </style>
+
+<style id="phone-v2">
+/* ═══════════════════════════════════════════════════════════════
+   ── PHONE LAYOUT v2 ──
+   • Status bar: the charcoal nav bar extends under the iOS status
+     bar (viewport-fit=cover + black-translucent), so the clock /
+     wifi / battery sit on charcoal instead of a light strip.
+   • Top bar: iOS-style "‹ Parent" back button, screen title, one ⋯
+     button that opens the menu sheet (showPhoneMenu).
+   • Project = scope-item list page (body.phone-list turns the left
+     panel into the page). No bottom nav, no drawer.
+   ═══════════════════════════════════════════════════════════════ */
+html.is-phone body { padding-top:0; padding-bottom:0; }
+
+/* Nav bar first in the column, safe-area padding inside it */
+html.is-phone .nav-bar {
+  order:-1;
+  height:auto !important;
+  min-height:calc(56px + var(--sat));
+  padding:var(--sat) 8px 0 6px !important;
+  gap:4px !important;
+}
+html.is-phone .offline-banner,
+html.is-phone .update-banner { order:-1; }
+
+/* Back button: chevron + parent screen name, hidden on the home screen */
+html.is-phone .nav-back-btn {
+  display:flex; align-items:center; gap:1px;
+  width:auto !important; height:40px !important; min-width:40px;
+  padding:0 10px 0 2px; border:none !important; background:transparent !important;
+  color:var(--amber, #c8892a) !important; font-size:0 !important; border-radius:10px !important;
+  flex-shrink:0; max-width:42%;
+}
+html.is-phone .nav-back-btn.disabled { display:none; }
+html.is-phone .nav-back-btn:active { opacity:0.55; transform:none; }
+html.is-phone .nav-back-btn::before { width:24px; height:24px; flex-shrink:0; }
+html.is-phone .nav-back-chevron { display:none; }
+.nav-back-label { display:none; }
+html.is-phone .nav-back-label {
+  display:block; font-size:15px; font-weight:500; letter-spacing:-0.01em;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;
+}
+
+/* Title (the ::after is the 'Projects' fallback on the home screen) */
+html.is-phone .breadcrumb .crumb.active::after { color:#fff !important; }
+html.is-phone .breadcrumb .crumb {
+  font-size:17px; font-weight:600; padding:6px 2px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%;
+}
+
+/* One action on the right: the menu button (mask icon, flat) */
+.phone-menu-btn { display:none; }
+html.is-phone .nav-actions > .btn-icon:not(.phone-menu-btn),
+html.is-phone #user-chip,
+html.is-phone .nav-overflow-menu { display:none !important; }
+html.is-phone .nav-bar .phone-menu-btn {
+  display:flex !important;
+  width:40px; height:40px; border-radius:12px;
+  background:transparent !important; border-color:transparent !important;
+  color:#e8ecf1 !important; letter-spacing:0;
+}
+html.is-phone .nav-bar .phone-menu-btn:active { background:rgba(255,255,255,0.10) !important; }
+html.is-phone .nav-actions .phone-menu-btn::before {
+  width:24px; height:24px;
+  -webkit-mask-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'><circle cx='5' cy='12' r='2.2'/><circle cx='12' cy='12' r='2.2'/><circle cx='19' cy='12' r='2.2'/></svg>");
+          mask-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'><circle cx='5' cy='12' r='2.2'/><circle cx='12' cy='12' r='2.2'/><circle cx='19' cy='12' r='2.2'/></svg>");
+}
+html.is-phone .phone-menu-btn.sync-pending::after { top:6px; right:6px; box-shadow:0 0 0 2px #1c2027; }
+
+/* ── Project = scope-item list page ─────────────────────────── */
+html.is-phone .left-panel { display:none; }
+html.is-phone body.phone-list .left-panel {
+  display:flex; flex:1; min-height:0; width:100%;
+  border-right:none; background:var(--bg);
+  padding-bottom:var(--sab);
+}
+html.is-phone body.phone-list .right-panel { display:none; }
+html.is-phone body.phone-list .panel-header { padding:10px 14px 10px; background:var(--surface); }
+html.is-phone body.phone-list .panel-header-row { margin-bottom:10px; }
+html.is-phone body.phone-list .panel-title { font-size:12px; letter-spacing:1px; }
+.phone-add-btn { display:none; }
+html.is-phone body.phone-list .phone-add-btn {
+  display:flex; align-items:center; justify-content:center;
+  width:40px; height:40px; border-radius:12px; border:none;
+  background:var(--accent); color:#fff; font-size:24px; line-height:1;
+  box-shadow:0 2px 8px rgba(156,31,46,0.30);
+}
+html.is-phone body.phone-list .phone-add-btn:active { transform:scale(0.94); }
+html.is-phone body.phone-list .si-sort-btn { padding:8px 10px; font-size:12px; border-radius:9px; }
+html.is-phone body.phone-list .list-scroll { padding:0 0 28px; }
+html.is-phone body.phone-list .section-group { padding:14px 14px 6px; font-size:11px; }
+html.is-phone body.phone-list .si-row {
+  padding:11px 12px 11px 10px; gap:10px;
+  background:var(--surface); border-bottom:1px solid var(--border);
+}
+html.is-phone body.phone-list .si-row:hover { background:var(--surface); }
+html.is-phone body.phone-list .si-row:active { background:var(--surface2); }
+html.is-phone body.phone-list .si-row.active { background:var(--surface); }
+html.is-phone body.phone-list .si-row.active::before { display:none; }
+html.is-phone body.phone-list .si-drag-handle { opacity:0.7; }
+html.is-phone body.phone-list .si-row-check { width:20px; height:20px; border-radius:6px; font-size:12px; }
+html.is-phone body.phone-list .si-thumb { width:56px; height:42px; border-radius:8px; }
+html.is-phone body.phone-list .si-num { font-size:12px; }
+html.is-phone body.phone-list .si-title {
+  font-size:14px; line-height:1.3; white-space:normal;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+}
+html.is-phone body.phone-list .si-more-btn { width:34px; height:34px; font-size:20px; border-radius:9px; }
+html.is-phone body.phone-list .bulk-action-bar { padding:10px 12px; gap:6px; }
+html.is-phone body.phone-list .bulk-btn { padding:8px 10px; font-size:11px; }
+
+/* Other screens: a bit more breathing room now the bottom nav is gone */
+html.is-phone .grid-wrap { padding:12px 12px calc(24px + var(--sab)); }
+html.is-phone .summary-wrap { padding:14px 12px calc(24px + var(--sab)) !important; }
+html.is-phone .camera-fab { bottom:calc(68px + var(--sab)); }
+
+/* Full-screen overlays keep their header clear of the status bar */
+html.is-phone .global-search-overlay { padding:calc(var(--sat) + 12px) 12px 12px !important; }
+html.is-phone .recovery-header { padding-top:calc(var(--sat) + 12px); }
+
+/* ── Menu sheet (showPhoneMenu) ─────────────────────────────── */
+.pm-section {
+  font-family:var(--sans); font-size:11px; font-weight:700; letter-spacing:0.8px;
+  text-transform:uppercase; color:var(--text3); margin:4px 2px 8px;
+}
+.pm-section + .pm-grid, .pm-row + .pm-section { margin-top:14px; }
+.pm-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+.pm-tile {
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px;
+  min-height:72px; padding:10px 4px; border-radius:14px;
+  background:var(--surface2); border:1px solid var(--border);
+  font-size:11px; font-weight:600; color:var(--text2); text-align:center; cursor:pointer;
+  user-select:none; -webkit-user-select:none;
+}
+.pm-tile:active { background:var(--surface3); }
+.pm-tile .pm-ico { font-size:22px; line-height:1; }
+.pm-row {
+  display:flex; align-items:center; gap:12px;
+  padding:11px 12px; margin-bottom:6px; border-radius:12px;
+  background:var(--surface2); border:1px solid var(--border); cursor:pointer;
+  user-select:none; -webkit-user-select:none;
+}
+.pm-row:active { background:var(--surface3); }
+.pm-row .pm-ico { font-size:20px; width:28px; text-align:center; flex-shrink:0; }
+.pm-row .pm-txt { flex:1; min-width:0; }
+.pm-row .pm-title { font-size:14px; font-weight:600; color:var(--text); }
+.pm-row .pm-sub { font-size:11px; color:var(--text3); margin-top:1px; }
+.pm-row .pm-arrow { color:var(--text3); font-size:20px; flex-shrink:0; }
+/* ── END PHONE LAYOUT v2 ─────────────────────────────────────── */
+</style>
 </head>
 <body>
 
@@ -3250,13 +3268,15 @@ html.dark .folder-logo-img.logo-dark-bg{ background:#1c1c1e !important; padding:
 
 <!-- NAV BAR -->
 <div class="nav-bar">
-  <div class="nav-back-btn disabled" id="back-btn" onclick="goBack()">‹</div>
+  <div class="nav-back-btn disabled" id="back-btn" onclick="goBack()"><span class="nav-back-chevron">‹</span><span class="nav-back-label" id="back-label"></span></div>
   <div class="breadcrumb" id="breadcrumb">
     <span class="crumb active" onclick="navToRoot()"><img src="logo-white.png" alt="ADH Audit" class="nav-logo" id="main-logo"></span>
   </div>
   <div class="nav-actions">
     <div class="btn-icon" onclick="openGlobalSearch()" title="Global Search (⌘K)">⌕</div>
     <div class="btn-icon" onclick="handleAdd()" title="Add">＋</div>
+    <!-- Phone: the only top-bar action — opens the menu sheet (everything else lives there) -->
+    <div class="btn-icon phone-menu-btn" onclick="showPhoneMenu()" title="Menu">⋯</div>
     <!-- overflow toggle -->
     <div class="btn-icon nav-overflow-btn" onclick="toggleNavOverflow(event)" title="More options" style="font-size:18px;letter-spacing:1px">⋯</div>
     <!-- overflow dropdown -->
@@ -3288,7 +3308,7 @@ html.dark .folder-logo-img.logo-dark-bg{ background:#1c1c1e !important; padding:
     <div class="panel-header">
       <div class="panel-header-row">
         <span class="panel-title" id="left-panel-title">Folders</span>
-        <button class="drawer-close-btn" onclick="closeMobileDrawer()" title="Close">✕</button>
+        <button class="phone-add-btn" onclick="handleAdd()" title="Add scope item">＋</button>
       </div>
       <div class="search-box">
         <span class="search-icon">⌕</span>
@@ -3368,28 +3388,6 @@ html.dark .folder-logo-img.logo-dark-bg{ background:#1c1c1e !important; padding:
 <input type="file" id="attach-file-input" accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.txt,.csv,.zip,.png,.jpg,.jpeg" multiple onchange="handleAttachmentImport(event)" style="display:none">
 <input type="file" id="floorplan-input" accept="image/*,.pdf" onchange="handleFloorPlanUpload(event)" style="display:none">
 
-<!-- Drawer overlay (phones only) — closes the left-panel drawer -->
-<div class="drawer-overlay" id="drawer-overlay" onclick="closeMobileDrawer()"></div>
-
-<!-- Mobile bottom nav (phones only) -->
-<div class="mobile-bottom-nav" id="mobile-bottom-nav">
-  <div class="mbn-item" onclick="navToRoot()" id="mbn-home">
-    <span class="mbn-icon">🏠</span><span class="mbn-label">Home</span>
-  </div>
-  <div class="mbn-item" onclick="toggleMobileDrawer()" id="mbn-browse">
-    <span class="mbn-icon">📋</span><span class="mbn-label">Browse</span>
-  </div>
-  <div class="mbn-item" onclick="navToContacts()" id="mbn-contacts">
-    <span class="mbn-icon">📇</span><span class="mbn-label">Contacts</span>
-  </div>
-  <div class="mbn-item" onclick="handleAdd()" id="mbn-add">
-    <span class="mbn-icon">＋</span><span class="mbn-label">Add</span>
-  </div>
-  <div class="mbn-item" onclick="showShareModal()" id="mbn-share">
-    <span class="mbn-icon">📤</span><span class="mbn-label">Share</span>
-  </div>
-</div>
-
 <script>
 // ══════════════════════════════════════════════════════════════
 // PHONE LAYOUT DETECTION v1
@@ -3405,7 +3403,11 @@ html.dark .folder-logo-img.logo-dark-bg{ background:#1c1c1e !important; padding:
     '(max-width: 640px), (max-height: 480px) and (pointer: coarse)'
   );
   function apply(){
+    var was = document.documentElement.classList.contains('is-phone');
     document.documentElement.classList.toggle('is-phone', mq.matches);
+    // Phone ⇄ tablet swaps the whole layout (SI list page vs side panel),
+    // so repaint the current route once the app is running.
+    if (was !== mq.matches && window.store && typeof render === 'function') { try { render(); } catch (e) {} }
   }
   apply();
   if (mq.addEventListener) mq.addEventListener('change', apply);
@@ -4619,7 +4621,7 @@ async function syncChanges(isAuto = false) {
   if (!isAuto) {
     const r = route();
     const inProject = r.projectId &&
-      ['project','si','schedule','env','manpower','activity','floorplan','tblog'].includes(r.view);
+      ['project','overview','si','schedule','env','manpower','activity','floorplan','tblog'].includes(r.view);
     if (inProject) {
       return _syncSingleProject(r.projectId);
     } else {
@@ -4870,12 +4872,11 @@ function _userIsBusy() {
   if (_autoSaveTimer != null) return true;
   if (document.getElementById('modal-overlay')) return true;
   if (document.querySelector('.annotation-overlay, .global-search-overlay')) return true;
-  if (document.body.classList.contains('drawer-open')) return true;
   return (Date.now() - _lastUserActivity) < SYNC_IDLE_MS;
 }
 
 function _setSyncPendingDot(on) {
-  document.querySelectorAll('#sync-btn, .nav-actions .btn-icon[onclick*="syncChanges"]')
+  document.querySelectorAll('#sync-btn, .phone-menu-btn, .nav-actions .btn-icon[onclick*="syncChanges"]')
     .forEach(el => el.classList.toggle('sync-pending', on));
 }
 
@@ -5443,10 +5444,11 @@ function setTheme(id) {
 
 function applyTheme(id) {
   document.body.classList.remove('theme-dark');
-  const colors = { 'light': '#f1f5f9', 'dark': '#0b0f14' };
   if (id === 'dark') document.body.classList.add('theme-dark');
+  // The nav bar is charcoal in both themes (Corporate Steel skin), so the
+  // OS status bar / PWA title bar always takes that colour.
   document.querySelectorAll('meta[name="theme-color"]').forEach(m => {
-    m.setAttribute('content', colors[id] || colors['light']);
+    m.setAttribute('content', '#1c2027');
   });
 }
 
@@ -5525,7 +5527,7 @@ function navToResources() {
 // Per-project Toolbox Talk log (mirrors navToActivity)
 function navToTbLog(pid){
   const cur=route();
-  stack=stack.filter(r=>r.view!=='activity'&&r.view!=='si'&&r.view!=='env'&&r.view!=='schedule'&&r.view!=='manpower'&&r.view!=='tblog');
+  stack=stack.filter(r=>r.view!=='overview'&&r.view!=='activity'&&r.view!=='si'&&r.view!=='env'&&r.view!=='schedule'&&r.view!=='manpower'&&r.view!=='tblog');
   if(!stack.find(r=>r.view==='project'&&r.projectId===pid)) stack.push({view:'project',folderId:cur.folderId||'',projectId:pid});
   stack.push({view:'tblog',folderId:cur.folderId||'',projectId:pid});
   render();
@@ -5542,12 +5544,10 @@ function render() {
   _pendingSyncRender = false;
   _setSyncPendingDot(false);
 
-  // Navigating away closes the phone drawer — but background sync renders
-  // (same route) must not rip it out from under the user.
-  if (document.body.classList.contains('drawer-open') &&
-      JSON.stringify(r) !== window._drawerRoute) {
-    closeMobileDrawer();
-  }
+  // Phone: a project opens straight onto its scope-item list (the left
+  // panel rendered as the page). Everything else about the project lives
+  // behind the ⋯ menu — see showPhoneMenu().
+  document.body.classList.toggle('phone-list', _isPhone() && r.view === 'project');
 
   // 1. Instantly draw the nav bar
   renderNavBar(r);
@@ -5565,6 +5565,9 @@ function render() {
 // ── NAV BAR ──────────────────────────────
 function renderNavBar(r) {
   document.getElementById('back-btn').className = 'nav-back-btn'+(stack.length===0?' disabled':'');
+  // Phone: iOS-style back button labelled with the screen it returns to
+  const backLabel = document.getElementById('back-label');
+  if (backLabel) backLabel.textContent = stack.length ? _routeTitle(stack[stack.length-2]) : '';
   document.getElementById('admin-lock-btn').textContent = isAdmin ? '🔐' : '🔓';
 
   // User chip
@@ -5575,7 +5578,7 @@ function renderNavBar(r) {
   const syncBtn = document.getElementById('sync-btn');
   if (syncBtn) {
     const inProject = r.projectId &&
-      ['project','si','schedule','env','manpower','activity','floorplan','tblog'].includes(r.view);
+      ['project','overview','si','schedule','env','manpower','activity','floorplan','tblog'].includes(r.view);
     if (inProject) {
       const proj = getProject(r.projectId);
       const isOwned = !proj?.ownedBy || proj?.ownedBy === (_currentUser?.userId || '');
@@ -5615,6 +5618,10 @@ function renderNavBar(r) {
       crumbs.push(`<span class="crumb-sep">›</span>`);
       crumbs.push(`<span class="crumb active" title="${si.num}">${si.num}</span>`);
     }
+  }
+  if (r.view==='overview') {
+    crumbs.push(`<span class="crumb-sep">›</span>`);
+    crumbs.push(`<span class="crumb active">ℹ️ Overview</span>`);
   }
   if (r.view==='env') {
     crumbs.push(`<span class="crumb-sep">›</span>`);
@@ -5659,23 +5666,98 @@ function renderNavBar(r) {
   bc.innerHTML = crumbs.join('');
 }
 
-function updateMobileNav(r) {
-  document.querySelectorAll('.mbn-item').forEach(el=>el.classList.remove('active'));
-  if(r.view==='root'||!r.folderId) document.getElementById('mbn-home')?.classList.add('active');
-  if(r.view==='contacts') document.getElementById('mbn-contacts')?.classList.add('active');
+// ── PHONE NAVIGATION ─────────────────────
+// Phones have one action in the top bar (⋯) plus an iOS-style back button.
+// A project opens straight onto its scope-item list; the dashboard is its
+// own "Overview" screen and every other option sits in the menu sheet.
+function _isPhone() { return document.documentElement.classList.contains('is-phone'); }
+
+// Human title for a route — used for the back button label on phones.
+function _routeTitle(r) {
+  if (!r || r.view === 'root') return 'Projects';
+  if (r.view === 'si')      { const si = getSI(r.projectId, r.siId); return si ? si.num : 'Item'; }
+  if (r.view === 'project') { const p = getProject(r.projectId);   return p ? p.name : 'Project'; }
+  if (r.view === 'folder')  { const f = getFolder(r.folderId);     return f ? f.name : 'Folder'; }
+  return { overview:'Overview', env:'Environmental', schedule:'Schedule', manpower:'Manpower',
+           contacts:'Contacts', toolbox:'Toolbox', awi:'AWI', resources:'Resources',
+           tblog:'Toolbox Log', activity:'Activity', floorplan:'Floor Plan' }[r.view] || 'Back';
 }
 
-// ── MOBILE DRAWER (phone left panel) ─────
-function toggleMobileDrawer() {
-  if (document.body.classList.contains('drawer-open')) { closeMobileDrawer(); return; }
-  window._drawerRoute = JSON.stringify(route()); // remember where it was opened
-  document.body.classList.add('drawer-open');
-  document.getElementById('mbn-browse')?.classList.add('active');
-  renderLeft(route()); // panel is skipped while closed — build it now
+// Project dashboard (cover, stats, info, actions) as its own screen.
+function navToOverview(pid) {
+  const cur = route();
+  if (cur.view === 'si') _doSave(cur.projectId, cur.siId, false);
+  stack = stack.filter(r => !['overview','si','env','schedule','manpower','activity','floorplan','tblog'].includes(r.view));
+  if (!stack.find(r => r.view === 'project' && r.projectId === pid)) stack.push({view:'project', folderId:cur.folderId||'', projectId:pid});
+  stack.push({view:'overview', folderId:cur.folderId||'', projectId:pid});
+  render();
 }
-function closeMobileDrawer() {
-  document.body.classList.remove('drawer-open');
-  document.getElementById('mbn-browse')?.classList.remove('active');
+
+// Run a menu action: close the sheet and flush the open SI editor first so
+// jumping to another screen never loses unsaved field edits.
+function _phoneGo(fn) {
+  closeModal();
+  const cur = route();
+  if (cur.view === 'si') _doSave(cur.projectId, cur.siId, false);
+  fn();
+}
+
+function showPhoneMenu() {
+  const r = route();
+  const pid = r.projectId || '';
+  const proj = pid ? getProject(pid) : null;
+  const tile = (ico, label, js) =>
+    `<div class="pm-tile" onclick="_phoneGo(()=>{${js}})"><span class="pm-ico">${ico}</span><span>${label}</span></div>`;
+  const row = (ico, title, sub, js) =>
+    `<div class="pm-row" onclick="_phoneGo(()=>{${js}})"><span class="pm-ico">${ico}</span>
+      <div class="pm-txt"><div class="pm-title">${title}</div>${sub ? `<div class="pm-sub">${sub}</div>` : ''}</div>
+      <span class="pm-arrow">›</span></div>`;
+
+  let html = '';
+  if (proj) {
+    html += `<div class="pm-section">Project</div>`;
+    if (r.view !== 'project') html += row('📋', 'Scope Items', 'Back to the item list', `navToProject('${pid}','${r.folderId||''}')`);
+    html += row('＋', 'Add Scope Item', '', `showNewSIModal('${pid}')`);
+    html += row('ℹ️', 'Project Overview', 'Cover photo, progress & project info', `navToOverview('${pid}')`);
+    html += row('📅', '6-Week Look Ahead', 'Schedule & export separately from audit', `navToSchedule('${pid}')`);
+    html += row('👷', 'Manpower Tracking', 'Daily labor log & budget burn-down', `navToManpower('${pid}')`);
+    html += row('🦺', 'Toolbox Talk Log', 'Weekly safety talks for this job', `navToTbLog('${pid}')`);
+    html += row('🗺️', 'Floor Plan', 'Upload plan and pin SIs', `navToFloorPlan('${pid}')`);
+    html += row('🌡️', 'Environmental Conditions', 'Temperature & humidity charts', `navToEnv('${pid}')`);
+    html += row('📋', 'Activity Feed', 'Status, photo & note history', `navToActivity('${pid}')`);
+    html += row('📤', 'Share Audit Report', 'Export & send to team', `showShareModal()`);
+    html += row('🗂️', 'Manage Sections', 'Add, reorder or remove sections', `showManageSectionsModal('${pid}')`);
+    html += row('⚙️', 'Edit Project Info', 'Client, auditor, type, date', `showEditProjectModal('${pid}')`);
+    html += row('🧾', 'Import History', 'Previous spreadsheet sync logs', `showImportLog(getProject('${pid}'))`);
+    if (companyOf(proj).imports.includes('workorders'))
+      html += row('📥', 'Import Work Orders', 'Dates & hours from the Work Orders sheet', `triggerWorkOrdersImport('','${pid}')`);
+  }
+  const addLabel = !r.folderId ? 'New Folder' : (pid ? 'Add SI' : 'New Project');
+  html += `<div class="pm-section">App</div><div class="pm-grid">`
+    + tile('🏠', 'Home', 'navToRoot()')
+    + tile('⌕', 'Search', 'openGlobalSearch()')
+    + tile('＋', addLabel, 'handleAdd()')
+    + tile('🔄', 'Sync', 'syncChanges()')
+    + tile('📇', 'Contacts', 'navToContacts()')
+    + tile('🦺', 'Toolbox', 'navToToolbox()')
+    + tile('📐', 'AWI', 'navToAWI()')
+    + tile('📂', 'Resources', 'navToResources()')
+    + tile('🔔', 'Alerts', 'toggleNotifications()')
+    + tile('🎨', 'Theme', 'showThemeModal()')
+    + tile(isAdmin ? '🔐' : '🔓', 'Admin', 'showLoginModal()')
+    + tile('👤', 'Account', 'showUserMenu()')
+    + `</div>`;
+  makeModal(proj ? _htmlEsc(proj.name) : 'Menu', html, null, true);
+}
+
+// Empty scope-item list on phones (the list IS the project page there).
+function _phoneEmptySI(pid) {
+  return `<div class="empty-project-box" style="margin:18px 14px">
+    <div class="empty-project-icon">📋</div>
+    <h4>No scope items yet</h4>
+    <p>Add the first scope item to start auditing this project.</p>
+    <button class="btn-project-cta" onclick="showNewSIModal('${pid}')">＋ Add Scope Item</button>
+  </div>`;
 }
 
 // ── SI SORT (project view) ───────────────
@@ -5729,8 +5811,8 @@ function renderLeft(r) {
   // On phones the panel is a drawer — never hard-hide it there.
   if (leftPanel) leftPanel.classList.toggle('is-hidden', isRootView && !q && !isPhone);
 
-  // Do not waste CPU building the panel while the phone drawer is closed
-  if (isPhone && !document.body.classList.contains('drawer-open')) {
+  // Phones only render the panel when it IS the page (project → SI list)
+  if (isPhone && !document.body.classList.contains('phone-list')) {
     return;
   }
 
@@ -5934,7 +6016,6 @@ function renderLeft(r) {
               ${twEnabled ? `<span class="tw-badge ${twAllDone?'done':''}" style="margin-left:4px">🏢 ${twDone}/${twTotal}</span>` : ''}
             </div>
             <div class="si-title">${item.title}</div>
-            ${_updatedByBadge(item)}
           </div>
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
             ${(() => { const pv = _siEffProgress(item); return pv == null ? '' :
@@ -5946,6 +6027,9 @@ function renderLeft(r) {
         </div>`;
       });
     });
+    // Phone: a project with no items at all gets a real empty state with an
+    // "add" call to action instead of bare section headers with zero counts.
+    if (isPhone && !q && !proj.items.some(i => !i._deleted)) html = _phoneEmptySI(proj.id);
     scroll.innerHTML = html || (q ? emptySearch(q) : emptyMsg('No items'));
     return;
   }
@@ -6223,13 +6307,11 @@ function renderRight(r) {
   else if (r.view==='activity')  { buildActivityView(r.projectId);  show('v-activity');  }
   else if (r.view==='floorplan') { buildFloorPlanView(r.projectId); show('v-floorplan'); }
   else if (r.view==='si') { buildSIEditor(r.projectId,r.siId); show('v-si'); }
+  else if (r.view==='overview') { buildProjectView(r.projectId); show('v-project'); }
   else if (r.view==='project'&&!r.siId&&!r.envMode) { buildProjectView(r.projectId); show('v-project'); }
   else if (r.view==='folder'&&!r.projectId) { buildFolderView(r.folderId); show('v-folder'); }
   else if (r.view==='root'||!r.folderId) { buildRootView(); show('v-root'); }
   else show('v-empty');
-
-  // Update mobile bottom nav active state
-  updateMobileNav(r);
 }
 function show(id) {
   const el=document.getElementById(id);
@@ -7959,7 +8041,7 @@ function buildProjectView(pid) {
 function navToEnv(pid) {
   const cur=route();
   // Remove duplicate views but keep project in stack so goBack() lands on project
-  stack=stack.filter(r=>r.view!=='env'&&r.view!=='si'&&r.view!=='schedule'&&r.view!=='manpower');
+  stack=stack.filter(r=>r.view!=='overview'&&r.view!=='env'&&r.view!=='si'&&r.view!=='schedule'&&r.view!=='manpower');
   // Ensure project is in stack so Back works
   if(!stack.find(r=>r.view==='project'&&r.projectId===pid)) {
     stack.push({view:'project',folderId:cur.folderId||'',projectId:pid});
@@ -7970,7 +8052,7 @@ function navToEnv(pid) {
 
 function navToSchedule(pid) {
   const cur=route();
-  stack=stack.filter(r=>r.view!=='schedule'&&r.view!=='si'&&r.view!=='env'&&r.view!=='manpower');
+  stack=stack.filter(r=>r.view!=='overview'&&r.view!=='schedule'&&r.view!=='si'&&r.view!=='env'&&r.view!=='manpower');
   if(!stack.find(r=>r.view==='project'&&r.projectId===pid)) {
     stack.push({view:'project',folderId:cur.folderId||'',projectId:pid});
   }
@@ -7982,7 +8064,6 @@ function navToSchedule(pid) {
 function buildSIEditor(pid,sid) {
   const proj=getProject(pid); const item=getSI(pid,sid);
   if(!item||!proj) return;
-  const fid = route().folderId || '';   // needed for "Back to Project" button
   const sec=proj.sections.find(s=>s.id===item.sectionId);
 
   const sectionItems = proj.items.filter(i => !i._deleted && i.sectionId === item.sectionId);
@@ -8180,10 +8261,6 @@ function buildSIEditor(pid,sid) {
       <button class="btn-nav" onclick="navSI('${pid}','${sid}',-1)">‹ Prev</button>
       <div class="autosave-indicator" id="autosave-ind">✦ auto-save</div>
       <button class="btn-nav" onclick="navSI('${pid}','${sid}',1)">Next ›</button>
-    </div>
-    <div class="si-mobile-back-bar" id="si-mobile-back">
-      <button class="btn-nav" style="border-color:var(--accent);color:var(--accent)"
-        onclick="navToProject('${pid}','${fid}')">← Back to Project</button>
     </div>
     <div style="margin-top:28px;padding-top:16px;border-top:1px solid var(--border);text-align:center">
       <button onclick="confirmDeleteSI('${pid}','${sid}')"
@@ -15117,7 +15194,7 @@ window.deleteLaborEntry = function(pid, sid, entryId) {
 
 function navToManpower(pid) {
   const cur = route();
-  stack = stack.filter(r => r.view !== 'manpower' && r.view !== 'si' && r.view !== 'env' && r.view !== 'schedule');
+  stack = stack.filter(r => r.view !== 'overview' && r.view !== 'manpower' && r.view !== 'si' && r.view !== 'env' && r.view !== 'schedule');
   if(!stack.find(r=>r.view==='project'&&r.projectId===pid)) {
     stack.push({view:'project',folderId:cur.folderId||'',projectId:pid});
   }
@@ -16183,7 +16260,7 @@ function toggleArchiveProject(pid,fid){
 // ══════════════════════════════════════════════════════════════════
 function navToActivity(pid){
   const cur=route();
-  stack=stack.filter(r=>r.view!=='activity'&&r.view!=='si'&&r.view!=='env'&&r.view!=='schedule'&&r.view!=='manpower');
+  stack=stack.filter(r=>r.view!=='overview'&&r.view!=='activity'&&r.view!=='si'&&r.view!=='env'&&r.view!=='schedule'&&r.view!=='manpower');
   if(!stack.find(r=>r.view==='project'&&r.projectId===pid)) stack.push({view:'project',folderId:cur.folderId||'',projectId:pid});
   stack.push({view:'activity',folderId:cur.folderId||'',projectId:pid});
   render();
@@ -16248,7 +16325,7 @@ function buildActivityView(pid){
 // ══════════════════════════════════════════════════════════════════
 function navToFloorPlan(pid){
   const cur=route();
-  stack=stack.filter(r=>r.view!=='floorplan'&&r.view!=='si'&&r.view!=='env'&&r.view!=='schedule'&&r.view!=='manpower'&&r.view!=='activity');
+  stack=stack.filter(r=>r.view!=='overview'&&r.view!=='floorplan'&&r.view!=='si'&&r.view!=='env'&&r.view!=='schedule'&&r.view!=='manpower'&&r.view!=='activity');
   if(!stack.find(r=>r.view==='project'&&r.projectId===pid)) stack.push({view:'project',folderId:cur.folderId||'',projectId:pid});
   stack.push({view:'floorplan',folderId:cur.folderId||'',projectId:pid});
   render();
