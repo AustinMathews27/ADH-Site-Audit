@@ -11,9 +11,8 @@
   size; needs a real-iPhone check on staging.
 
 ## Pending
-- [ ] **Phone layout v2 — check on a real iPhone** (staging) — status bar on
-      charcoal, "‹ Parent" back button, ⋯ menu sheet, SI list as the project
-      screen, Overview screen, camera FAB position. Tablet/desktop unchanged.
+- [ ] **Phone layout v2 — field test this week** (staging, approved on first
+      look 2026-09-22). Collect anything that feels off, then merge to `main`.
 - [ ] **iOS offline plan — Phase A BLOCKED on Entra permissions** —
       `docs/IOS-OFFLINE-PLAN.md`. Austin has no rights to create an App
       registration in the company tenant; access (Application Developer role, or
@@ -68,6 +67,8 @@
 - `ff0f28c` Staging: configurable Cosmos DB name + seed script
 
 ## Decisions
+- 2026-09-22 — Phone layout v2 approved on staging ("working perfect so far"); Austin
+  field-tests it through the week of 2026-09-22, then the branch goes to `main`.
 - 2026-09-19 — Keep IndexedDB + the existing sync engine (no move to localStorage).
   "Bullet-proof offline" = bundle the web files in the IPA and switch the native
   app to MSAL + bearer tokens; plan in `docs/IOS-OFFLINE-PLAN.md`.
