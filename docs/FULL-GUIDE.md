@@ -297,7 +297,7 @@ Charts and violation flags flow into the PDF report's Environmental Conditions p
 
 ## 14. Contacts
 
-Home → Quick Access → **📇 Contact Book**. A shared, synced contact list: add contacts by hand, or import from **CSV / vCard (.vcf) / Excel (.xlsx)**. Export back out as VCF or Excel. Available from the bottom nav on phones.
+Home → Quick Access → **📇 Contact Book**. A shared, synced contact list: add contacts by hand, or import from **CSV / vCard (.vcf) / Excel (.xlsx)**. Export back out as VCF or Excel. On phones, open it from the ⋯ menu in the top bar.
 
 ---
 
