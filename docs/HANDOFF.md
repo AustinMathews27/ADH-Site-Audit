@@ -1,14 +1,19 @@
 # Handoff — read this first, update it before you stop
 
 ## Last session
-- **Device:** Claude Code web (cloud session)
-- **Branch:** `feature/company-profiles` (8 commits ahead of `main`, no PR yet)
-- **Date:** 2026-09-19
-- **Summary:** `ios-app/` shell signs in end-to-end in the simulator. Agreed
-  the next phase: bundled app + MSAL/bearer auth for true offline start-up —
-  see `docs/IOS-OFFLINE-PLAN.md`. Start at Phase A next session.
+- **Device:** Windows desktop app (Claude Code)
+- **Branch:** `feature/company-profiles` (no PR yet)
+- **Date:** 2026-09-22
+- **Summary:** Phone layout v2 (`8416300`): on phones a project opens straight
+  onto its scope-item list, every other option sits behind one ⋯ menu sheet,
+  iOS-style "‹ Parent" back button, bottom nav + Browse drawer removed, nav bar
+  extends under the iOS status bar. Verified in the desktop browser at phone
+  size; needs a real-iPhone check on staging.
 
 ## Pending
+- [ ] **Phone layout v2 — check on a real iPhone** (staging) — status bar on
+      charcoal, "‹ Parent" back button, ⋯ menu sheet, SI list as the project
+      screen, Overview screen, camera FAB position. Tablet/desktop unchanged.
 - [ ] **iOS offline plan — Phase A BLOCKED on Entra permissions** —
       `docs/IOS-OFFLINE-PLAN.md`. Austin has no rights to create an App
       registration in the company tenant; access (Application Developer role, or
@@ -48,6 +53,9 @@
 - [ ] **Stale PR #3 "task 1"** (`hardening/deps-offline`, July) — close or rebase.
 
 ## Done (recent)
+- `8416300` Phone layout v2: SI list is the project screen, one ⋯ menu
+  (`showPhoneMenu`), `navToOverview` screen, iOS-style back, status bar fix,
+  bottom nav/drawer removed, duplicate "updated by" badge fixed
 - `260eaad` iOS shell runs in the simulator with Entra sign-in completing in-app
   (fixes: allowNavigation segment-count wildcards; WKAppBoundDomains must name
   each SWA host in full because azurestaticapps.net is a public suffix)
