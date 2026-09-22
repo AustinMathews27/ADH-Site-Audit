@@ -52,6 +52,8 @@
 - [ ] **Stale PR #3 "task 1"** (`hardening/deps-offline`, July) — close or rebase.
 
 ## Done (recent)
+- Back button climbs one folder level at a time (`_folderChain`): nested
+  folder → company folder → home, instead of jumping straight home
 - `8416300` Phone layout v2: SI list is the project screen, one ⋯ menu
   (`showPhoneMenu`), `navToOverview` screen, iOS-style back, status bar fix,
   bottom nav/drawer removed, duplicate "updated by" badge fixed

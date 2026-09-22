@@ -5605,10 +5605,20 @@ document.addEventListener('click', function(e) {
     closeNavOverflow();
   }
 });
-function navToFolder(fid)         { stack=[{view:'folder',folderId:fid}]; render(); }
+// Root → company folder → subfolder → … as stack entries, so Back (and the
+// phone's "‹ Parent" button) climbs one level at a time instead of jumping
+// straight home from a nested folder.
+function _folderChain(fid) {
+  const chain = [];
+  let cur = fid ? getFolder(fid) : null;
+  while (cur) { chain.unshift({view:'folder', folderId:cur.id}); cur = cur.parentId ? getFolder(cur.parentId) : null; }
+  if (!chain.length && fid) chain.push({view:'folder', folderId:fid});
+  return chain;
+}
+function navToFolder(fid)         { stack=_folderChain(fid); render(); }
 function navToProject(pid,fid)    {
-  // Keep folder in stack if provided
-  stack = fid ? [{view:'folder',folderId:fid}] : [];
+  // Keep the folder path in the stack if provided
+  stack = _folderChain(fid);
   stack.push({view:'project',folderId:fid||'',projectId:pid});
   render();
 }
