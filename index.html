@@ -3120,7 +3120,7 @@ html.is-phone body { padding-top:0; padding-bottom:0; }
 
 /* Nav bar first in the column, safe-area padding inside it */
 html.is-phone .nav-bar {
-  order:-1;
+  order:-2;   /* before the offline / update banners, which take -1 */
   height:auto !important;
   min-height:calc(56px + var(--sat));
   padding:var(--sat) 8px 0 6px !important;
@@ -3218,7 +3218,12 @@ html.is-phone body.phone-list .bulk-btn { padding:8px 10px; font-size:11px; }
 /* Other screens: a bit more breathing room now the bottom nav is gone */
 html.is-phone .grid-wrap { padding:12px 12px calc(24px + var(--sab)); }
 html.is-phone .summary-wrap { padding:14px 12px calc(24px + var(--sab)) !important; }
-html.is-phone .camera-fab { bottom:calc(68px + var(--sab)); }
+/* SI editor: the top back button and ⋯ sheet replace the Prev/Next bar and
+   the delete button, so only the camera FAB stays at the bottom */
+html.is-phone #v-si .save-bar,
+html.is-phone #v-si .si-delete-wrap { display:none !important; }
+html.is-phone #v-si .edit-body { padding-bottom:calc(96px + var(--sab)) !important; }
+html.is-phone .camera-fab { bottom:calc(18px + var(--sab)); }
 
 /* Full-screen overlays keep their header clear of the status bar */
 html.is-phone .global-search-overlay { padding:calc(var(--sat) + 12px) 12px 12px !important; }
@@ -3252,6 +3257,7 @@ html.is-phone .recovery-header { padding-top:calc(var(--sat) + 12px); }
 .pm-row .pm-title { font-size:14px; font-weight:600; color:var(--text); }
 .pm-row .pm-sub { font-size:11px; color:var(--text3); margin-top:1px; }
 .pm-row .pm-arrow { color:var(--text3); font-size:20px; flex-shrink:0; }
+.pm-row.pm-danger .pm-title { color:var(--red); }
 /* ── END PHONE LAYOUT v2 ─────────────────────────────────────── */
 </style>
 </head>
@@ -5724,6 +5730,16 @@ function showPhoneMenu() {
       <span class="pm-arrow">›</span></div>`;
 
   let html = '';
+  if (proj && r.view === 'si' && r.siId) {
+    const sid = r.siId;
+    const si = getSI(pid, sid);
+    html += `<div class="pm-section">This item${si ? ' · ' + _htmlEsc(si.num) : ''}</div>`;
+    html += row('‹', 'Previous item', '', `navSI('${pid}','${sid}',-1)`);
+    html += row('›', 'Next item', '', `navSI('${pid}','${sid}',1)`);
+    html += row('📋', 'Duplicate', 'Copy this item into the same section', `duplicateSI('${pid}','${sid}')`);
+    if (proj.sections.length > 1) html += row('📂', 'Move to Section…', '', `showMoveSISectionModal('${pid}','${sid}')`);
+    html += row('🗑', 'Delete Scope Item', '', `confirmDeleteSI('${pid}','${sid}')`).replace('class="pm-row"', 'class="pm-row pm-danger"');
+  }
   if (proj) {
     html += `<div class="pm-section">Project</div>`;
     if (r.view !== 'project') html += row('📋', 'Scope Items', 'Back to the item list', `navToProject('${pid}','${r.folderId||''}')`);
@@ -8273,7 +8289,7 @@ function buildSIEditor(pid,sid) {
       <div class="autosave-indicator" id="autosave-ind">✦ auto-save</div>
       <button class="btn-nav" onclick="navSI('${pid}','${sid}',1)">Next ›</button>
     </div>
-    <div style="margin-top:28px;padding-top:16px;border-top:1px solid var(--border);text-align:center">
+    <div class="si-delete-wrap" style="margin-top:28px;padding-top:16px;border-top:1px solid var(--border);text-align:center">
       <button onclick="confirmDeleteSI('${pid}','${sid}')"
         style="background:none;border:1px solid var(--red-dim);color:var(--red);
         padding:8px 16px;border-radius:8px;font-family:var(--mono);font-size:11px;
@@ -13344,7 +13360,9 @@ function showSIMenu(e,pid,sid) {
     <div class="ctx-item" style="pointer-events:none;opacity:0.55"><span class="ctx-icon">↕️</span> Switch to Manual sort to reorder</div>`}
     ${multiSec?`<div class="ctx-item" onclick="closeCtxMenu();showMoveSISectionModal('${pid}','${sid}')"><span class="ctx-icon">📂</span> Move to Section…</div>`:''}
     <div class="ctx-divider"></div>
-    <div class="ctx-item" onclick="closeCtxMenu();duplicateSI('${pid}','${sid}')"><span class="ctx-icon">📋</span> Duplicate</div>`;
+    <div class="ctx-item" onclick="closeCtxMenu();duplicateSI('${pid}','${sid}')"><span class="ctx-icon">📋</span> Duplicate</div>
+    <div class="ctx-divider"></div>
+    <div class="ctx-item danger" onclick="closeCtxMenu();confirmDeleteSI('${pid}','${sid}')"><span class="ctx-icon">🗑</span> Delete</div>`;
 
   document.body.appendChild(menu);
 
