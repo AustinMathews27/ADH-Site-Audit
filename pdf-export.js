@@ -683,9 +683,14 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
     });
   }
 
-  window.exportPDF = async function (pid) {
+  window.exportPDF = async function (pid, opts) {
     const proj = (typeof getProject === 'function' ? getProject : window.getProject)(pid);
     if (!proj) return;
+
+    // Admin override — an unlocked admin session may export a report with
+    // required fields still missing ("Export Anyway" in the validation modal).
+    // Re-checked here so the flag alone can't bypass the gate on a non-admin device.
+    const _adminOverride = !!(opts && opts.adminOverride) && (typeof isAdmin !== 'undefined' && isAdmin === true);
 
     // Mandatory field check — incomplete items (not Completed / not Punch Ongoing)
     // must have Field Check, Field Notes, and at least one Photo. Instead of a terse
@@ -702,7 +707,7 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
         return !it.statusCode || !(it.notes && it.notes.trim()) || !(it.photos && it.photos.length > 0);
       }).map(it => ({ id: it.id, num: it.num, title: it.title || '', missing: ['required fields'] }));
     }
-    if (_missingReq.length > 0) {
+    if (_missingReq.length > 0 && !_adminOverride) {
       if (typeof window.showExportValidationModal === 'function') {
         window.showExportValidationModal(proj.id, _missingReq);
       } else if (typeof showToast === 'function') {

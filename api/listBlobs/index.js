@@ -55,6 +55,9 @@ module.exports = async function (context, req) {
         size:         b.properties.contentLength || 0,
         lastModified: b.properties.lastModified || null,
         createdOn:    b.properties.createdOn || null,
+        // Content hash — lets the orphan audit tell "another copy of a picture
+        // that is still shown" apart from "the only copy of a picture".
+        md5:          b.properties.contentMD5 ? Buffer.from(b.properties.contentMD5).toString('base64') : null,
       });
       if (blobs.length >= MAX_BLOBS) { truncated = true; break; }
     }

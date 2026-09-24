@@ -2995,6 +2995,19 @@ textarea.field-input { min-height: 88px !important; line-height: 1.6 !important;
   transition:background 0.15s,color 0.15s;
 }
 .exv-jump:hover{ background:var(--accent,#3b82f6); color:#fff; }
+/* Admin-only "Export Anyway" override strip */
+.exv-admin{
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  background:var(--surface2,#1e293b); border:1px dashed var(--amber,#d97706);
+  border-radius:10px; padding:10px 14px; margin-bottom:14px;
+}
+.exv-admin-note{ flex:1; min-width:180px; font-size:12px; line-height:1.45; color:var(--text2,#94a3b8); }
+.exv-admin-btn{
+  flex-shrink:0; font-size:13px; font-weight:700; color:#fff;
+  background:var(--amber,#d97706); border:none;
+  padding:8px 16px; border-radius:8px; cursor:pointer;
+}
+.exv-admin-btn:hover{ filter:brightness(1.08); }
 
 </style>
 
@@ -3537,7 +3550,7 @@ let store = JSON.parse(JSON.stringify(SEED));
 
 // Keep in lockstep with CACHE_VERSION in sw.js — shown in the Admin
 // Console header so a stale cached client is diagnosable at a glance.
-const APP_VERSION = '8.54';
+const APP_VERSION = '8.59';
 
 let _currentUser = null; // { userId, userDetails, userRoles }
 
@@ -4226,15 +4239,85 @@ function _itemPhotoUrls(item) {
   return urls;
 }
 
-/** Best-effort server-side cleanup of Azure photo blobs (fire and forget). */
-function _deleteBlobUrls(urls) {
-  urls.filter(u => u && /^https?:/.test(u)).forEach(u => {
-    fetch('/api/deleteBlob', {
-      method : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body   : JSON.stringify({ blobUrl: u })
-    }).catch(() => {});
+// ── Blob delete queue ─────────────────────────────────────────────────────────
+// Every server-side photo delete goes through here. It used to be a single
+// fire-and-forget fetch: a delete made offline, or one the API rejected (it
+// returned 500 for months — see api/deleteBlob), silently left the file in Blob
+// Storage forever. Deletes are now persisted and retried until they land.
+// Just before each delete the URL is checked against every LIVE photo on this
+// device: projects duplicated before v8.53 share blob URLs with their original,
+// so a file another project (or a Recovery re-link) still shows is never removed.
+const BLOB_DEL_IDB_KEY   = 'adh_blobdel_v1';
+const BLOB_DEL_MAX_TRIES = 12;   // then give up — Admin → Storage still lists it as an orphan
+let _blobDelQueue = {};          // { url: { at: epochMs, tries: n } }
+let _blobDelBusy  = false;
+let _blobDelStats = { done: 0, skippedInUse: 0, failed: 0 }; // this session, shown in Admin → Storage
+
+async function _loadBlobDelQueue() {
+  try { const q = await _idbGet(BLOB_DEL_IDB_KEY); if (q && typeof q === 'object') _blobDelQueue = Object.assign(q, _blobDelQueue); } catch(e) {}
+  if (Object.keys(_blobDelQueue).length) setTimeout(_drainBlobDeletes, 5000);
+}
+function _saveBlobDelQueue() { _idbSet(BLOB_DEL_IDB_KEY, _blobDelQueue).catch(() => {}); }
+
+/** Photo URLs shown by a live (non-trashed) project or item on this device. */
+function _liveBlobUrls() {
+  const set = new Set();
+  (store.projects || []).forEach(p => {
+    if (p._deleted) return;
+    if (p.coverPhoto && !String(p.coverPhoto).startsWith('data:')) set.add(p.coverPhoto);
+    (p.items || []).forEach(it => {
+      if (it._deleted) return;
+      _itemPhotoUrls(it).forEach(u => { if (u) set.add(u); });
+      // a markup re-upload still in flight keeps showing its old cloud copy
+      (it.photos || []).forEach(ph => { if (ph._replaceUrl) set.add(ph._replaceUrl); });
+    });
   });
+  return set;
+}
+
+/** Queue Azure photo blobs for server-side deletion (persisted, retried). */
+function _deleteBlobUrls(urls) {
+  let added = 0;
+  (urls || []).filter(u => u && /^https?:/.test(u)).forEach(u => {
+    if (!_blobDelQueue[u]) { _blobDelQueue[u] = { at: Date.now(), tries: 0 }; added++; }
+  });
+  if (!added) return;
+  _saveBlobDelQueue();
+  // Deferred: callers queue first and finish removing their own reference after
+  setTimeout(_drainBlobDeletes, 250);
+}
+
+async function _drainBlobDeletes() {
+  if (_blobDelBusy || !navigator.onLine) return;
+  const urls = Object.keys(_blobDelQueue);
+  if (!urls.length) return;
+  _blobDelBusy = true;
+  try {
+    for (const u of urls) {
+      if (_liveBlobUrls().has(u)) { delete _blobDelQueue[u]; _blobDelStats.skippedInUse++; continue; }
+      if (_blobDelQueue[u].next && Date.now() < _blobDelQueue[u].next) continue; // backing off after a server error
+      let res = null;
+      try {
+        res = await fetch('/api/deleteBlob', {
+          method : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body   : JSON.stringify({ blobUrl: u })
+        });
+      } catch(e) { break; } // network dropped — keep the rest for the next drain
+      // 2xx: gone (or already gone). 400/403: the API will never accept this URL.
+      if (res.ok || res.status === 400 || res.status === 403) { delete _blobDelQueue[u]; if (res.ok) _blobDelStats.done++; }
+      else if (++_blobDelQueue[u].tries >= BLOB_DEL_MAX_TRIES) {
+        delete _blobDelQueue[u]; _blobDelStats.failed++;
+        console.warn('[BlobDelete] giving up after', BLOB_DEL_MAX_TRIES, 'tries:', u);
+      } else {
+        // 2, 4, 8 … minutes, capped at 6 h — 12 tries span about two days
+        _blobDelQueue[u].next = Date.now() + Math.min(Math.pow(2, _blobDelQueue[u].tries) * 60000, 6 * 3600000);
+      }
+    }
+  } finally {
+    _blobDelBusy = false;
+    _saveBlobDelQueue();
+  }
 }
 
 // ── Orphan index entries ──────────────────────────────────────────────────────
@@ -4679,8 +4762,10 @@ async function _flushPendingPhotos(proj) {
   // syncs to other devices through the project document.
   if (proj.coverPhoto && proj.coverPhoto.startsWith('data:')) {
     try {
-      const coverUrl = await _uploadPhotoToAzureBlob(proj.coverPhoto, proj.id, 'cover');
-      if (coverUrl) proj.coverPhoto = coverUrl;
+      const coverData = proj.coverPhoto;
+      const coverUrl = await _uploadPhotoOnce(coverData, proj.id, 'cover');
+      // Only swap if the cover wasn't changed/removed while the upload ran
+      if (coverUrl && proj.coverPhoto === coverData) proj.coverPhoto = coverUrl;
     } catch(e) {
       console.warn('[Sync] Cover photo upload failed:', e.message);
     }
@@ -4695,18 +4780,17 @@ async function _flushPendingPhotos(proj) {
     // still pending (_needsUpload — photo.url points at the pre-markup copy)
     if ((!p.url || isTemporaryUrl || p._needsUpload) && p.data) {
       try {
-        const newUrl = await _uploadPhotoToAzureBlob(p.data, proj.id, siId);
-        if (newUrl) {
+        const sentData = p.data;
+        const newUrl = await _uploadPhotoOnce(sentData, proj.id, siId);
+        // p.data !== sentData: the photo was marked up again mid-upload — that
+        // newer image has its own pending upload, so don't point url at this one.
+        if (newUrl && p.data === sentData) {
           const staleUrl = (p._replaceUrl && p._replaceUrl !== newUrl) ? p._replaceUrl : null;
           p.url = newUrl; // Overwrite the temporary string with the real Azure link
           delete p._needsUpload;
           delete p._replaceUrl;
           if (staleUrl) {
-            fetch('/api/deleteBlob', {
-              method : 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body   : JSON.stringify({ blobUrl: staleUrl }),
-            }).catch(() => {});
+            _deleteBlobUrls([staleUrl]);
           }
         }
       } catch(uploadErr) {
@@ -4823,6 +4907,7 @@ async function syncChanges(isAuto = false) {
     await _saveCloudTs();
     await _persistDirtyState();
     await _idbSet('fap_v3', store);
+    _drainBlobDeletes(); // retry any photo deletes still queued
 
   } catch(err) {
     console.error('[Sync Error]', err);
@@ -5293,6 +5378,7 @@ async function _initStore() {
   await _loadDirtyState();
   await _loadCloudTs();
   await _loadOrphan404();
+  await _loadBlobDelQueue();
   // Hygiene: drop timestamp cache entries for tombstoned projects
   Object.keys(_cloudTs.projects).forEach(id => {
     if (store.projectTombstones[id]) delete _cloudTs.projects[id];
@@ -5342,6 +5428,7 @@ async function _initStore() {
     if (navigator.onLine) {
       _startPolling();
       _pollForRemoteChanges();
+      _drainBlobDeletes(); // photo deletes made while offline
       // Flush any dirty data that accumulated while offline
       if (_dirtyIndex || _dirtyProjectIds.size > 0) syncChanges(true);
     } else {
@@ -5855,7 +5942,8 @@ function showPhoneMenu() {
     html += row('🗂️', 'Manage Sections', 'Add, reorder or remove sections', `showManageSectionsModal('${pid}')`);
     html += row('⚙️', 'Edit Project Info', 'Client, auditor, type, date', `showEditProjectModal('${pid}')`);
     html += row('🧾', 'Import History', 'Previous spreadsheet sync logs', `showImportLog(getProject('${pid}'))`);
-    if (companyOf(proj).imports.includes('workorders'))
+    // Company profiles (feature branch) gate this per company; without them every project offers it
+    if (typeof companyOf !== 'function' || companyOf(proj).imports.includes('workorders'))
       html += row('📥', 'Import Work Orders', 'Dates & hours from the Work Orders sheet', `triggerWorkOrdersImport('','${pid}')`);
   }
   const addLabel = !r.folderId ? 'New Folder' : (pid ? 'Add SI' : 'New Project');
@@ -10350,7 +10438,7 @@ function handleFileImport(e) {
 
             // Then upload to Azure Blob Storage in the background
             try {
-              const blobUrl = await _uploadPhotoToAzureBlob(blob, _pt.pid, _pt.sid);
+              const blobUrl = await _uploadPhotoOnce(blob, _pt.pid, _pt.sid);
               if (blobUrl) {
                 // Swap data→url so CosmosDB sync picks it up (data stays for offline display)
                 photoEntry.url = blobUrl;
@@ -10814,19 +10902,15 @@ async function _annSave() {
     // Re-upload the annotated version to Azure Blob (background), then bin the old one
     (async () => {
       try {
-        const newUrl = await _uploadPhotoToAzureBlob(blob, pid, sid);
-        if (newUrl) {
+        const newUrl = await _uploadPhotoOnce(blob, pid, sid);
+        if (newUrl && photo.data === blob) { // skip if marked up again meanwhile
           photo.url = newUrl;
           delete photo._needsUpload;
           delete photo._replaceUrl;
           markAsDirty(sid);
           save();
           if (oldUrl && oldUrl !== newUrl) {
-            fetch('/api/deleteBlob', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ blobUrl: oldUrl }),
-            }).catch(() => {});
+            _deleteBlobUrls([oldUrl]);
           }
         }
       } catch (e) {
@@ -10848,6 +10932,41 @@ async function _annSave() {
       showToast('Save failed', 'red');
     }
   }
+}
+
+// ── Single-flight uploads ────────────────────────────────────────────────────
+// ALWAYS upload through _uploadPhotoOnce. The same pending photo is reachable
+// from several places at once — the capture/markup background upload and every
+// overlapping sync pass (_flushPendingPhotos runs before the project's dirty
+// flag clears, so on a slow connection passes pile up behind each other). Each
+// used to PUT its own copy under a fresh random name; the last to finish won
+// photo.url and the rest stayed in Blob Storage forever (≈4,600 duplicate files
+// / 1.4 GB by Sept 2026 — far more than the deleteBlob bug ever leaked).
+// Keyed by the image data itself + destination folder: concurrent callers share
+// one PUT, and later callers get the same URL back instead of re-uploading.
+// A failed upload is forgotten so the next sync retries it.
+const _photoUploadsByBlob = new WeakMap(); // Blob → Map<"pid/siId", Promise<url>>
+const _photoUploadsByStr  = new Map();     // "pid/siId|data:…" → Promise<url>
+function _uploadPhotoOnce(data, projectId, siId) {
+  const dest  = `${projectId}/${siId}`;
+  const isObj = !!data && typeof data === 'object';
+  let cache, key;
+  if (isObj) {
+    cache = _photoUploadsByBlob.get(data);
+    if (!cache) _photoUploadsByBlob.set(data, cache = new Map());
+    key = dest;
+  } else {
+    cache = _photoUploadsByStr;
+    key = dest + '|' + data;
+  }
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const up = _uploadPhotoToAzureBlob(data, projectId, siId);
+  cache.set(key, up);
+  up.catch(() => { if (cache.get(key) === up) cache.delete(key); });
+  // base64 keys pin the whole string in memory — keep only the most recent few
+  if (!isObj && cache.size > 20) cache.delete(cache.keys().next().value);
+  return up;
 }
 
 async function _uploadPhotoToAzureBlob(dbPhotoData, projectId, siId) {
@@ -10985,11 +11104,7 @@ function deletePhoto(pid,sid,idx) {
     item.photoTombstones = item.photoTombstones || {};
     item.photoTombstones[_tombKey(removed.url)] = Date.now();
     markAsDirty(sid);
-    fetch('/api/deleteBlob', {
-      method : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body   : JSON.stringify({ blobUrl: removed.url }),
-    }).catch(e => console.warn('[Photo] Blob delete failed (non-fatal):', e.message));
+    _deleteBlobUrls([removed.url]);
   }
 }
 function previewPhoto(pid,sid,idx) {
@@ -11088,7 +11203,7 @@ async function _admLoadBlobs() {
     const file  = parts[parts.length - 1] || '';
     const m     = file.match(/^(\d{13})-/);
     return {
-      idx: i, name: b.name, url: b.url, size: b.size || 0,
+      idx: i, name: b.name, url: b.url, size: b.size || 0, md5: b.md5 || null,
       projId: parts[0] || '',
       siId:   parts.length >= 3 ? parts[1] : '',
       date:   m ? new Date(+m[1]) : (b.lastModified ? new Date(b.lastModified) : null),
@@ -11544,44 +11659,163 @@ function _admSweepDead() {
 
 // ── Tab: Storage cleanup ────────────────────────────────────────────
 // Blobs in Azure that no project references anymore. Deleting them is
-// permanent — guarded by an age filter and a confirm step.
+// permanent, so every orphan is CLASSIFIED first and only the provably safe
+// classes can be bulk-selected:
+//   dup     — byte-identical (md5) spare copy of a picture its item still
+//             shows. The pre-v8.56 upload race stored one photo up to 30×.
+//   deleted — a picture the user removed on purpose (photo tombstone), or a
+//             spare copy of one. Left behind while api/deleteBlob was broken.
+//   review  — shown in NO item and no delete record: possibly the only copy
+//             of a lost picture. Never bulk-selected — picked by eye, per
+//             picture, in the review grid (or re-linked from the Recovery tab).
+// "Referenced" is judged against this device's store AND every project
+// document in the cloud, so a stale or partial local store can't make live
+// photos look orphaned. If any cloud document can't be read, deleting is off.
 let _admCleanAge = 30;
-let _admCleanSel = new Set(); // blob idx
+let _admCleanSel = new Set();    // blob idx
+let _admCleanReviewPid = null;   // project open in the review grid
+let _admCleanRefs = null;        // { forCache, urls:Set, tombs:Set, failed:[] }
+
+const _ADM_CLEAN_CLASSES = {
+  dup:     { icon: '🟢', label: 'Spare copies',        hint: 'Extra uploads of a picture its item still shows. Identical file, safe to delete.' },
+  deleted: { icon: '🟢', label: 'Deleted on purpose',  hint: 'Pictures someone removed in the app (and spare copies of them). Safe to delete.' },
+  review:  { icon: '🟠', label: 'Needs review',        hint: 'Not shown in any item and no delete record. Look before deleting — open a project below.' },
+};
+
+/** Every photo URL + tombstone key known locally or in ANY cloud project doc. */
+async function _admCleanLoadRefs(onProgress) {
+  const cache = await _admLoadBlobs();
+  if (_admCleanRefs && _admCleanRefs.forCache === cache) return _admCleanRefs;
+
+  const urls = new Set(), tombs = new Set(), failed = [];
+  const addUrl  = u => { if (u && /^https?:/.test(u)) { urls.add(u); urls.add(u.split('?')[0]); } };
+  const addProj = p => {
+    if (!p) return;
+    // Cloud docs are stored as id "adh-proj-<pid>" with the real id in projectId
+    const pid = p.projectId || String(p.id || '').replace(/^adh-proj-/, '');
+    if (p.coverPhoto && !String(p.coverPhoto).startsWith('data:')) addUrl(p.coverPhoto);
+    (p.items || []).forEach(it => {
+      _itemPhotoUrls(it).forEach(addUrl);
+      // Scoped to the project folder: a copied project keeps the original's filenames.
+      // Keys from older builds are full URLs and name their own folder.
+      Object.keys(it.photoTombstones || {}).forEach(k => {
+        const clean = k.split('?')[0], parts = clean.split('/');
+        const folder = (/^https?:/.test(clean) && parts.length >= 4) ? parts[parts.length - 3] : pid;
+        tombs.add(folder + '/' + _tombKey(clean));
+      });
+    });
+  };
+  (store.projects || []).forEach(addProj); // includes trashed projects → restorable photos stay protected
+
+  const ids = new Set((store.projects || []).map(p => p.id));
+  try { ((await _apiGetIndex()) || {}).projectIds?.forEach(id => ids.add(id)); }
+  catch (e) { failed.push('cloud index'); }
+  // A blob folder whose project this device has never seen may still have a doc
+  cache.blobs.forEach(b => { if (/^proj_/.test(b.projId)) ids.add(b.projId); });
+
+  const queue = [...ids];
+  let done = 0;
+  await Promise.all(Array.from({ length: 6 }, async () => {
+    while (queue.length) {
+      const pid = queue.shift();
+      try { addProj(await _apiGetProject(pid)); }   // null on 404 = no doc, nothing to protect
+      catch (e) { failed.push(pid); }
+      if (onProgress) onProgress(++done, ids.size);
+    }
+  }));
+
+  _admCleanRefs = { forCache: cache, urls, tombs, failed };
+  return _admCleanRefs;
+}
+
+/** Orphans (unreferenced + past the age filter), each tagged with .cls and .pic */
+function _admCleanOrphans(blobs, refs, age = _admCleanAge) {
+  const picKey = b => `${b.projId}/${b.siId}|${b.md5}`;
+  const livePics = new Set(), tombPics = new Set();
+  const isTomb = b => refs.tombs.has(b.projId + '/' + _tombKey(b.url));
+  blobs.forEach(b => {
+    if (!b.md5 || !b.siId) return;
+    if (refs.urls.has(b.url)) livePics.add(picKey(b));
+    if (isTomb(b)) tombPics.add(picKey(b));
+  });
+  const cutoff = Date.now() - age * 86400000;
+  return blobs
+    .filter(b => !refs.urls.has(b.url) && (age === 0 || !b.date || b.date.getTime() < cutoff))
+    .map(b => {
+      const pic = (b.md5 && b.siId) ? picKey(b) : 'blob:' + b.idx; // no hash → can't prove anything → review
+      const cls = livePics.has(pic) ? 'dup' : (tombPics.has(pic) || isTomb(b)) ? 'deleted' : 'review';
+      return Object.assign(b, { cls, pic });
+    });
+}
+
+const _admMb = list => (list.reduce((s, b) => s + b.size, 0) / 1048576).toFixed(1);
 
 async function _admRenderCleanup() {
   const body  = document.getElementById('rec-body');
   const crumb = document.getElementById('rec-crumb');
   if (crumb) crumb.textContent = 'Orphaned blobs — in storage but not referenced by any project';
-  if (body) body.innerHTML = `<div style="text-align:center;padding:40px 0;color:var(--text2)">Comparing storage against app data…</div>`;
+  const busy = msg => { if (body) body.innerHTML = `<div style="text-align:center;padding:40px 0;color:var(--text2)">${msg}</div>`; };
+  busy('Listing blob storage…');
 
-  let blobs;
-  try { blobs = (await _admLoadBlobs()).blobs; }
-  catch (e) { if (body) body.innerHTML = `<div style="color:var(--red);padding:24px;text-align:center">Could not list blob storage: ${_htmlEsc(e.message)}</div>`; return; }
+  let blobs, refs;
+  try {
+    blobs = (await _admLoadBlobs()).blobs;
+    refs  = await _admCleanLoadRefs((d, n) => { if (_admTab === 'cleanup') busy(`Checking every project in the cloud… ${d}/${n}`); });
+  } catch (e) { if (body) body.innerHTML = `<div style="color:var(--red);padding:24px;text-align:center">Could not list blob storage: ${_htmlEsc(e.message)}</div>`; return; }
+  if (_admTab !== 'cleanup') return; // user moved on while we were loading
 
-  const appUrls = _recAppUrls(); // includes tombstoned projects, so trash-restorable photos are protected
-  const cutoff  = Date.now() - _admCleanAge * 86400000;
-  const orphans = blobs.filter(b => !appUrls.has(b.url) &&
-    (_admCleanAge === 0 || !b.date || b.date.getTime() < cutoff));
+  const orphans = _admCleanOrphans(blobs, refs);
   const orphanIdx = new Set(orphans.map(b => b.idx));
   _admCleanSel = new Set([..._admCleanSel].filter(i => orphanIdx.has(i)));
+  const blocked = refs.failed.length > 0;
 
-  const groups = {};
-  orphans.forEach(b => (groups[b.projId] = groups[b.projId] || []).push(b));
-  const rows = Object.entries(groups).map(([pid, list]) => {
-    const proj = getProject(pid);
-    const mb = (list.reduce((s, b) => s + b.size, 0) / 1048576).toFixed(1);
-    const allSel = list.every(b => _admCleanSel.has(b.idx));
-    return `<div class="adm-row" style="cursor:pointer" onclick="_admCleanToggleGroup('${_htmlEsc(pid)}')">
-      <span style="font-size:15px">${allSel ? '☑️' : '⬜'}</span>
-      <div class="adm-row-main">
-        <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_htmlEsc(proj ? proj.name : pid)}${proj && proj._deleted ? ' <span style="color:var(--red);font-size:10px">(deleted project)</span>' : ''}</div>
-        <div class="adm-row-sub">${list.length} orphaned blob${list.length !== 1 ? 's' : ''} · ${mb} MB</div>
-      </div>
+  if (_admCleanReviewPid) { _admRenderCleanReview(orphans); _admCleanBar(orphans, blocked); return; }
+
+  const header = _admCleanHeader(blobs, refs);
+  if (_admCleanView === 'tiles') {
+    if (crumb) crumb.textContent = 'Duplicate photos — the same picture listed more than once in an item';
+    if (body) body.innerHTML = header;
+    _admRenderDupTiles(blobs);
+    return;
+  }
+
+  const by = { dup: [], deleted: [], review: [] };
+  orphans.forEach(b => by[b.cls].push(b));
+  const cards = Object.entries(_ADM_CLEAN_CLASSES).map(([cls, c]) => {
+    const list = by[cls], nSel = list.filter(b => _admCleanSel.has(b.idx)).length;
+    const pics = cls === 'review' ? ` = ${new Set(list.map(b => b.pic)).size} pictures` : '';
+    const btn = cls === 'review' || !list.length ? ''
+      : `<button class="recovery-btn" style="font-size:10px;padding:4px 10px" onclick="_admCleanSelectClass('${cls}')">${nSel === list.length ? 'Unselect' : 'Select'} all</button>`;
+    return `<div class="adm-stat" style="display:flex;flex-direction:column;gap:4px">
+      <b>${c.icon} ${list.length}</b>
+      <span style="font-weight:700;color:var(--text1)">${c.label} · ${_admMb(list)} MB${pics}</span>
+      <span>${c.hint}</span>${btn}
     </div>`;
   }).join('');
 
-  const totalMb = (orphans.reduce((s, b) => s + b.size, 0) / 1048576).toFixed(1);
-  if (body) body.innerHTML = `
+  const groups = {};
+  orphans.forEach(b => (groups[b.projId] = groups[b.projId] || []).push(b));
+  const rows = Object.entries(groups)
+    .sort((a, b) => b[1].reduce((s, x) => s + x.size, 0) - a[1].reduce((s, x) => s + x.size, 0))
+    .map(([pid, list]) => {
+      const proj = getProject(pid);
+      const safe = list.filter(b => b.cls !== 'review'), rev = list.filter(b => b.cls === 'review');
+      const allSel = safe.length > 0 && safe.every(b => _admCleanSel.has(b.idx));
+      const nDup = list.filter(b => b.cls === 'dup').length, nDel = safe.length - nDup;
+      const revPics = new Set(rev.map(b => b.pic)).size;
+      return `<div class="adm-row" style="cursor:${safe.length ? 'pointer' : 'default'}" ${safe.length ? `onclick="_admCleanToggleGroup('${_htmlEsc(pid)}')"` : ''}>
+        <span style="font-size:15px;${safe.length ? '' : 'opacity:0.25'}">${allSel ? '☑️' : '⬜'}</span>
+        <div class="adm-row-main">
+          <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_htmlEsc(proj ? proj.name : pid)}${proj && proj._deleted ? ' <span style="color:var(--red);font-size:10px">(deleted project)</span>' : ''}</div>
+          <div class="adm-row-sub">${nDup} spare · ${nDel} deleted on purpose · ${_admMb(safe)} MB safe${rev.length ? ` · <span style="color:var(--amber,#d97706)">${revPics} to review</span>` : ''}</div>
+        </div>
+        ${rev.length ? `<button class="recovery-btn" style="font-size:10px;padding:4px 10px" onclick="event.stopPropagation();_admCleanReviewPid='${_htmlEsc(pid)}';_admRenderCleanup()">Review ${revPics} ›</button>` : ''}
+      </div>`;
+    }).join('');
+
+  if (body) body.innerHTML = `${header}
+    ${blocked ? `<div style="border:1px solid var(--red);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:var(--red)">
+      ⛔ Could not read ${refs.failed.length} cloud document${refs.failed.length !== 1 ? 's' : ''} (${_htmlEsc(refs.failed.slice(0, 3).join(', '))}${refs.failed.length > 3 ? '…' : ''}), so their photos can't be ruled out. Deleting is disabled — tap ↻ to retry.</div>` : ''}
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-size:11px;color:var(--text2)">
       <span>⚠️ Deleting blobs is <strong>permanent</strong>. The Recovery tab can no longer restore anything deleted here.</span>
       <label style="margin-left:auto;display:flex;align-items:center;gap:6px">Older than
@@ -11593,39 +11827,101 @@ async function _admRenderCleanup() {
         </select>
       </label>
     </div>
-    ${orphans.length ? rows : `<div style="text-align:center;padding:30px;color:var(--text2)">✓ No orphaned blobs${_admCleanAge ? ' older than ' + _admCleanAge + ' days' : ''}</div>`}`;
-
-  const bar = document.getElementById('rec-bar');
-  if (bar) {
-    const n = _admCleanSel.size;
-    bar.style.display = orphans.length ? 'flex' : 'none';
-    bar.innerHTML = orphans.length ? `
-      <span style="font-size:12px;color:var(--text2);flex:1">${orphans.length} orphaned · ${totalMb} MB · ${n} selected</span>
-      <button class="recovery-btn danger" onclick="_admCleanDelete()" ${n ? '' : 'disabled'}>🗑 Delete ${n || ''} permanently</button>` : '';
-  }
+    ${orphans.length ? `<div class="adm-stat-grid">${cards}</div>
+      <div style="font-size:11px;color:var(--text2);margin:2px 0 8px">Tapping a project selects only its safe files (spare copies + deleted on purpose).</div>${rows}`
+      : `<div style="text-align:center;padding:30px;color:var(--text2)">✓ No orphaned blobs${_admCleanAge ? ' older than ' + _admCleanAge + ' days' : ''}</div>`}`;
+  _admCleanBar(orphans, blocked);
 }
 
-function _admCleanToggleGroup(pid) {
-  const list = (_admBlobCache?.blobs || []).filter(b => b.projId === pid);
-  const appUrls = _recAppUrls();
-  const cutoff = Date.now() - _admCleanAge * 86400000;
-  const orphans = list.filter(b => !appUrls.has(b.url) && (_admCleanAge === 0 || !b.date || b.date.getTime() < cutoff));
-  const allSel = orphans.every(b => _admCleanSel.has(b.idx));
-  orphans.forEach(b => allSel ? _admCleanSel.delete(b.idx) : _admCleanSel.add(b.idx));
+function _admCleanBar(orphans, blocked) {
+  const bar = document.getElementById('rec-bar');
+  if (!bar) return;
+  const sel = orphans.filter(b => _admCleanSel.has(b.idx));
+  bar.style.display = orphans.length ? 'flex' : 'none';
+  bar.innerHTML = orphans.length ? `
+    <span style="font-size:12px;color:var(--text2);flex:1">${orphans.length} orphaned · ${_admMb(orphans)} MB · ${sel.length} selected (${_admMb(sel)} MB)</span>
+    <button class="recovery-btn danger" onclick="_admCleanDelete()" ${sel.length && !blocked ? '' : 'disabled'}>🗑 Delete ${sel.length || ''} permanently</button>` : '';
+}
+
+// Review grid: ONE card per distinct picture (all its copies toggle together)
+function _admRenderCleanReview(orphans) {
+  const body  = document.getElementById('rec-body');
+  const crumb = document.getElementById('rec-crumb');
+  const pid   = _admCleanReviewPid;
+  const proj  = getProject(pid);
+  if (crumb) crumb.innerHTML = `<a onclick="_admCleanReviewPid=null;_admRenderCleanup()" style="cursor:pointer;color:var(--accent)">‹ Cleanup</a> · ${_htmlEsc(proj ? proj.name : pid)} · needs review`;
+
+  const pics = new Map(); // pic → [blobs]
+  orphans.filter(b => b.projId === pid && b.cls === 'review').forEach(b => { if (!pics.has(b.pic)) pics.set(b.pic, []); pics.get(b.pic).push(b); });
+  const bySi = {};
+  pics.forEach((list, pic) => (bySi[list[0].siId] = bySi[list[0].siId] || []).push({ pic, list }));
+
+  const sections = Object.entries(bySi).map(([sid, entries]) => {
+    const si = proj ? (proj.items || []).find(i => i.id === sid) : null;
+    const label = sid === 'cover' ? '🖼 Project cover photos'
+      : si ? `${_htmlEsc(si.num || '')} — ${_htmlEsc(si.title || '')}${si._deleted ? ' <span style="color:var(--red)">(deleted SI)</span>' : ''}`
+      : `${_htmlEsc(sid || '(no folder)')} <span style="color:var(--text3)">(SI not found in app)</span>`;
+    const cards = entries.map(({ list }) => {
+      const b = list[0], selected = list.every(x => _admCleanSel.has(x.idx));
+      return `<div class="recovery-card ${selected ? 'selected' : ''}" onclick="_admCleanTogglePic(${b.idx})">
+        <img src="${_htmlEsc(b.url)}" loading="lazy" alt="">
+        <div class="rec-check">${selected ? '✓' : ''}</div>
+        <button class="rec-open" onclick="event.stopPropagation();window.open('${_htmlEsc(b.url)}','_blank')" title="Open full size">⤢</button>
+        ${list.length > 1 ? `<div class="rec-inapp">×${list.length} copies</div>` : ''}
+        <div class="rec-date">${_recFmtDate(b.date) || '—'}</div>
+      </div>`;
+    }).join('');
+    return `<div class="recovery-si-group">
+      <div class="recovery-si-title">${label}<span style="font-weight:400;color:var(--text3);font-size:11px">· ${entries.length} picture${entries.length !== 1 ? 's' : ''}</span></div>
+      <div class="recovery-grid">${cards}</div>
+    </div>`;
+  }).join('');
+
+  if (body) body.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-size:11px;color:var(--text2)">
+      <span style="flex:1;min-width:220px">These pictures are <strong>not shown in any item</strong> and there is no record of anyone deleting them. Tick only the ones you are sure nobody needs — this is the last copy. To put one back into its item, use the <strong>Recovery</strong> tab instead.</span>
+      ${pics.size ? `<button class="recovery-btn" style="font-size:10px;padding:4px 10px" onclick="_admCleanSelectReviewAll()">Select all ${pics.size}</button>` : ''}
+    </div>
+    ${sections || '<div style="text-align:center;padding:30px;color:var(--text2)">✓ Nothing left to review in this project</div>'}`;
+}
+
+function _admCleanCurrent() { // orphans for the current blob cache + refs (both already loaded)
+  return (_admBlobCache && _admCleanRefs && _admCleanRefs.forCache === _admBlobCache) ? _admCleanOrphans(_admBlobCache.blobs, _admCleanRefs) : [];
+}
+function _admCleanToggleSet(list) {
+  if (!list.length) return;
+  const allSel = list.every(b => _admCleanSel.has(b.idx));
+  list.forEach(b => allSel ? _admCleanSel.delete(b.idx) : _admCleanSel.add(b.idx));
   _admRenderCleanup();
+}
+function _admCleanSelectClass(cls) { if (cls !== 'review') _admCleanToggleSet(_admCleanCurrent().filter(b => b.cls === cls)); }
+function _admCleanToggleGroup(pid) { _admCleanToggleSet(_admCleanCurrent().filter(b => b.projId === pid && b.cls !== 'review')); }
+function _admCleanTogglePic(idx) {
+  const all = _admCleanCurrent(), hit = all.find(b => b.idx === idx);
+  if (hit) _admCleanToggleSet(all.filter(b => b.pic === hit.pic && b.cls === 'review'));
+}
+function _admCleanSelectReviewAll() {
+  _admCleanToggleSet(_admCleanCurrent().filter(b => b.projId === _admCleanReviewPid && b.cls === 'review'));
 }
 
 function _admCleanDelete() {
-  const n = _admCleanSel.size;
-  if (!n) return;
+  const sel = _admCleanCurrent().filter(b => _admCleanSel.has(b.idx));
+  const n = sel.length;
+  if (!n || !_admCleanRefs || _admCleanRefs.failed.length) return;
+  const count = cls => sel.filter(b => b.cls === cls).length;
+  const revPics = new Set(sel.filter(b => b.cls === 'review').map(b => b.pic)).size;
   makeModal('Delete Orphaned Blobs', `
     <div style="text-align:center;padding:8px 0 16px">
       <div style="font-size:32px;margin-bottom:10px">🗑</div>
-      <div style="font-size:13px;color:var(--red);font-weight:600;margin-bottom:6px">Permanently delete ${n} blob${n !== 1 ? 's' : ''} from Azure Storage?</div>
-      <div style="font-size:12px;color:var(--text2)">This cannot be undone. Make sure nothing here still needs recovering.</div>
+      <div style="font-size:13px;color:var(--red);font-weight:600;margin-bottom:6px">Permanently delete ${n} blob${n !== 1 ? 's' : ''} (${_admMb(sel)} MB) from Azure Storage?</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.6">${count('dup')} spare copies · ${count('deleted')} deleted on purpose${revPics ? `<br><strong style="color:var(--amber,#d97706)">${revPics} reviewed picture${revPics !== 1 ? 's' : ''} — the LAST copy of each (${count('review')} file${count('review') !== 1 ? 's' : ''})</strong>` : ''}</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:6px">This cannot be undone.</div>
     </div>`, async () => {
     closeModal();
-    const targets = (_admBlobCache?.blobs || []).filter(b => _admCleanSel.has(b.idx));
+    // Last look before each delete: a photo re-linked (Recovery) or synced in
+    // since the list was built is referenced again — never delete those.
+    const nowUrls = _recAppUrls();
+    const targets = sel.filter(b => !nowUrls.has(b.url));
     let done = 0, failed = 0;
     showToast(`Deleting 0/${targets.length}…`);
     for (const b of targets) {
@@ -11640,7 +11936,191 @@ function _admCleanDelete() {
     }
     _admBlobCache = null;
     _admCleanSel = new Set();
-    showToast(`✓ ${done} deleted${failed ? ' · ' + failed + ' failed' : ''}`, failed ? 'red' : 'green');
+    const skipped = sel.length - targets.length;
+    showToast(`✓ ${done} deleted${failed ? ' · ' + failed + ' failed' : ''}${skipped ? ' · ' + skipped + ' skipped (in use again)' : ''}`, failed ? 'red' : 'green');
+    _admRenderCleanup();
+  });
+}
+
+// ── Storage tab: view switch + health summary ───────────────────────
+let _admCleanView = 'orphans';   // 'orphans' | 'tiles'
+// Spare copies uploaded after this date mean the single-upload guard (v8.56,
+// pushed 2026-09-21) is being bypassed somewhere — or a device is still on an
+// older build (Users tab shows each device's version).
+const _ADM_UPLOAD_FIX_TS = Date.UTC(2026, 8, 23);
+
+function _admCleanHeader(blobs, refs) {
+  const all   = _admCleanOrphans(blobs, refs, 0);
+  const n     = cls => all.filter(b => b.cls === cls).length;
+  const tiles = _admDupTileScan(blobs);
+  const nTiles = tiles.reduce((s, r) => s + r.extras.length, 0);
+  const newDup = all.filter(b => b.cls === 'dup' && b.date && b.date.getTime() > _ADM_UPLOAD_FIX_TS).length;
+  const queued = Object.keys(_blobDelQueue).length;
+  const ok = (good, txt) => `<span style="color:${good ? 'var(--green,#16a34a)' : 'var(--red)'};font-weight:700">${good ? '✓' : '⚠'} ${txt}</span>`;
+  const tab = (id, label) => `<button class="adm-tab ${_admCleanView === id ? 'active' : ''}" onclick="_admCleanView='${id}';_admCleanReviewPid=null;_admRenderCleanup()">${label}</button>`;
+  return `
+    <div class="adm-section" style="padding:10px 12px">
+      <div class="adm-section-title" style="margin-bottom:6px">🩺 Storage health
+        <span style="font-weight:400;color:var(--text2);font-size:11px">${blobs.length} files · ${_admMb(blobs)} MB in storage · ${blobs.length - all.length} in use · ${all.length} orphaned (${_admMb(all)} MB)</span></div>
+      <div style="display:flex;gap:6px 16px;flex-wrap:wrap;font-size:11px">
+        ${ok(newDup === 0, newDup === 0 ? 'No new duplicate uploads since the v8.56 fix' : `${newDup} duplicate uploads since the v8.56 fix — check device versions in Users`)}
+        ${ok(nTiles === 0, nTiles === 0 ? 'No duplicate photos inside items' : `${nTiles} duplicate photos inside ${tiles.length} items`)}
+        ${ok(n('dup') + n('deleted') === 0, n('dup') + n('deleted') === 0 ? 'No leftover files to clear' : `${n('dup') + n('deleted')} leftover files safe to clear`)}
+        ${ok(n('review') === 0, n('review') === 0 ? 'Nothing waiting for review' : `${new Set(all.filter(b => b.cls === 'review').map(b => b.pic)).size} pictures waiting for review`)}
+        ${ok(queued === 0 && !_blobDelStats.failed, `Delete queue: ${queued} pending · ${_blobDelStats.done} done · ${_blobDelStats.skippedInUse} kept (still in use) · ${_blobDelStats.failed} gave up — this session`)}
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      ${tab('orphans', `🗂 Orphaned files (${all.length})`)}${tab('tiles', `🖼 Duplicate photos (${nTiles})`)}
+    </div>`;
+}
+
+// ── Storage tab: duplicate photos inside items ──────────────────────
+// The pre-v8.56 upload race could also leave ONE picture listed several times
+// in an item, each tile pointing at its own byte-identical file. This removes
+// the extra TILES only (tombstoned like any photo delete, so every device
+// follows); their files then show up under Orphaned files → Spare copies.
+let _admTileSel = new Set(); // "pid|sid"
+
+/** [{ pid, sid, proj, item, groups:[{ where, keep, extras:[photo] }], extras:[photo] }] */
+function _admDupTileScan(blobs) {
+  const md5 = new Map();
+  blobs.forEach(b => { if (b.md5) md5.set(b.url, b.md5); });
+  const userId = _currentUser?.userId || '';
+  const out = [];
+  (store.projects || []).forEach(p => {
+    if (p._deleted || (p.ownedBy && p.ownedBy !== userId)) return; // only projects this device may push
+    (p.items || []).forEach(it => {
+      if (it._deleted) return;
+      const lists = [{ where: '', photos: it.photos || [] }];
+      ((it.towerWork && it.towerWork.rooms) || []).forEach(r => lists.push({ where: `Room ${r.number ?? ''}`, photos: r.photos || [] }));
+      const groups = [];
+      lists.forEach(l => {
+        const byHash = new Map();
+        l.photos.forEach(ph => {
+          // _needsUpload: url still points at the pre-markup copy — not a duplicate
+          const h = ph.url && !ph._needsUpload && md5.get(ph.url.split('?')[0]);
+          if (!h) return;
+          if (!byHash.has(h)) byHash.set(h, []);
+          byHash.get(h).push(ph);
+        });
+        byHash.forEach(entries => {
+          if (entries.length < 2) return;
+          const keep = entries.find(e => e.caption && String(e.caption).trim()) || entries[0];
+          // Same URL listed twice can't be tombstoned without losing the kept tile — leave it
+          const extras = entries.filter(e => e !== keep && e.url !== keep.url);
+          if (extras.length) groups.push({ where: l.where, keep, extras });
+        });
+      });
+      if (groups.length) out.push({ pid: p.id, sid: it.id, proj: p, item: it, groups, extras: groups.flatMap(g => g.extras) });
+    });
+  });
+  return out;
+}
+
+function _admRenderDupTiles(blobs) {
+  const body = document.getElementById('rec-body');
+  const bar  = document.getElementById('rec-bar');
+  const rows = _admDupTileScan(blobs);
+  const keys = new Set(rows.map(r => r.pid + '|' + r.sid));
+  _admTileSel = new Set([..._admTileSel].filter(k => keys.has(k)));
+
+  const byProj = {};
+  rows.forEach(r => (byProj[r.pid] = byProj[r.pid] || []).push(r));
+  const thumb = (ph, keep) => `<div style="position:relative;width:64px;height:64px;border-radius:7px;overflow:hidden;flex-shrink:0;border:2px solid ${keep ? 'var(--green,#16a34a)' : 'var(--red)'};cursor:pointer;${keep ? '' : 'opacity:0.75'}" onclick="event.stopPropagation();window.open('${_htmlEsc(ph.url)}','_blank')" title="${keep ? 'Kept' : 'Removed'} — tap to open full size">
+      <img src="${_htmlEsc(ph.url)}" loading="lazy" alt="" style="width:100%;height:100%;object-fit:cover">
+      <span style="position:absolute;left:0;right:0;bottom:0;font-size:8px;font-weight:700;text-align:center;color:#fff;background:${keep ? 'rgba(22,163,74,0.9)' : 'rgba(220,38,38,0.9)'}">${keep ? 'KEEP' : 'REMOVE'}</span>
+    </div>`;
+  const sections = Object.entries(byProj).map(([pid, list]) => {
+    const allSel = list.every(r => _admTileSel.has(r.pid + '|' + r.sid));
+    const nEx = list.reduce((s, r) => s + r.extras.length, 0);
+    const items = list.map(r => {
+      const key = r.pid + '|' + r.sid, sel = _admTileSel.has(key);
+      const strips = r.groups.map(g => `<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:6px">
+          ${g.where ? `<span style="font-size:10px;color:var(--text2);width:100%">${_htmlEsc(g.where)}</span>` : ''}
+          ${thumb(g.keep, true)}${g.extras.map(e => thumb(e, false)).join('')}</div>`).join('');
+      return `<div class="adm-row" style="cursor:pointer;align-items:flex-start" onclick="_admTileToggle('${_htmlEsc(key)}')">
+        <span style="font-size:15px">${sel ? '☑️' : '⬜'}</span>
+        <div class="adm-row-main">
+          <div style="font-weight:600">${_htmlEsc(r.item.num || 'SI')} — ${_htmlEsc(r.item.title || '')}</div>
+          <div class="adm-row-sub">${r.extras.length} duplicate${r.extras.length !== 1 ? 's' : ''} of ${r.groups.length} picture${r.groups.length !== 1 ? 's' : ''} · ${(r.item.photos || []).length} photos in item</div>
+          ${strips}
+        </div>
+      </div>`;
+    }).join('');
+    return `<div class="recovery-si-group">
+      <div class="recovery-si-title">${_htmlEsc(list[0].proj.name || pid)}<span style="font-weight:400;color:var(--text3);font-size:11px">· ${nEx} duplicate${nEx !== 1 ? 's' : ''} in ${list.length} item${list.length !== 1 ? 's' : ''}</span>
+        <button class="recovery-btn" style="font-size:10px;padding:4px 10px" onclick="_admTileToggleProj('${_htmlEsc(pid)}')">${allSel ? 'Unselect' : 'Select'} project</button></div>
+      ${items}
+    </div>`;
+  }).join('');
+
+  if (body) body.insertAdjacentHTML('beforeend', `
+    <div style="font-size:11px;color:var(--text2);margin-bottom:10px">The same picture listed more than once in an item (identical file, checked by content hash). Removing keeps one tile — the captioned one if any — and deletes the extra <strong>tiles</strong> on every device. Files are not touched here: they move to <strong>Orphaned files → Spare copies</strong>, and until you clear them there a removed tile can be brought back from the Recovery tab.</div>
+    ${rows.length ? sections : '<div style="text-align:center;padding:30px;color:var(--text2)">✓ No duplicate photos inside items</div>'}`);
+
+  if (bar) {
+    const selRows = rows.filter(r => _admTileSel.has(r.pid + '|' + r.sid));
+    const nSel = selRows.reduce((s, r) => s + r.extras.length, 0);
+    bar.style.display = rows.length ? 'flex' : 'none';
+    bar.innerHTML = rows.length ? `
+      <span style="font-size:12px;color:var(--text2);flex:1">${rows.reduce((s, r) => s + r.extras.length, 0)} duplicates in ${rows.length} items · ${nSel} selected</span>
+      <button class="recovery-btn" onclick="_admTileToggleAll()">${selRows.length === rows.length ? 'Unselect all' : 'Select all'}</button>
+      <button class="recovery-btn danger" onclick="_admTileApply()" ${nSel ? '' : 'disabled'}>✂ Remove ${nSel || ''} duplicate photo${nSel !== 1 ? 's' : ''}</button>` : '';
+  }
+}
+
+function _admTileRows() { return _admBlobCache ? _admDupTileScan(_admBlobCache.blobs) : []; }
+function _admTileToggle(key) { _admTileSel.has(key) ? _admTileSel.delete(key) : _admTileSel.add(key); _admRenderCleanup(); }
+function _admTileToggleSet(keys) {
+  const allSel = keys.every(k => _admTileSel.has(k));
+  keys.forEach(k => allSel ? _admTileSel.delete(k) : _admTileSel.add(k));
+  _admRenderCleanup();
+}
+function _admTileToggleProj(pid) { _admTileToggleSet(_admTileRows().filter(r => r.pid === pid).map(r => r.pid + '|' + r.sid)); }
+function _admTileToggleAll()     { _admTileToggleSet(_admTileRows().map(r => r.pid + '|' + r.sid)); }
+
+function _admTileApply() {
+  const pick = _admTileRows().filter(r => _admTileSel.has(r.pid + '|' + r.sid));
+  const n = pick.reduce((s, r) => s + r.extras.length, 0);
+  if (!n) return;
+  makeModal('Remove Duplicate Photos', `
+    <div style="text-align:center;padding:8px 0 16px">
+      <div style="font-size:32px;margin-bottom:10px">✂</div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:6px">Remove ${n} duplicate photo${n !== 1 ? 's' : ''} from ${pick.length} item${pick.length !== 1 ? 's' : ''}?</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.5">One copy of every picture stays in its item. The change syncs to all devices and reports.<br>The files stay in storage until you clear them under Orphaned files.</div>
+    </div>`, () => {
+    closeModal();
+    // Re-scan NOW: a sync merge since the list was drawn may have rebuilt these items
+    const fresh = new Map(_admTileRows().map(r => [r.pid + '|' + r.sid, r]));
+    let removed = 0, items = 0;
+    pick.forEach(old => {
+      const r = fresh.get(old.pid + '|' + old.sid);
+      if (!r) return;
+      const item = r.item, drop = new Set(r.extras);
+      const lists = [item.photos || [], ...((item.towerWork && item.towerWork.rooms) || []).map(room => room.photos || [])];
+      // Tombstones are keyed by filename and shared by the whole item: a tile whose
+      // filename matches one we keep can't be tombstoned safely — leave it alone.
+      const keptKeys = new Set(lists.flat().filter(ph => ph.url && !drop.has(ph)).map(ph => _tombKey(ph.url)));
+      r.extras.forEach(ph => { if (keptKeys.has(_tombKey(ph.url))) drop.delete(ph); });
+      if (!drop.size) return;
+      // Splice in place — an open editor or modal may hold these arrays
+      lists.forEach(l => { for (let i = l.length - 1; i >= 0; i--) if (drop.has(l[i])) l.splice(i, 1); });
+      item.photoTombstones = item.photoTombstones || {};
+      drop.forEach(ph => {
+        _freePhotoObjUrl(ph);
+        item.photoTombstones[_tombKey(ph.url)] = Date.now(); // same record a normal photo delete leaves
+        removed++;
+      });
+      _logActivity(r.pid, { type: 'photo', siId: item.id, siNum: item.num, detail: `Removed ${drop.size} duplicate photo${drop.size !== 1 ? 's' : ''} (admin cleanup)`, by: _whoAmI() });
+      markAsDirty(item.id);
+      items++;
+    });
+    _admTileSel = new Set();
+    save();
+    scheduleDirtySync();
+    showToast(`✓ Removed ${removed} duplicate photo${removed !== 1 ? 's' : ''} from ${items} item${items !== 1 ? 's' : ''}`, 'green');
+    const rt = route(); if (rt) { try { renderLeft(rt); } catch (e) {} }
     _admRenderCleanup();
   });
 }
@@ -14651,11 +15131,7 @@ window.deleteTowerRoomPhoto = function(idx) {
     item.photoTombstones = item.photoTombstones || {};
     item.photoTombstones[_tombKey(removed.url)] = Date.now();
     markAsDirty(_twp.sid);
-    fetch('/api/deleteBlob', {
-      method : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body   : JSON.stringify({ blobUrl: removed.url }),
-    }).catch(e => console.warn('[TowerPhoto] Blob delete failed (non-fatal):', e.message));
+    _deleteBlobUrls([removed.url]);
   }
   _twpRefresh();
   _refreshTowerPanel(_twp.pid, _twp.sid);
@@ -16440,8 +16916,21 @@ window.showExportValidationModal = function(pid, missing){
       Each incomplete item needs a <strong>Field Check</strong>, <strong>Field Notes</strong>, and at least one <strong>Photo</strong>.
       Tap <strong>Open ›</strong> to jump to an item — the missing fields are outlined in red.
     </div>
+    ${isAdmin ? `
+    <div class="exv-admin">
+      <div class="exv-admin-note">🔐 <strong>Admin override</strong> — export the report as-is. Missing fields will simply be blank in the PDF.</div>
+      <button class="exv-admin-btn" onclick="adminExportAnyway('${pid}')">Export Anyway</button>
+    </div>` : ''}
     ${rows}`;
   makeModal('⚠ Cannot Export — Required Fields Missing', body, null, true);
+};
+
+// Admin-only: bypass the required-field gate. exportPDF re-checks isAdmin, so
+// this is a no-op (re-shows the modal) if the admin session was locked meanwhile.
+window.adminExportAnyway = function(pid){
+  if (!isAdmin) { showToast('Admin access required', 'red'); return; }
+  closeModal();
+  exportPDF(pid, { adminOverride: true });
 };
 
 // ── Highlight missing required fields inside the SI editor ───────────
