@@ -5739,7 +5739,8 @@ function showPhoneMenu() {
     html += row('🗂️', 'Manage Sections', 'Add, reorder or remove sections', `showManageSectionsModal('${pid}')`);
     html += row('⚙️', 'Edit Project Info', 'Client, auditor, type, date', `showEditProjectModal('${pid}')`);
     html += row('🧾', 'Import History', 'Previous spreadsheet sync logs', `showImportLog(getProject('${pid}'))`);
-    if (companyOf(proj).imports.includes('workorders'))
+    // Company profiles (feature branch) gate this per company; without them every project offers it
+    if (typeof companyOf !== 'function' || companyOf(proj).imports.includes('workorders'))
       html += row('📥', 'Import Work Orders', 'Dates & hours from the Work Orders sheet', `triggerWorkOrdersImport('','${pid}')`);
   }
   const addLabel = !r.folderId ? 'New Folder' : (pid ? 'Add SI' : 'New Project');
