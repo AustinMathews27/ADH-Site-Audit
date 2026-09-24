@@ -11,8 +11,8 @@
   size; needs a real-iPhone check on staging.
 
 ## Pending
-- [ ] **Phone layout v2 — field test this week** (staging, approved on first
-      look 2026-09-22). Collect anything that feels off, then merge to `main`.
+- [ ] **Merge `main` (v8.59) back into this branch** — main now carries the phone
+      layout + version bump; merge before the next branch deploy to avoid drift.
 - [ ] **iOS offline plan — Phase A BLOCKED on Entra permissions** —
       `docs/IOS-OFFLINE-PLAN.md`. Austin has no rights to create an App
       registration in the company tenant; access (Application Developer role, or
@@ -69,6 +69,9 @@
 - `ff0f28c` Staging: configurable Cosmos DB name + seed script
 
 ## Decisions
+- 2026-09-23 — Phone layout v2 shipped to PRODUCTION as v8.59 (cherry-picked
+  bb1effd/feb08b6/919ee57 onto main). Entra sign-in and company profiles stay on
+  the branch — NOT wanted on main yet.
 - 2026-09-22 — Phone layout v2 approved on staging ("working perfect so far"); Austin
   field-tests it through the week of 2026-09-22, then the branch goes to `main`.
 - 2026-09-19 — Keep IndexedDB + the existing sync engine (no move to localStorage).
