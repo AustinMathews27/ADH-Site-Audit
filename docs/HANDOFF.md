@@ -11,8 +11,6 @@
   size; needs a real-iPhone check on staging.
 
 ## Pending
-- [ ] **Merge `main` (v8.59) back into this branch** — main now carries the phone
-      layout + version bump; merge before the next branch deploy to avoid drift.
 - [ ] **iOS offline plan — Phase A BLOCKED on Entra permissions** —
       `docs/IOS-OFFLINE-PLAN.md`. Austin has no rights to create an App
       registration in the company tenant; access (Application Developer role, or
@@ -52,6 +50,9 @@
 - [ ] **Stale PR #3 "task 1"** (`hardening/deps-offline`, July) — close or rebase.
 
 ## Done (recent)
+- `77382f8` Phone SI editor: only the camera FAB at the bottom; Prev/Next/Duplicate/
+  Delete in the ⋯ sheet, Delete in the row menu; banners below the top bar.
+  Shipped to main as v8.60 (cda9ada). `e12f87e` merged main v8.59 into the branch.
 - Back button climbs one folder level at a time (`_folderChain`): nested
   folder → company folder → home, instead of jumping straight home
 - `8416300` Phone layout v2: SI list is the project screen, one ⋯ menu
@@ -69,6 +70,8 @@
 - `ff0f28c` Staging: configurable Cosmos DB name + seed script
 
 ## Decisions
+- 2026-09-23 — Phone layout changes ship to main right away (cherry-pick + version
+  bump); Entra + company profiles stay on the branch.
 - 2026-09-23 — Phone layout v2 shipped to PRODUCTION as v8.59 (cherry-picked
   bb1effd/feb08b6/919ee57 onto main). Entra sign-in and company profiles stay on
   the branch — NOT wanted on main yet.
