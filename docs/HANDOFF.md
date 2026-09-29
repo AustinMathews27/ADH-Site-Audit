@@ -5,8 +5,9 @@
 - **Branch:** `feature/company-profiles` (no PR yet)
 - **Date:** 2026-09-29
 - **Summary:** iOS app confirmed working on a real iPhone (sign-in, camera,
-  offline). Added a native launch screen (splash plugin) so the Microsoft
-  sign-in round trip is hidden behind a blue logo screen with a spinner.
+  offline). Added a native launch screen (splash plugin, blue + logo + spinner)
+  that now stays up through the session check, so the Microsoft round trip
+  never shows. Shipped to staging as v8.61 (main is at 8.60).
 
 ## Pending
 - [ ] **iOS app: verify the launch screen on iPhone** — splash worked on iPad
