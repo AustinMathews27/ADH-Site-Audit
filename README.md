@@ -78,6 +78,27 @@ Pushes to `main` deploy via the GitHub Action (Azure Static Web Apps, `app_locat
 
 The app version is the service-worker cache string (`adh-audit-v8.xx`). Current: **v8.26**.
 
+## People's names (Microsoft Graph)
+
+Sign-in only tells the app the person's email. `/api/getProfile` turns it
+into the directory display name ("Austin Castro" instead of "acastro")
+through Microsoft Graph, so every edit, photo and activity-log line is
+stamped with the real name on every device the person uses. Until Graph is
+configured the API answers with the email prefix and everything still works.
+
+To turn it on (needs an Entra admin, once):
+
+1. Entra ID → App registrations → New: name `ADH Audit API`, single tenant,
+   no redirect URI.
+2. API permissions → Add → Microsoft Graph → **Application** permissions →
+   `User.ReadBasic.All` → Grant admin consent.
+3. Certificates & secrets → New client secret (note the *value*).
+4. On each Static Web App → Environment variables:
+   `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET`.
+
+Check: Account menu no longer says "name from email"; Admin → this device
+shows "(directory)".
+
 ## iOS app (IPA)
 
 `ios-app/` holds a Capacitor shell that loads the deployed site in a native

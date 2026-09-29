@@ -3586,7 +3586,7 @@ let store = JSON.parse(JSON.stringify(SEED));
 
 // Keep in lockstep with CACHE_VERSION in sw.js — shown in the Admin
 // Console header so a stale cached client is diagnosable at a glance.
-const APP_VERSION = '8.61';
+const APP_VERSION = '8.62';
 
 let _currentUser = null; // { userId, userDetails, userRoles }
 
@@ -3747,6 +3747,58 @@ function _userName() {
   return email.includes('@') ? email.split('@')[0] : email;
 }
 
+// ── Person profile ─────────────────────────────────────────────────────────
+// The sign-in principal only carries the email. /api/getProfile turns it into
+// the directory display name through Microsoft Graph (api/_shared/graph.js;
+// falls back to the email prefix until Graph is configured). Cached in
+// IndexedDB per email so a device keeps the person's name offline, and the
+// same person gets the same name on their phone, iPad and desktop.
+let _profile = null;   // { email, userId, name, givenName, surname, jobTitle, source, at }
+const PROFILE_TIMEOUT_MS = 5000;
+
+function _profileEmail() { return (_currentUser && _currentUser.userDetails) || ''; }
+
+/** Name shown for the signed-in person: directory name → cached → email prefix. */
+function _displayName() {
+  if (_profile && _profile.name && _profile.email === _profileEmail()) return _profile.name;
+  return _userName();
+}
+function _firstName() {
+  const g = _profile && _profile.givenName;
+  if (g) return g;
+  const n = _displayName();
+  return n ? n.split(/[\s.@_-]+/)[0] : '';
+}
+
+async function _loadProfile() {
+  const email = _profileEmail();
+  if (!email || email === 'dev@localhost') { _profile = null; return; }
+  // 1. cached copy — instant, works offline
+  try {
+    const cached = await _idbGet('adh_profile');
+    if (cached && cached.email === email) _profile = cached;
+  } catch (e) {}
+  if (!navigator.onLine) return;
+  // 2. refresh from the API (Graph or email fallback); never blocks the UI
+  try {
+    const res = await Promise.race([
+      _authFetch('/api/getProfile', { cache: 'no-store', credentials: 'same-origin' }),
+      new Promise(res => setTimeout(() => res(null), PROFILE_TIMEOUT_MS))
+    ]);
+    if (!res || !res.ok) return;
+    const p = await res.json();
+    if (!p || !p.ok || !p.email) return;
+    // Keep a Graph name over an email-prefix fallback the server may answer
+    // with while Graph is temporarily unreachable.
+    if (_profile && _profile.source === 'graph' && p.source !== 'graph' && _profile.email === p.email) return;
+    _profile = { email: p.email, userId: p.userId || '', name: p.name || '', givenName: p.givenName || '',
+                 surname: p.surname || '', jobTitle: p.jobTitle || '', source: p.source || 'email', at: Date.now() };
+    _idbSet('adh_profile', _profile).catch(() => {});
+    // Legacy per-device name follows the directory (Users tab, push subs…)
+    if (_profile.name) setDeviceUser(_profile.name);
+  } catch (e) {}
+}
+
 // ══════════════════════════════════════════
 // PROJECT IDS · CLOUD DOCUMENT SIZE
 // ══════════════════════════════════════════
@@ -3894,9 +3946,53 @@ let _deviceLabel = '';
   _idbGet('device_label').then(v => { if (v && !_deviceLabel) _deviceLabel = v; }).catch(() => {});
 })();
 
+// What kind of device is this install running on. The supers start an
+// audit on the phone and finish it on the iPad, so the log has to say which.
+function _deviceType() {
+  const ua = navigator.userAgent || '';
+  const touch = (navigator.maxTouchPoints || 0) > 1;
+  if (/iPhone|iPod/i.test(ua)) return 'iPhone';
+  // iPadOS reports itself as a Mac in Safari; touch points give it away
+  if (/iPad/i.test(ua) || (/Macintosh/i.test(ua) && touch)) return 'iPad';
+  if (/Android/i.test(ua)) return /Mobile/i.test(ua) ? 'Android phone' : 'Android tablet';
+  if (/Windows/i.test(ua)) return 'Windows PC';
+  if (/Macintosh/i.test(ua)) return 'Mac';
+  if (/CrOS/i.test(ua)) return 'Chromebook';
+  if (/Linux/i.test(ua)) return 'Linux PC';
+  return 'Device';
+}
+/** "app" = the iOS app, "pwa" = added to Home Screen, "browser" = a tab. */
+function _deviceClient() {
+  if (_isNativeShell()) return 'app';
+  if (window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches) return 'pwa';
+  return 'browser';
+}
+function _deviceOS() {
+  const ua = navigator.userAgent || '';
+  let m = ua.match(/(?:iPhone|iPad|CPU) OS (\d+[._]\d+)/) ;
+  if (m) return 'iOS ' + m[1].replace('_', '.');
+  if (/Macintosh/i.test(ua) && (navigator.maxTouchPoints || 0) > 1) return 'iPadOS'; // Safari on iPad masks the version
+  m = ua.match(/Mac OS X (\d+[._]\d+)/);
+  if (m) return 'macOS ' + m[1].replace('_', '.');
+  m = ua.match(/Android (\d+(?:\.\d+)?)/);
+  if (m) return 'Android ' + m[1];
+  if (/Windows NT 10/.test(ua)) return 'Windows';
+  return '';
+}
+/** Friendly device name: the manual label, else "Austin's iPhone". */
+function _deviceName() {
+  if (_deviceLabel) return _deviceLabel;
+  const first = (typeof _firstName === 'function' && _firstName()) || (_deviceUser || '').split(' ')[0];
+  return first ? `${first}'s ${_deviceType()}` : _deviceType();
+}
+/** Structured device record stamped on log entries, pushes and heartbeats. */
+function _deviceInfo() {
+  return { id: _deviceId, name: _deviceName(), label: _deviceLabel || '', type: _deviceType(),
+           client: _deviceClient(), os: _deviceOS() };
+}
 const _deviceTag = () => {
-  const nice = _deviceLabel || _deviceUser;
-  return nice ? `${nice} · ${_deviceId.slice(0, 12)}` : _deviceId;
+  const client = _deviceClient();
+  return `${_deviceName()} · ${_deviceType()}${client === 'browser' ? '' : ' (' + client + ')'} · ${_deviceId.slice(0, 12)}`;
 };
 
 function setDeviceLabel(label) {
@@ -3916,8 +4012,10 @@ function setDeviceLabel(label) {
 let _deviceUser = '';
 try { _deviceUser = localStorage.getItem('adh_device_user') || ''; } catch (e) {}
 
-/** Name stamped on edits/photos/pushes from this device. */
+/** Name stamped on edits/photos/pushes from this device. A real sign-in
+ *  wins over anything typed on the device (see _loadProfile). */
 function _whoAmI() {
+  if (_currentUser && _currentUser.principal) return _displayName() || _deviceUser || 'You';
   return _deviceUser || store.settings.displayName || _userName() || 'You';
 }
 
@@ -3936,10 +4034,16 @@ async function _ensureDeviceUser() {
     const v = await _idbGet('device_user');
     if (v) { _deviceUser = v; try { localStorage.setItem('adh_device_user', v); } catch (e) {} return; }
   } catch (e) {}
-  // Entra path: a real per-person login names the device automatically
-  const uid = _currentUser?.userId || '';
-  const isSharedWorkspace = !uid || uid === 'dev-local' || uid === '25a348bbf3bb4e9087aefec8b88424b6';
-  if (!isSharedWorkspace && _userName()) { setDeviceUser(_userName()); return; }
+  // Entra path: a real per-person sign-in names the device automatically
+  // (_currentUser.userId is the SHARED workspace id — the person is in
+  // .principal). The directory name arrives via _loadProfile; until then
+  // the email prefix is stamped. The "who's using this device?" prompt is
+  // only for installs with no sign-in at all.
+  if (_currentUser && _currentUser.principal) {
+    const n = _displayName();
+    if (n) setDeviceUser(n);
+    return;
+  }
   _showDeviceUserPrompt();
 }
 
@@ -4145,7 +4249,8 @@ function _buildProjectPayload(proj) {
     // it from the folder they live in so every cloud doc carries it.
     companyId: proj.companyId || companyOf(proj).id || '',
     // Who pushed this doc last — stored on the cloud doc for diagnostics
-    _pushedBy: { device: _deviceId, label: _deviceLabel, name: _whoAmI(), at: Date.now() },
+    _pushedBy: { device: _deviceId, label: _deviceLabel, name: _whoAmI(), email: _profileEmail() || '',
+                 type: _deviceType(), client: _deviceClient(), at: Date.now() },
     // Blob-storage URL syncs through Cosmos; pending base64 stays local
     // until _flushPendingPhotos uploads it.
     coverPhoto: (proj.coverPhoto && !proj.coverPhoto.startsWith('data:')) ? proj.coverPhoto : null,
@@ -4206,7 +4311,8 @@ function _buildIndexPayload() {
     // so a tombstone is the only way a folder ever leaves the cloud index.
     folderTombstones: store.folderTombstones || {},
     // Presence heartbeat for this install + user-to-user notifications
-    devices: { [_deviceId]: { user: _deviceUser || '', label: _deviceLabel || '', lastSeen: Date.now() } },
+    devices: { [_deviceId]: { user: _whoAmI(), email: _profileEmail() || '', label: _deviceLabel || '',
+                              type: _deviceType(), client: _deviceClient(), lastSeen: Date.now() } },
     notifications: store.notifications || [],
     _savedAt:   Date.now(),
     _savedByDevice: _deviceId
@@ -5202,7 +5308,8 @@ async function _pollForRemoteChanges() {
   // devices entry lands. Fire-and-forget.
   if (Date.now() - _lastHeartbeat > HEARTBEAT_MS) {
     _lastHeartbeat = Date.now();
-    const me = { user: _deviceUser || '', label: _deviceLabel || '', lastSeen: Date.now(),
+    const me = { user: _whoAmI(), email: _profileEmail() || '', label: _deviceLabel || '',
+                 type: _deviceType(), client: _deviceClient(), lastSeen: Date.now(),
                  v: APP_VERSION, host: location.host };
     store.devices = store.devices || {};
     store.devices[_deviceId] = me;   // visible in the Users tab even before the round-trip
@@ -5415,10 +5522,13 @@ async function _initStore() {
   _currentUser = await _getAuthUser();
   if (!_currentUser) return; // redirect in progress or no cache offline
   _hideNativeSplash();
+  // Directory name for the signed-in person (cached → instant; refreshed in
+  // the background). Runs before the device-user step so it never prompts.
+  await _loadProfile();
 
   // Set display name from Entra email (email prefix = first part before @)
   if (!store.settings.displayName && _currentUser.userDetails) {
-    store.settings.displayName = _userName();
+    store.settings.displayName = _displayName();
   }
 
   // One-time per-device user capture (links a person to this device's ID).
@@ -5565,7 +5675,7 @@ const MAIN_FOLDERS = ['A.S.S.T', 'AMI', 'ACD', 'ACS', 'AML', 'ACM', 'ADH' /* leg
 
 function showUserMenu() {
   const email = _currentUser?.userDetails || 'Unknown';
-  const name  = _userName() || email;
+  const name  = _displayName() || email;
   const isLocal = _currentUser?.userId === 'dev-local';
   // Sign out only makes sense when a real Entra principal is on the device
   // (the workspace id is shared — see the identity model above _getAuthUser).
@@ -5576,6 +5686,7 @@ function showUserMenu() {
       <div style="font-size:40px;margin-bottom:10px">👤</div>
       <div style="font-size:15px;font-weight:600;margin-bottom:4px">${name}</div>
       <div style="font-size:12px;color:var(--text3);font-family:var(--mono)">${email}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px">${_htmlEsc(_deviceName())} · ${_htmlEsc(_deviceType())}${_deviceClient() === 'browser' ? '' : ' (' + _deviceClient() + ')'}${_profile && _profile.source === 'graph' ? '' : ' · <span title="Directory lookup not configured yet — showing the email prefix">name from email</span>'}</div>
       ${isLocal ? '<div style="margin-top:6px;font-size:10px;color:var(--yellow);font-family:var(--mono)">⚠ Dev mode — no real auth</div>' : ''}
     </div>
     <div style="display:flex;flex-direction:column;gap:8px">
@@ -11313,7 +11424,7 @@ async function _admRenderUsers() {
         <span style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0" title="${_htmlEsc(label)}"></span>
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:600;color:var(--text1)">${_htmlEsc(name)}${me}</div>
-          <div style="font-size:11px;color:var(--text2)">${_htmlEsc(label)}${d.label && d.user ? ' · ' + _htmlEsc(d.label) : ''}</div>
+          <div style="font-size:11px;color:var(--text2)">${_htmlEsc(label)}${d.type ? ' · ' + _htmlEsc(d.type) + (d.client && d.client !== 'browser' ? ' (' + _htmlEsc(d.client) + ')' : '') : ''}${d.label && d.user ? ' · ' + _htmlEsc(d.label) : ''}${d.email ? ' · ' + _htmlEsc(d.email) : ''}</div>
           <div style="font-size:10px;color:var(--text3);font-family:var(--mono)">${_htmlEsc(d.id.slice(0, 16))}${pending ? ` · ${pending} unread` : ''}${d.v ? ` · <span style="color:${d.v === APP_VERSION ? 'var(--text3)' : 'var(--orange, #f59e0b)'}">v${_htmlEsc(d.v)}</span>` : ' · <span style="color:var(--orange, #f59e0b)">v?</span>'}${d.host ? ' · ' + _htmlEsc(d.host) : ''}</div>
         </div>
         <button class="recovery-btn" style="font-size:11px;padding:6px 12px" onclick="_admNotifyCompose('${d.id}','${_htmlEsc(name).replace(/'/g, '&#39;')}')">🔔 Notify</button>
@@ -12400,7 +12511,7 @@ function _admExportBackup() {
     const payload = {
       _adhBackup: 2,
       exportedAt: new Date().toISOString(),
-      exportedBy: store.settings?.displayName || _currentUser?.userDetails || '',
+      exportedBy: _displayName() || store.settings?.displayName || _currentUser?.userDetails || '',
       store,
     };
     const json = JSON.stringify(payload, (k, v) => (v instanceof Blob ? undefined : v));
@@ -12506,7 +12617,8 @@ function _admRenderSystem() {
         Give this device a label so logs read like "Bruce's iPad" instead of a random code.
       </div>
       <div style="font-family:var(--mono);font-size:12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:8px;user-select:all;word-break:break-all">${_htmlEsc(_deviceId)}</div>
-      <div style="font-size:12px;margin-bottom:8px">Registered user: <strong>${_htmlEsc(_deviceUser || '— not set —')}</strong>
+      <div style="font-size:12px;margin-bottom:4px">This device: <strong>${_htmlEsc(_deviceName())}</strong> · ${_htmlEsc(_deviceType())} · ${_htmlEsc(_deviceClient())}${_deviceOS() ? ' · ' + _htmlEsc(_deviceOS()) : ''}</div>
+      <div style="font-size:12px;margin-bottom:8px">Signed in as: <strong>${_htmlEsc(_displayName() || _deviceUser || '— not set —')}</strong>${_profileEmail() ? ' <span style="color:var(--text3);font-family:var(--mono)">' + _htmlEsc(_profileEmail()) + '</span>' : ''}${_profile ? ' <span style="color:var(--text3)">(' + (_profile.source === 'graph' ? 'directory' : 'from email') + ')</span>' : ''}
         ${_deviceUser ? '' : `<button class="recovery-btn" style="font-size:10px;padding:4px 10px;margin-left:6px" onclick="_showDeviceUserPrompt()">Register now</button>`}
       </div>
       <div style="display:flex;gap:8px;max-width:380px">
@@ -16128,7 +16240,15 @@ function _timeAgo(ts) {
 function _logActivity(pid,entry) {
   const proj=getProject(pid); if(!proj) return;
   if(!proj.activityLog) proj.activityLog=[];
-  proj.activityLog.unshift({...entry,at:Date.now(),dev:_deviceTag()});
+  const d=_deviceInfo();
+  proj.activityLog.unshift({
+    ...entry,
+    by:      entry.by || _whoAmI(),
+    byEmail: _profileEmail() || undefined,
+    at:      Date.now(),
+    dev:     _deviceTag(),                                   // legacy display string
+    device:  { id:d.id, name:d.name, type:d.type, client:d.client }
+  });
   if(proj.activityLog.length>300) proj.activityLog.length=300;
   markProjectDirty(pid);
 }
@@ -16140,15 +16260,20 @@ function _logActivity(pid,entry) {
 function _postChangeLog(pid, details) {
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') return;
   const proj = getProject(pid);
-  const by   = _whoAmI();
-  const byId = _currentUser?.userId || null;
+  const by      = _whoAmI();
+  const byEmail = _profileEmail() || null;
+  // The person, not the shared workspace id (see _withWorkspace)
+  const byId    = _currentUser?.principal?.userId || null;
   const payload = {
     projectId:   pid,
     projectName: proj?.name || '',
     ...details,
     by,
+    byEmail,
     byId,
-    deviceId:    _deviceId,
+    device:      _deviceInfo(),
+    appVersion:  APP_VERSION,
+    deviceId:    _deviceId,       // legacy fields, still read by older log viewers
     deviceLabel: _deviceLabel
   };
   fetch('/api/logChange', {

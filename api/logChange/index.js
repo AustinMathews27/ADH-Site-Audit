@@ -15,9 +15,16 @@
 //   field       string   — which field changed, e.g. "status", "notes", "delivery"
 //   oldValue    any      — previous value (string/null)
 //   newValue    any      — new value
-//   by          string   — displayName of the person making the change
-//   byId        string   — userId from clientPrincipal
+//   by          string   — display name of the person making the change
+//   byEmail     string   — their sign-in email (from the profile / principal)
+//   byId        string   — their principal userId
+//   device      object   — { id, name, label, type, client, os } — see
+//                          _deviceInfo() in index.html ("iPhone" / "iPad" /
+//                          "Mac" / "Windows"…, client "app" | "pwa" | "browser")
+//   appVersion  string   — APP_VERSION of the client that made the change
 // }
+// The server also records the email it saw on the principal (`principalEmail`)
+// so a client cannot claim to be someone else.
 
 const { requireUser } = require('../_shared/auth');
 const { CosmosClient } = require("@azure/cosmos");
@@ -41,6 +48,16 @@ async function ensureContainer(context) {
     context.log.error("[logChange] Could not create/verify AuditLog container:", err.message);
     throw err;
   }
+}
+
+// Keep only the known device fields, each as a short string.
+function _cleanDevice(d, legacyId, legacyLabel) {
+  const src = (d && typeof d === 'object') ? d : { id: legacyId, label: legacyLabel };
+  const out = {};
+  for (const k of ['id', 'name', 'label', 'type', 'client', 'os']) {
+    if (src[k] != null && src[k] !== '') out[k] = String(src[k]).slice(0, 80);
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 module.exports = async function (context, req) {
@@ -77,7 +94,11 @@ module.exports = async function (context, req) {
       oldValue:    body.oldValue     ?? null,
       newValue:    body.newValue     ?? null,
       by:          body.by           || "Unknown",
+      byEmail:     body.byEmail      || null,
       byId:        body.byId         || null,
+      principalEmail: (context.user && context.user.userDetails) || null,
+      device:      _cleanDevice(body.device, body.deviceId, body.deviceLabel),
+      appVersion:  body.appVersion   || null,
       changedAt:   now,
       ttl:         TTL_90_DAYS
     };

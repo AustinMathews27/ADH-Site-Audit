@@ -4,12 +4,25 @@
 - **Device:** Claude Code web (cloud session)
 - **Branch:** `feature/company-profiles` (no PR yet)
 - **Date:** 2026-09-29
-- **Summary:** iOS app confirmed working on a real iPhone (sign-in, camera,
-  offline). Added a native launch screen (splash plugin, charcoal + logo + spinner)
-  that now stays up through the session check, so the Microsoft round trip
-  never shows. Shipped to staging as v8.61 (main is at 8.60).
+- **Summary:** iOS launch screen (charcoal + logo + spinner, native idle
+  fallback). v8.62: Entra sign-in owns the person's name, Graph lookup for the
+  directory display name (awaiting admin), activity/audit logs record device
+  type + client (phone app vs iPad).
 
 ## Pending
+- [ ] **Graph names: needs the Entra admin** — code is in (`api/_shared/graph.js`,
+      `/api/getProfile`, README "People's names"). Ask the admin for an App
+      registration `ADH Audit API` with APPLICATION permission
+      `User.ReadBasic.All` + consent + a client secret, then set
+      `GRAPH_TENANT_ID` / `GRAPH_CLIENT_ID` / `GRAPH_CLIENT_SECRET` on both SWAs.
+      Until then names fall back to the email prefix (Account menu says
+      "name from email"). This can be the SAME registration as the iOS-plan
+      one if the admin prefers one app.
+- [ ] **Verify v8.62 on devices** — Entra now owns the name (device prompt
+      skipped when signed in); activity log + AuditLog entries carry
+      `byEmail` and `device {id,name,type,client,os}`; Users tab shows device
+      type. Check a phone edit then an iPad edit on the same project show
+      "Austin's iPhone (app)" vs "Austin's iPad".
 - [ ] **iOS app: verify the launch screen on iPhone** — the SW-cached path
       (page → session check → Microsoft SSO → back) overran the 7 s cap, so the
       splash dropped mid-login. Now: `AppBridgeViewController.swift` hides the
@@ -73,6 +86,9 @@
 - `ff0f28c` Staging: configurable Cosmos DB name + seed script
 
 ## Decisions
+- 2026-09-29 — Person identity = Entra sign-in; display name from Microsoft Graph
+  (option B), email prefix until configured. Device identity stays per install
+  (id + optional label) and now records type/client automatically.
 - 2026-09-23 — Phone layout changes ship to main right away (cherry-pick + version
   bump); Entra + company profiles stay on the branch.
 - 2026-09-23 — Phone layout v2 shipped to PRODUCTION as v8.59 (cherry-picked
