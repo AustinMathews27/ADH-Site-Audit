@@ -43,8 +43,7 @@
       entry still uses id `adh` / `logos/adh.png` because stored logos are keyed by it.
 - [ ] **Docs stale** — `docs/FULL-GUIDE.md` still lists ADH instead of AML and
       neither guide mentions company profiles or Entra sign-in (README does).
-- [ ] **Version bump** — code still says v8.53; `main` shipped v8.54. Bump
-      `index.html` version + `sw.js` cache name before merging this branch.
+
 - [ ] **Entra sign-in is staging-only** — set `ALLOWED_EMAIL_DOMAINS` on the
       Static Web App before enabling on prod; `scripts/*.mjs` stop working
       anonymously once auth is on (see README "Sign-in").
