@@ -60,8 +60,12 @@ days to approve; an *Individual* account works immediately for TestFlight.
 `@capacitor/splash-screen` keeps a native blue screen (logo + spinner) over the
 WebView while the Static Web Apps → Microsoft sign-in round trip runs, so the
 Microsoft page never flashes on launch. `index.html` calls
-`_hideNativeSplash()` once the UI has rendered (or when the auth gate needs
-attention). Config lives in `capacitor.config.json` → `plugins.SplashScreen`;
+`_hideNativeSplash()` once the session check has passed (not at first
+render: the service worker serves the page from cache *before* the session
+is checked, and an expired session then bounces through Microsoft — the
+splash must still be up for that). Before that redirect the page calls
+`_showNativeSplash()` in case the launch splash has already timed out. The
+auth gate hides the splash itself. Config lives in `capacitor.config.json` → `plugins.SplashScreen`;
 `launchShowDuration` (7 s) is the safety cap so an interactive sign-in can
 never be stuck behind the splash. The colour is `#2563eb` in three places
 that must match: the plugin config, `LaunchScreen.storyboard`, and the splash

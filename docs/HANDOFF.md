@@ -9,10 +9,11 @@
   sign-in round trip is hidden behind a blue logo screen with a spinner.
 
 ## Pending
-- [ ] **iOS app: verify the new launch screen on the phone** — `@capacitor/splash-screen`
-      added (blue + logo + spinner) to hide the Microsoft sign-in flash. On the
-      Mac: `cd ios-app && npm install && npx cap sync ios`, then Run. Check: no
-      Microsoft page visible on relaunch; first-run sign-in appears within ~7 s.
+- [ ] **iOS app: verify the launch screen on iPhone** — splash worked on iPad
+      but iPhone flashed Microsoft: the SW-cached page hid the splash at render,
+      then `_getAuthUser` redirected to login. Now the splash hides only after
+      the session check passes and is re-shown before that redirect. Pull, then
+      Run on the phone; expect blue → dashboard with no Microsoft page.
 - [ ] **iOS offline plan — Phase A BLOCKED on Entra permissions** —
       `docs/IOS-OFFLINE-PLAN.md`. Austin has no rights to create an App
       registration in the company tenant; access (Application Developer role, or

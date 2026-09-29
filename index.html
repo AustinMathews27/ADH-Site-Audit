@@ -3420,10 +3420,26 @@ document.documentElement.classList.toggle('is-native', _isNativeShell());
 // Safe on the web: no Capacitor object, nothing happens. The native side also
 // auto-hides after plugins.SplashScreen.launchShowDuration so an interactive
 // sign-in (first run, expired session) can never be stuck behind the splash.
+let _nativeSplashHidden = false;
 function _hideNativeSplash(){
   try{
     const sp = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen;
-    if (sp && typeof sp.hide === 'function') sp.hide({ fadeOutDuration: 350 });
+    if (sp && typeof sp.hide === 'function') { sp.hide({ fadeOutDuration: 350 }); _nativeSplashHidden = true; }
+  }catch(e){}
+}
+// Put the launch screen back before the page bounces through Microsoft
+// (_getAuthUser → location.replace). The launch splash auto-hides after
+// plugins.SplashScreen.launchShowDuration (7 s), so only re-show when it is
+// (probably) gone — showing on top of a live launch splash would let its
+// pending hide timer take the new one down mid-redirect.
+function _showNativeSplash(){
+  try{
+    const sp = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen;
+    if (!sp || typeof sp.show !== 'function') return;
+    if (_nativeSplashHidden || performance.now() > 6500) {
+      sp.show({ autoHide: true, showDuration: 7000, fadeInDuration: 0 });
+      _nativeSplashHidden = false;
+    }
   }catch(e){}
 }
 
@@ -3662,7 +3678,15 @@ async function _getAuthUser() {
 
   // Definitely not signed in → Entra login, then back to where we were.
   const back = location.pathname + location.search + location.hash;
-  location.replace(AUTH_LOGIN_URL + '?post_login_redirect_uri=' + encodeURIComponent(back || '/'));
+  const loginUrl = AUTH_LOGIN_URL + '?post_login_redirect_uri=' + encodeURIComponent(back || '/');
+  if (_isNativeShell()) {
+    // Cover the sign-in round trip with the native launch screen; give the
+    // plugin a beat to put the view up before the WebView navigates away.
+    _showNativeSplash();
+    setTimeout(() => location.replace(loginUrl), 150);
+  } else {
+    location.replace(loginUrl);
+  }
   return null;
 }
 
@@ -5380,11 +5404,17 @@ async function _initStore() {
 
   // Instantly draw the UI using whatever is in the local IndexedDB
   render();
-  _hideNativeSplash();
 
   // ── 2. NOW check the auth token in the background ─────────────────────────
+  // The iOS launch screen stays up until this resolves: the service worker
+  // serves this page from cache BEFORE the session is checked, so hiding the
+  // splash at render() would expose the Microsoft round trip that
+  // _getAuthUser triggers on an expired session (~0.5 s wait, 4 s worst case).
+  // A null result means a redirect is in flight (splash stays) or the auth
+  // gate is showing (it hides the splash itself).
   _currentUser = await _getAuthUser();
   if (!_currentUser) return; // redirect in progress or no cache offline
+  _hideNativeSplash();
 
   // Set display name from Entra email (email prefix = first part before @)
   if (!store.settings.displayName && _currentUser.userDetails) {
