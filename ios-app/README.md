@@ -65,9 +65,13 @@ render: the service worker serves the page from cache *before* the session
 is checked, and an expired session then bounces through Microsoft — the
 splash must still be up for that). Before that redirect the page calls
 `_showNativeSplash()` in case the launch splash has already timed out. The
-auth gate hides the splash itself. Config lives in `capacitor.config.json` → `plugins.SplashScreen`;
-`launchShowDuration` (7 s) is the safety cap so an interactive sign-in can
-never be stuck behind the splash. The colour is `#2563eb` in three places
+auth gate hides the splash itself. Config lives in `capacitor.config.json` → `plugins.SplashScreen`.
+`ios/App/App/AppBridgeViewController.swift` (the root view controller,
+wired in `SceneDelegate.swift` and `Main.storyboard`) hides the splash on
+its own when the WebView settles for 1.5 s on any page that is not our site
+— an interactive Microsoft sign-in, an error page — so a first-run login is
+never stuck behind it, while a silent SSO hop (auto-submits in < 1 s) stays
+covered. `launchShowDuration` (20 s) is only the last-resort cap behind that. The colour is `#2563eb` in three places
 that must match: the plugin config, `LaunchScreen.storyboard`, and the splash
 images from `scripts/make-assets.py`.
 

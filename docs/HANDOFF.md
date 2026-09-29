@@ -10,11 +10,13 @@
   never shows. Shipped to staging as v8.61 (main is at 8.60).
 
 ## Pending
-- [ ] **iOS app: verify the launch screen on iPhone** — splash worked on iPad
-      but iPhone flashed Microsoft: the SW-cached page hid the splash at render,
-      then `_getAuthUser` redirected to login. Now the splash hides only after
-      the session check passes and is re-shown before that redirect. Pull, then
-      Run on the phone; expect blue → dashboard with no Microsoft page.
+- [ ] **iOS app: verify the launch screen on iPhone** — the SW-cached path
+      (page → session check → Microsoft SSO → back) overran the 7 s cap, so the
+      splash dropped mid-login. Now: `AppBridgeViewController.swift` hides the
+      splash natively only when the WebView settles ≥1.5 s off our host
+      (interactive login / error page); cap raised to 20 s; page still hides on
+      success. Needs `git pull && npx cap sync ios` + rebuild in Xcode (native
+      change). Expect blue → dashboard; first-run login appears after ~2 s.
 - [ ] **iOS offline plan — Phase A BLOCKED on Entra permissions** —
       `docs/IOS-OFFLINE-PLAN.md`. Austin has no rights to create an App
       registration in the company tenant; access (Application Developer role, or
