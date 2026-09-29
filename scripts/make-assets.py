@@ -15,10 +15,11 @@ flat.alpha_composite(src)
 flat.convert('RGB').resize((1024, 1024), Image.LANCZOS) \
     .save(f'{ASSETS}/AppIcon.appiconset/AppIcon-512@2x.png')
 
-# Splash: 2732x2732 accent-blue background (matches plugins.SplashScreen.backgroundColor
-# and LaunchScreen.storyboard), white logo above centre — the native spinner
-# sits at the exact centre, so the logo is lifted to 40% height to leave room.
-SPLASH_BG = (0x25, 0x63, 0xEB)
+# Splash: 2732x2732 charcoal background — the app's own nav-bar / theme colour
+# (#16181d; must match plugins.SplashScreen.backgroundColor and
+# LaunchScreen.storyboard) — white logo above centre: the native spinner sits
+# at the exact centre, so the logo is lifted to 40% height to leave room.
+SPLASH_BG = (0x16, 0x18, 0x1D)
 logo = Image.open('logo-white.png').convert('RGBA').resize((560, 560), Image.LANCZOS)
 splash = Image.new('RGBA', (2732, 2732), SPLASH_BG + (255,))
 splash.alpha_composite(logo, ((2732 - 560) // 2, int(2732 * 0.40) - 280))

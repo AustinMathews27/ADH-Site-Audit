@@ -5,7 +5,7 @@
 - **Branch:** `feature/company-profiles` (no PR yet)
 - **Date:** 2026-09-29
 - **Summary:** iOS app confirmed working on a real iPhone (sign-in, camera,
-  offline). Added a native launch screen (splash plugin, blue + logo + spinner)
+  offline). Added a native launch screen (splash plugin, charcoal + logo + spinner)
   that now stays up through the session check, so the Microsoft round trip
   never shows. Shipped to staging as v8.61 (main is at 8.60).
 
@@ -16,7 +16,7 @@
       splash natively only when the WebView settles ≥1.5 s off our host
       (interactive login / error page); cap raised to 20 s; page still hides on
       success. Needs `git pull && npx cap sync ios` + rebuild in Xcode (native
-      change). Expect blue → dashboard; first-run login appears after ~2 s.
+      change). Expect charcoal → dashboard; first-run login appears after ~2 s.
 - [ ] **iOS offline plan — Phase A BLOCKED on Entra permissions** —
       `docs/IOS-OFFLINE-PLAN.md`. Austin has no rights to create an App
       registration in the company tenant; access (Application Developer role, or

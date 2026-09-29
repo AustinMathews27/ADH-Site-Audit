@@ -28,7 +28,7 @@
       "launchAutoHide": true,
       "launchShowDuration": 20000,
       "launchFadeOutDuration": 350,
-      "backgroundColor": "#2563eb",
+      "backgroundColor": "#16181d",
       "showSpinner": true,
       "iosSpinnerStyle": "large",
       "spinnerColor": "#ffffff",

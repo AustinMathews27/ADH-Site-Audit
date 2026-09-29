@@ -57,7 +57,7 @@ days to approve; an *Individual* account works immediately for TestFlight.
 
 ## Launch screen (hides the sign-in flash)
 
-`@capacitor/splash-screen` keeps a native blue screen (logo + spinner) over the
+`@capacitor/splash-screen` keeps a native charcoal screen (logo + spinner) over the
 WebView while the Static Web Apps → Microsoft sign-in round trip runs, so the
 Microsoft page never flashes on launch. `index.html` calls
 `_hideNativeSplash()` once the session check has passed (not at first
@@ -71,7 +71,7 @@ wired in `SceneDelegate.swift` and `Main.storyboard`) hides the splash on
 its own when the WebView settles for 1.5 s on any page that is not our site
 — an interactive Microsoft sign-in, an error page — so a first-run login is
 never stuck behind it, while a silent SSO hop (auto-submits in < 1 s) stays
-covered. `launchShowDuration` (20 s) is only the last-resort cap behind that. The colour is `#2563eb` in three places
+covered. `launchShowDuration` (20 s) is only the last-resort cap behind that. The colour is `#16181d` (the app's nav-bar charcoal) in three places
 that must match: the plugin config, `LaunchScreen.storyboard`, and the splash
 images from `scripts/make-assets.py`.
 
@@ -80,7 +80,7 @@ images from `scripts/make-assets.py`.
 - `ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png` — 1024×1024,
   no alpha. Currently upscaled from `../icon-512.png`; replace with a true
   1024 px export when there is one.
-- `Splash.imageset/*` — 2732×2732 accent-blue background, white logo at 40 %
+- `Splash.imageset/*` — 2732×2732 charcoal background, white logo at 40 %
   height (the native spinner sits at the centre).
 
 Regenerate both after changing the source logo (Pillow):
