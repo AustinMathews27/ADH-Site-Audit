@@ -3413,6 +3413,20 @@ function _isNativeShell(){
 }
 document.documentElement.classList.toggle('is-native', _isNativeShell());
 
+// The iOS app keeps its native launch screen (blue, logo, spinner) on top of
+// the WebView until the page says it is ready — this hides the Static Web Apps
+// → Microsoft sign-in round trip that otherwise flashes on every launch. Called
+// once the UI has rendered, or when the auth gate needs the user's attention.
+// Safe on the web: no Capacitor object, nothing happens. The native side also
+// auto-hides after plugins.SplashScreen.launchShowDuration so an interactive
+// sign-in (first run, expired session) can never be stuck behind the splash.
+function _hideNativeSplash(){
+  try{
+    const sp = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen;
+    if (sp && typeof sp.hide === 'function') sp.hide({ fadeOutDuration: 350 });
+  }catch(e){}
+}
+
 // ══════════════════════════════════════════════════════════════
 // PHONE LAYOUT DETECTION v1
 // Toggles `is-phone` on <html> based on viewport. Mobile-only
@@ -3658,6 +3672,7 @@ async function _getAuthUser() {
 //   'expired'     — the session lapsed while the app was open (API 401s)
 function _showAuthGate(reason) {
   if (document.getElementById('auth-gate')) return;
+  _hideNativeSplash();
   const copy = {
     offline:     ['No internet, no sign-in yet', 'This device has never signed in. Connect to the internet once and sign in with your Microsoft account — after that the app works fully offline.'],
     unreachable: ['Cannot reach sign-in', 'The sign-in service did not answer. Check the connection and try again.'],
@@ -5365,6 +5380,7 @@ async function _initStore() {
 
   // Instantly draw the UI using whatever is in the local IndexedDB
   render();
+  _hideNativeSplash();
 
   // ── 2. NOW check the auth token in the background ─────────────────────────
   _currentUser = await _getAuthUser();

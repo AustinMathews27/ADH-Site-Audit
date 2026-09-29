@@ -22,5 +22,18 @@
     "appendUserAgent": "ADHAuditNative",
     "backgroundColor": "#16181d",
     "preferredContentMode": "mobile"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": true,
+      "launchShowDuration": 7000,
+      "launchFadeOutDuration": 350,
+      "backgroundColor": "#2563eb",
+      "showSpinner": true,
+      "iosSpinnerStyle": "large",
+      "spinnerColor": "#ffffff",
+      "splashFullScreen": true,
+      "splashImmersive": true
+    }
   }
 }

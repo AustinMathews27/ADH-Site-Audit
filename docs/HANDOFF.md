@@ -1,16 +1,18 @@
 # Handoff — read this first, update it before you stop
 
 ## Last session
-- **Device:** Windows desktop app (Claude Code)
+- **Device:** Claude Code web (cloud session)
 - **Branch:** `feature/company-profiles` (no PR yet)
-- **Date:** 2026-09-22
-- **Summary:** Phone layout v2 (`8416300`): on phones a project opens straight
-  onto its scope-item list, every other option sits behind one ⋯ menu sheet,
-  iOS-style "‹ Parent" back button, bottom nav + Browse drawer removed, nav bar
-  extends under the iOS status bar. Verified in the desktop browser at phone
-  size; needs a real-iPhone check on staging.
+- **Date:** 2026-09-29
+- **Summary:** iOS app confirmed working on a real iPhone (sign-in, camera,
+  offline). Added a native launch screen (splash plugin) so the Microsoft
+  sign-in round trip is hidden behind a blue logo screen with a spinner.
 
 ## Pending
+- [ ] **iOS app: verify the new launch screen on the phone** — `@capacitor/splash-screen`
+      added (blue + logo + spinner) to hide the Microsoft sign-in flash. On the
+      Mac: `cd ios-app && npm install && npx cap sync ios`, then Run. Check: no
+      Microsoft page visible on relaunch; first-run sign-in appears within ~7 s.
 - [ ] **iOS offline plan — Phase A BLOCKED on Entra permissions** —
       `docs/IOS-OFFLINE-PLAN.md`. Austin has no rights to create an App
       registration in the company tenant; access (Application Developer role, or
@@ -22,8 +24,6 @@
 - [ ] **iOS app: point at production before release** — shell currently loads
       the staging SWA (`proud-moss-067ef8e0f.6.azurestaticapps.net`); swap the
       hostname in `capacitor.config.json` + `Info.plist` for the prod URL.
-- [ ] **iOS app: run on a real iPad/iPhone** — plug in, pick it in Xcode's device
-      picker, Run (free Apple ID works for 7-day dev builds).
 - [ ] **iOS app: Apple Developer Program** — needed for TestFlight / ad hoc /
       App Store archive. Organization account needs the company D-U-N-S number.
 - [ ] **iOS app: closed-app push** — WKWebView has no Web Push. Needs
