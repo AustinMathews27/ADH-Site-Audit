@@ -66,8 +66,11 @@ function withLabel(doc) {
 }
 
 // ── Per-field timestamp merge ─────────────────────────────────────────────────
-// If both sides have a _fieldTs for a key, the newer timestamp wins.
-// Falls back to "incoming wins" when timestamps are absent.
+// A stamped field keeps the stored value unless the incoming copy carries a
+// stamp at least as new. An incoming copy with NO stamp for a field the stored
+// doc has stamped is a stale device that never saw that edit (stamp maps ride
+// along on every pull) — it used to win and wipe text typed on another device.
+// Fields stamped on neither side: incoming wins, as before.
 function mergeFields(current, incoming) {
   const cTs = current._fieldTs  || {};
   const iTs = incoming._fieldTs || {};
@@ -77,7 +80,7 @@ function mergeFields(current, incoming) {
     if (k === "_fieldTs") return;
     const cTime = cTs[k];
     const iTime = iTs[k];
-    if (cTime !== undefined && iTime !== undefined && cTime > iTime) {
+    if (cTime !== undefined && (iTime === undefined || cTime > iTime)) {
       // Current is newer on this field — keep it
       return;
     }

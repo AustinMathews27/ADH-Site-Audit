@@ -57,4 +57,4 @@ Pushes to `main` deploy via the GitHub Action (Azure Static Web Apps, `app_locat
 
 ## Versioning
 
-The app version is the service-worker cache string (`adh-audit-v8.xx`). Current: **v8.61**.
+The app version is the service-worker cache string (`adh-audit-v8.xx`). Current: **v8.62**.

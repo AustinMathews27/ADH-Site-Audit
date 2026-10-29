@@ -3593,7 +3593,7 @@ let store = JSON.parse(JSON.stringify(SEED));
 
 // Keep in lockstep with CACHE_VERSION in sw.js — shown in the Admin
 // Console header so a stale cached client is diagnosable at a glance.
-const APP_VERSION = '8.61';
+const APP_VERSION = '8.62';
 
 let _currentUser = null; // { userId, userDetails, userRoles }
 
@@ -4524,6 +4524,11 @@ function _mergeProjectIntoLocal(cloudProj) {
 
   // Merge items: skip _dirty local items, merge the rest field-by-field
   const localItemMap = new Map((localProj.items || []).map(i => [i.id, i]));
+  // Push the local edits the cloud was missing (owned projects only — a
+  // foreign project can never push, and leaving it dirty here would freeze
+  // its items and project-level fields on this device forever).
+  const ownsIt = !localProj.ownedBy || localProj.ownedBy === (_currentUser?.userId || '');
+  let keptLocalEdits = false;
   (cloudProj.items || []).forEach(ci => {
     const li = localItemMap.get(ci.id);
     if (!li) {
@@ -4532,6 +4537,14 @@ function _mergeProjectIntoLocal(cloudProj) {
     } else if (!li._dirty) {
       // Safe to merge — no unsaved local changes
       const merged = Object.assign({}, li, ci);
+      // …except a field this device stamped NEWER than the cloud copy: the
+      // cloud never received that edit, so taking the cloud value would
+      // silently erase it (how a super's notes vanished on a manual sync).
+      // Keep ours, and re-push so the cloud catches up.
+      if (_keepNewerLocalFields(li, ci, merged)) {
+        keptLocalEdits = true;
+        if (ownsIt) merged._dirty = true;   // guard it until the re-push lands
+      }
       // Attachment file bytes live only on the device (the cloud doc holds
       // data-less stubs) — carry local data forward or the merge erases the
       // only copy of the file.
@@ -4630,7 +4643,40 @@ function _mergeProjectIntoLocal(cloudProj) {
   // and anything they write afterwards would silently vanish.
   delete localProj.projectId;
   Object.assign(localProj, mergedProj);
+
+  if (keptLocalEdits && ownsIt && typeof _dirtyProjectIds !== 'undefined') {
+    _dirtyProjectIds.add(localPid);
+    _persistDirtyState();
+    scheduleDirtySync();
+  }
   return changed;
+}
+
+// Item fields stamped in _fieldTs (see markDirtyAndSave / syncEditorToStore)
+// resolve conflicts newest-wins. A local stamp the cloud copy lacks, or that
+// is newer than the cloud's, is an edit the cloud never received — copy the
+// local value into `merged` instead of the cloud one. Photo/attachment lists
+// have their own merge rules and are skipped. The stamp maps are combined
+// (newest per field) so neither side's history is dropped.
+// Returns true when at least one local value was kept.
+const _FIELD_TS_SKIP = new Set(['photos', 'attachments', 'towerWork', 'photoTombstones']);
+function _keepNewerLocalFields(li, ci, merged) {
+  const lTs = li._fieldTs || {}, cTs = ci._fieldTs || {};
+  let kept = false;
+  Object.keys(lTs).forEach(k => {
+    if (_FIELD_TS_SKIP.has(k) || !(lTs[k] > (cTs[k] || 0))) return;
+    if (k in li) merged[k] = li[k]; else delete merged[k];
+    if (k === '_deleted') {
+      if ('_deletedAt' in li) merged._deletedAt = li._deletedAt; else delete merged._deletedAt;
+    }
+    kept = true;
+  });
+  if (Object.keys(lTs).length) {
+    const ts = Object.assign({}, cTs);
+    Object.keys(lTs).forEach(k => { if (!(ts[k] >= lTs[k])) ts[k] = lTs[k]; });
+    merged._fieldTs = ts;
+  }
+  return kept;
 }
 
 // ── Main sync function ────────────────────────────────────────────────────────
@@ -10057,22 +10103,32 @@ window.removeCustomTag=function(pid,sid,tag){
 
 // Flush the SI editor DOM fields into the store without saving.
 // Must be called before save() whenever the editor DOM will be rebuilt.
+// Every field that actually changed gets a _fieldTs stamp: without one, a sync
+// merge can't tell the new text from an older cloud copy and the older copy
+// won (field bug: a super's notes vanished on the next day's sync).
+// Returns true when anything changed.
+const _EDITOR_FIELDS = [
+  ['notes-input',        'notes'],
+  ['assigned-input',     'assignedTo'],
+  ['trade-input',        'trade'],
+  ['due-input',          'dueDate'],
+  ['si-delivery-date',   'deliveryDate'],
+  ['si-punch-date',      'punchDate'],
+  ['si-projected-start', 'projectedStartDate'],
+];
 function syncEditorToStore(pid, sid) {
-  const item = getSI(pid, sid); if(!item) return;
-  const n  = document.getElementById('notes-input');
-  const a  = document.getElementById('assigned-input');
-  const tr = document.getElementById('trade-input');
-  const d  = document.getElementById('due-input');
-  const dd = document.getElementById('si-delivery-date');
-  const pd = document.getElementById('si-punch-date');
-  const ps = document.getElementById('si-projected-start');
-  if(n)  item.notes        = n.value;
-  if(a)  item.assignedTo   = a.value;
-  if(tr) item.trade        = tr.value;
-  if(d)  item.dueDate      = d.value;
-  if(dd) item.deliveryDate = dd.value;
-  if(pd) item.punchDate    = pd.value;
-  if(ps) item.projectedStartDate = ps.value;
+  const item = getSI(pid, sid); if(!item) return false;
+  const now = Date.now();
+  let changed = false;
+  _EDITOR_FIELDS.forEach(([elId, key]) => {
+    const el = document.getElementById(elId);
+    if (!el || (item[key] || '') === el.value) return;
+    item[key] = el.value;
+    item._fieldTs = item._fieldTs || {};
+    item._fieldTs[key] = now;
+    changed = true;
+  });
+  return changed;
 }
 
 function _doSave(pid,sid,toast=true) {
@@ -14749,8 +14805,11 @@ function _initMobileQoL() {
     clearTimeout(_autoSaveTimer);
     clearTimeout(_saveTimer);   // cancel debounce
     const r = route();
-    if (r.view === 'si') {
-      syncEditorToStore(r.projectId, r.siId);
+    // Text typed in the last 800ms (autosave not yet fired) must also be
+    // flagged dirty — copying it into the store alone meant it was never
+    // pushed, and the next sync replaced it with the older cloud copy.
+    if (r.view === 'si' && syncEditorToStore(r.projectId, r.siId)) {
+      markAsDirty(r.siId);
     }
     // Synchronous fallback: write to localStorage as a safety net
     // (IDB writes are async and may not complete before the page is killed)
