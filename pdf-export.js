@@ -492,6 +492,27 @@
         </div></div>`;
     };
 
+    // Daily note(s) — only on a day / date-range report (see _reportDayView)
+    let dayNotePage = '';
+    const dayNotes = Array.isArray(proj._dayNotes) ? proj._dayNotes : [];
+    if (dayNotes.length) {
+      const dnPg = pgNum++;
+      dayNotePage = `
+        <div class="page-container">
+        <div class="page-scaler">
+          <div class="page-num">${dnPg}</div>
+          ${sectionHeader(dayNotes.length > 1 ? 'Daily Notes' : 'Daily Note', dayNotes.length).replace(/(\d+) item(s?)/, '$1 day$2')}
+          <div style="padding:10px 18px;flex:1">
+            ${dayNotes.map(n => `
+              <div style="margin-bottom:12px">
+                <div style="font-size:9px;font-weight:800;color:${P.ink};letter-spacing:0.4px;text-transform:uppercase;margin-bottom:4px">${esc(n.label || n.day)}</div>
+                <div style="font-size:9.5px;color:${P.text};line-height:1.55;white-space:pre-wrap">${esc(n.note)}</div>
+              </div>`).join('')}
+          </div>
+          <div class="pg-footer"><span>${esc(proj.name||'')}</span><span>Page ${dnPg}</span></div>
+        </div></div>`;
+    }
+
     buildFloorPlanPage(); // consumes its page number before the section pages
 
     const sectionIds = new Set(sections.map(s => s.id));
@@ -610,6 +631,7 @@ body{background:#18212f;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
 </script>
 </head><body>
 ${coverPage}
+${dayNotePage}
 ${floorPlanPage}
 ${sectionPages}
 ${envPage}
@@ -684,8 +706,18 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
   }
 
   window.exportPDF = async function (pid, opts) {
-    const proj = (typeof getProject === 'function' ? getProject : window.getProject)(pid);
-    if (!proj) return;
+    const _rawProj = (typeof getProject === 'function' ? getProject : window.getProject)(pid);
+    if (!_rawProj) return;
+    // Day-by-day reports: the report generator picks a day / date range and
+    // the export works on a filtered view (that day's photos, daily note,
+    // optionally only the SIs photographed). Validation runs on the view too.
+    const _dayMode = (window._pdfExportSettings || {}).dayMode || null;
+    const proj = (_dayMode && typeof window._reportDayView === 'function')
+      ? window._reportDayView(_rawProj, _dayMode) : _rawProj;
+    if (_dayMode && _dayMode.type !== 'all' && !(proj.items || []).some(i => !i._deleted)) {
+      if (typeof showToast === 'function') showToast('No scope items have photos for ' + (proj._dayLabel || 'that day'), 'red');
+      return;
+    }
 
     // Admin override — an unlocked admin session may export a report with
     // required fields still missing ("Export Anyway" in the validation modal).
@@ -1514,6 +1546,27 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
     }
     if (inclCover) { (styleKey === 'flow' || styleKey === 'photo') ? coverFlow() : coverGrid(); }
 
+    // ── DAILY NOTE PAGE (day / date-range reports with a note) ─────────────────
+    const dayNotes = Array.isArray(proj._dayNotes) ? proj._dayNotes : [];
+    if (dayNotes.length) {
+      newPage();
+      setFill(P.ink); doc.rect(0, 0, PW, 18, 'F');
+      doc.setFontSize(10); doc.setFont(P.font, 'bold'); setText('#ffffff');
+      doc.text(dayNotes.length > 1 ? 'DAILY NOTES' : 'DAILY NOTE', 15, 12);
+      let ny = 28;
+      dayNotes.forEach(n => {
+        if (ny + 14 > PH - BOT) { newPage(); ny = 16; }
+        doc.setFont(P.font, 'bold'); doc.setFontSize(9); setText(P.ink);
+        doc.text(String(n.label || n.day).toUpperCase(), MX, ny); ny += 5.5;
+        doc.setFont(P.font, 'normal'); doc.setFontSize(9); setText(P.text);
+        doc.splitTextToSize(n.note || '', CW).forEach(line => {
+          if (ny + 5 > PH - BOT) { newPage(); ny = 16; }
+          doc.text(line, MX, ny); ny += 4.6;
+        });
+        ny += 6;
+      });
+    }
+
     // ── FLOOR PLAN PAGE (image plans; PDF-file plans can't be rasterized here) ─
     if (inclFloorPlan && proj.floorPlan && proj.floorPlan.imageData && !proj.floorPlan.isPDF) {
       try {
@@ -1748,8 +1801,16 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
     await new Promise(r => setTimeout(r, 100));
 
     const styleName = tpl.name;
-    const filename = (proj.name || 'report').replace(/[^a-z0-9]/gi,'_') + '_' + styleKey + '_report.pdf';
+    const filename = (proj.name || 'report').replace(/[^a-z0-9]/gi,'_')
+      + (_dayMode && _dayMode.type === 'day' ? '_' + _dayMode.day : '')
+      + (_dayMode && _dayMode.type === 'range' ? '_' + _dayMode.from + '_to_' + _dayMode.to : '')
+      + '_' + styleKey + '_report.pdf';
     const blob = doc.output('blob');
+    // A single day's report going out marks that day finished (it stops the
+    // "continue this day?" prompt the next morning).
+    if (_dayMode && _dayMode.type === 'day' && typeof window._dayMarkFinished === 'function') {
+      window._dayMarkFinished(pid, _dayMode.day, 'report');
+    }
     const pdfFile = new File([blob], filename, { type: 'application/pdf' });
     const isMobile = /iphone|ipad|ipod|android/i.test(navigator.userAgent);
     const canShare = !!(navigator.share && navigator.canShare &&

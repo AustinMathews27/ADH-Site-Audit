@@ -115,6 +115,8 @@ Open a brand folder to see its projects as cards. The folder header has:
 3. Review the **Project Preview** (client, address, work-order counts, estimated hours) and tap **＋ Create Project from This**.
 4. Pick which Installation work orders become scope items (all are pre-checked), optionally include other work-order types, and keep **Include estimated hours** and **Include planned dates** on — they pre-fill the labor budget and the 6-week schedule.
 
+**One Innergy job = one project.** A job that's already in the app shows **✓ In app** in the list, and tapping it offers **Open Project ›** instead of creating a copy — use the [day bar](#site-visit-days) for each visit rather than duplicating the project. (A **Duplicate Project** copy is app-only and isn't linked to Innergy.)
+
 Innergy-linked projects are **re-checked against Innergy weekly** when you open them. If work orders were added or cancelled in Innergy, a **"⚡ Innergy Changes Detected"** dialog lets you add or remove them item by item. You can force a check anytime from the project card's **⋯ → ⚡ Compare with Innergy**.
 
 ### The project summary
@@ -195,12 +197,35 @@ Scroll down for the rest:
 
 ## 7. Photos
 
+### Site-visit days
+
+A project is one job for its whole life — you don't duplicate it for each site visit. Instead, the **day bar** at the top of the scope-item list (**‹ week › Mon … Sun**) picks the day you're on site; each day shows how many photos it has.
+
+- New photos are filed under the **selected day**. It defaults to today; if you pick another day an amber banner says *"New photos go to Mon Oct 26 — not today"*.
+- Everything else — status, field check, notes, tags — is shared across days. Only photos are per day.
+- The SI editor shows **that day's photos**; earlier days sit under a collapsed **Other days**. Turn on **Include previous days' pictures in …'s report** there and tick which days to bring into this day's report.
+- **Remaining** filters the list to SIs with no photos yet for the day (with an *x/y SIs shot* count) — handy when you split a walk over two days.
+- **📝 Note** — a daily note (weather, crew, what got done) printed at the top of that day's report.
+- **✓ Finish day** marks the visit done (exporting a one-day report does it automatically). If the last visit in the past week wasn't finished, opening the project the next day asks **Continue Tue Oct 27** or **Start Wed Oct 28** — continuing files new photos under the earlier day; each photo still keeps its real time stamp.
+- Filed a photo under the wrong day? Photo **⋯ → 📅 Move to day…**.
+- Older photos appear under the date they were taken; nothing is moved or rewritten.
+
+### Taking photos
+
 - **📷 Camera** opens the iPad camera; **🖼 Import** pulls from your photo library (multi-select works).
 - Photos save to the device instantly and upload to the cloud in the background — you can shoot all day with no signal and it catches up later.
 - Each tile shows the date taken. Tap a photo to view it full screen.
 - **Markup:** tap a photo's **⋯ → 🖊️ Markup** to draw on it — pen, arrow, box, and text in six colors, with undo. Saving flattens your annotations into the photo and re-syncs it.
 - **Delete:** photo **⋯ → 🗑 Delete Photo**.
 - The **project cover photo** is set from the project summary (Add Photo / Change / Remove).
+
+---
+
+### AFQC report
+
+On any scope item tap **📧 AFQC Report** (also in the SI's **⋯** menu) to send a field issue to **afqc@alleghenymillwork.com** — the Allegheny Field Quality Check inbox. Pick the category (**Shipping, Material, Drafting, Special Purchasing, Production, Hardware, Install, Other**), Normal or **Urgent**, describe the issue, tick up to 8 photos (the selected day's are pre-ticked), and optionally add your email so replies reach you. **Send to AFQC** emails it straight from the company Microsoft 365 mailbox with the photos attached, and logs it on the SI (*Last: Shipping · 10/28*) and in the Activity Feed.
+
+If one-tap sending isn't set up yet or you're offline, it falls back to your **Mail app**: **Share with photos → Mail** (add the AFQC address) or **Open in Mail** (address and text filled in, no photos).
 
 ---
 
@@ -275,11 +300,12 @@ Project summary → **Floor Plan**.
 
 ![Floor plan with pins](images/09-floor-plan.png)
 
-1. **📤 Upload Plan** — a photo/image works best (PDF works too, but on iPad pins are easier on an image).
-2. Tap **📍 Place Pin** → pick the scope item → tap the plan where it goes.
-3. Pins show the SI number. Tap a pin to jump to that SI (**Open SI**) or remove it. One pin per SI — re-pinning moves it.
+1. **📤 Upload Plan** — an image or a PDF (multi-page sets work; a **‹ Page 1 / 5 ›** picker appears at the bottom).
+2. Move around the plan: **drag** to pan, **pinch** (or mouse wheel / **＋ −**) to zoom, **double-tap** to zoom in, **Fit** to see the whole page.
+3. Tap **📍 Place Pin** → pick the scope item → tap the plan where it goes. Pins belong to the page they're placed on.
+4. Pins show the SI number and stay the same size at any zoom. Tap a pin to jump to that SI (**Open SI**) or remove it. One pin per SI — re-pinning moves it.
 
-The plan with numbered pins and a legend can be included as a page in the PDF report. *The plan image stays on your device — it's too large to sync, so add it on the iPad you report from.*
+*Pins placed on a PDF before v8.61 were positioned against the old browser viewer, so they may sit slightly off — re-place them if needed.* The plan with numbered pins and a legend can be included as a page in the PDF report. *The plan image stays on your device — it's too large to sync, so add it on the iPad you report from.*
 
 ---
 
@@ -309,6 +335,7 @@ Open the project, then **⋯ → 📤 Share**. This is the **Report Generator** 
 
 **Options, top to bottom:**
 
+- **📅 Report Day** — **One day** (default when the selected day has photos), **Date range**, or **All days** (every photo, as before). Day and range reports carry only those days' photos (plus any days an SI opted to include), the daily note page, and the visit date on the cover; **Only SIs photographed that day** leaves out items you didn't shoot. Exporting a one-day report marks that day finished.
 - **All / Complete / Incomplete** — filter which scope items go in the report.
 - **Report Style** — four layouts: **Branded Grid** (formal, navy section bars), **Clean Flow** (hero photo cover, narrative), **Compact Table** (dense punch-list), **Photo Focus** (large photos).
 - **Company & Branding** — pick the active company, its logo, and your **auditor signature** (upload an image or draw it with your finger). The signature prints on a Report Sign-Off page. **White-label** hides all branding.

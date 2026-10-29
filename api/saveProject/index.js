@@ -126,10 +126,19 @@ function mergeItems(currentItems, incomingItems) {
 
     // Always strip photos from what gets written to Cosmos —
     // photos live in IndexedDB on the client, Azure Blob for URLs.
+    // `day` files a photo under a site-visit day. A device still running an
+    // older app version strips it on push — keep the stored day for that URL
+    // rather than letting the stale push erase it.
+    const curDay = new Map(((cur && cur.photos) || []).filter(p => p.url && p.day).map(p => [p.url, p.day]));
     const incomingClean = Object.assign({}, incoming, {
       photos: (incoming.photos || [])
         .filter(p => p.url && !tombHit(tomb, p.url))
-        .map(p => ({ url: p.url, caption: p.caption || "", takenAt: p.takenAt || "" })),
+        .map(p => {
+          const out = { url: p.url, caption: p.caption || "", takenAt: p.takenAt || "" };
+          const day = p.day || curDay.get(p.url);
+          if (day) out.day = day;
+          return out;
+        }),
       attachments: (incoming.attachments || [])
         .map(a => ({
           id: a.id, name: a.name, type: a.type, ext: a.ext,
@@ -169,6 +178,18 @@ function mergeItems(currentItems, incomingItems) {
   });
   currentMap.forEach((v, id) => { if (!emitted.has(id)) out.push(v); });
   return out;
+}
+
+// Per-day site-visit data ({ "YYYY-MM-DD": { note, finishedAt, ts, … } }):
+// merged day by day, newest `ts` wins, so devices editing different days'
+// notes never overwrite each other. Undefined when neither side has any.
+function mergeDays(cur, inc) {
+  const out = Object.assign({}, cur || {});
+  Object.entries(inc || {}).forEach(([k, v]) => {
+    if (!v || typeof v !== "object") return;
+    if (!out[k] || (v.ts || 0) >= (out[k].ts || 0)) out[k] = v;
+  });
+  return Object.keys(out).length ? out : undefined;
 }
 
 // Environmental screenshots are stored as base64 on the device only — never
@@ -304,6 +325,7 @@ module.exports = async function (context, req) {
           projectId: incoming.id,
           ownedBy:   ownedBy,  // Preserve original owner
           items:     mergeItems(current.items || [], incoming.items || []),
+          days:      mergeDays(current.days, incoming.days),
           // Preserve blob-URL covers (the client uploads then pushes the URL);
           // base64 never enters Cosmos, and a data: push keeps the stored URL.
           coverPhoto: (incoming.coverPhoto && !String(incoming.coverPhoto).startsWith('data:'))

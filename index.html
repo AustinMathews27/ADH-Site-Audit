@@ -1874,11 +1874,69 @@ body.theme-dark .sched-current-week {
 .act-dot.photo    { background:var(--green); }
 .act-dot.note     { background:var(--yellow); }
 .act-dot.attach   { background:#a855f7; }
+/* ── AFQC ── */
+.afqc-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px; }
+.afqc-btn { font-size:12px; font-weight:600; padding:7px 14px; border-radius:8px; border:1px solid var(--accent); background:var(--accent-dim); color:var(--accent); cursor:pointer; }
+.afqc-last { font-size:10px; font-family:var(--mono); color:var(--text3); }
+.afqc-target { font-size:11px; color:var(--text2); margin-bottom:12px; padding:7px 10px; background:var(--surface2); border:1px solid var(--border); border-radius:7px; }
+.afqc-cats { display:flex; flex-wrap:wrap; gap:6px; }
+.afqc-cat input { display:none; }
+.afqc-cat span { display:inline-block; padding:6px 11px; border-radius:16px; border:1px solid var(--border); background:var(--surface2); font-size:12px; color:var(--text2); cursor:pointer; }
+.afqc-cat input:checked + span { border-color:var(--accent); background:var(--accent-dim); color:var(--accent); font-weight:600; }
+.afqc-cat.urgent input:checked + span { border-color:var(--red); background:var(--red-dim); color:var(--red); }
+.afqc-photos { display:grid; grid-template-columns:repeat(auto-fill,minmax(84px,1fr)); gap:6px; }
+.afqc-photo { position:relative; display:flex; flex-direction:column; gap:2px; cursor:pointer; font-size:9px; color:var(--text3); font-family:var(--mono); }
+.afqc-photo img { width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:6px; border:2px solid transparent; }
+.afqc-photo input { position:absolute; top:5px; left:5px; width:18px; height:18px; accent-color:var(--accent); }
+.afqc-photo input:checked ~ img { border-color:var(--accent); }
+/* ── DAY-BY-DAY ── */
+.day-bar { padding:8px 10px 6px; border-bottom:1px solid var(--border); background:var(--surface); position:sticky; top:0; z-index:5; }
+.day-bar-top { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+.day-range { flex:1; text-align:center; font-family:var(--mono); font-size:11px; font-weight:600; color:var(--text2); }
+.day-nav, .day-today { background:var(--surface2); border:1px solid var(--border); color:var(--text2); border-radius:6px; font-size:12px; padding:3px 9px; cursor:pointer; font-family:var(--mono); }
+.day-today { font-size:10px; color:var(--accent); border-color:var(--accent); }
+.day-pills { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
+.day-pill { display:flex; flex-direction:column; align-items:center; gap:1px; padding:4px 0 3px; border-radius:7px; border:1px solid var(--border); background:var(--surface2); color:var(--text2); cursor:pointer; font-family:var(--mono); min-width:0; }
+.day-pill .dp-name { font-size:9px; text-transform:uppercase; letter-spacing:.03em; }
+.day-pill .dp-date { font-size:14px; font-weight:700; color:var(--text); }
+.day-pill .dp-count { font-size:9px; color:var(--text3); }
+.day-pill.today .dp-date { color:var(--accent); }
+.day-pill.done { border-color:var(--green); }
+.day-pill.done .dp-count { color:var(--green); }
+.day-pill.sel { background:var(--accent); border-color:var(--accent); }
+.day-pill.sel .dp-name, .day-pill.sel .dp-date, .day-pill.sel .dp-count { color:#fff; }
+.day-info { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:6px; font-size:11px; }
+.day-info-label { font-weight:700; color:var(--text); }
+.day-info-count { font-family:var(--mono); font-size:10px; color:var(--text3); }
+.day-chip { background:var(--surface2); border:1px solid var(--border); color:var(--text2); border-radius:12px; font-size:10px; padding:3px 8px; cursor:pointer; font-family:var(--mono); white-space:nowrap; }
+.day-chip.on { border-color:var(--accent); color:var(--accent); background:var(--accent-dim); }
+.day-chip.done { border-color:var(--green); color:var(--green); background:var(--green-dim); }
+.day-warn { margin-top:6px; padding:5px 8px; border-radius:6px; background:var(--yellow-dim, rgba(217,119,6,0.12)); color:var(--yellow); font-size:11px; }
+.day-other { margin-top:10px; border:1px solid var(--border); border-radius:8px; padding:6px 10px; background:var(--surface2); }
+.day-other summary { cursor:pointer; font-size:12px; font-weight:600; color:var(--text2); padding:2px 0; }
+.day-carry { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text); margin:8px 0; cursor:pointer; }
+.day-carry input, .day-other-head input { accent-color:var(--accent); width:16px; height:16px; }
+.day-other-group { margin:8px 0; }
+.day-other-head { display:flex; align-items:center; gap:8px; font-size:11px; font-weight:600; color:var(--text2); margin-bottom:5px; }
+.day-other-n { font-family:var(--mono); font-weight:400; color:var(--text3); margin-left:auto; }
+.day-other-grid { opacity:.85; }
+.rg-day-box { padding:10px 14px; border-bottom:1px solid var(--border); display:flex; flex-direction:column; gap:7px; }
+.rg-day-title { font-size:11px; font-weight:700; color:var(--text); text-transform:uppercase; letter-spacing:.05em; }
+.rg-day-input { padding:6px 8px !important; font-size:12px !important; }
 /* ── FLOOR PLAN ── */
-.fp-canvas-wrap { position:relative;flex:1;overflow:hidden;background:var(--surface2);display:flex;align-items:center;justify-content:center; }
-.fp-canvas { cursor:crosshair;display:block;max-width:100%;max-height:100%; }
-.fp-pin { position:absolute;transform:translate(-50%,-50%);cursor:pointer;font-size:18px;text-shadow:0 1px 4px rgba(0,0,0,0.6);transition:transform 0.12s;z-index:10; }
-.fp-pin:hover { transform:translate(-50%,-50%) scale(1.3); }
+.fp-viewport { position:relative; flex:1; min-height:300px; overflow:hidden; background:var(--surface2); touch-action:none; user-select:none; -webkit-user-select:none; cursor:grab; }
+.fp-viewport:active { cursor:grabbing; }
+.fp-stage { position:absolute; left:0; top:0; transform-origin:0 0; will-change:transform; --fp-pin-scale:1; }
+.fp-media { display:block; width:100%; height:100%; background:#fff; box-shadow:0 2px 14px rgba(0,0,0,0.25); pointer-events:none; }
+.fp-loading { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; color:var(--text3); font-size:12px; pointer-events:auto; }
+.fp-zoom { position:absolute; right:12px; bottom:12px; display:flex; flex-direction:column; gap:6px; z-index:30; }
+.fp-zoom button, .fp-pages button { width:40px; height:40px; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:20px; font-weight:600; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.2); }
+.fp-pages { position:absolute; left:50%; bottom:12px; transform:translateX(-50%); display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:4px; z-index:30; font-family:var(--mono); font-size:12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); }
+.fp-pages button { box-shadow:none; width:34px; height:34px; }
+.fp-btn { font-size:11px; font-family:var(--mono); padding:6px 12px; border:1px solid var(--border); background:var(--surface2); border-radius:7px; cursor:pointer; color:var(--text2); }
+.fp-btn.on { background:var(--accent-dim); border-color:var(--accent); color:var(--accent); }
+.fp-btn.danger { border-color:var(--red-dim); background:var(--red-dim); color:var(--red); }
+.fp-pin { position:absolute; transform:translate(-50%,-100%) scale(var(--fp-pin-scale)); transform-origin:50% 100%; cursor:pointer; font-size:22px; line-height:1; text-shadow:0 1px 4px rgba(0,0,0,0.6); z-index:10; }
 .fp-pin-label { position:absolute;top:100%;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:2px 6px;font-size:10px;font-family:var(--mono);color:var(--accent);white-space:nowrap;pointer-events:none;margin-top:2px; }
 /* ════════════════════════════════════════════════════════════════
    ── PHONE LAYOUT v1 (icons, cards, polish) ──
@@ -3535,7 +3593,7 @@ let store = JSON.parse(JSON.stringify(SEED));
 
 // Keep in lockstep with CACHE_VERSION in sw.js — shown in the Admin
 // Console header so a stale cached client is diagnosable at a glance.
-const APP_VERSION = '8.60';
+const APP_VERSION = '8.61';
 
 let _currentUser = null; // { userId, userDetails, userRoles }
 
@@ -3903,6 +3961,15 @@ function save() {
 
 // ── Payload builders ──────────────────────────────────────────────────────────
 
+/** The synced shape of one photo: its URL and metadata, never image bytes.
+ *  `day` (YYYY-MM-DD) files the photo under a site-visit day — see the
+ *  day-by-day feature. Omitted when unset to keep project docs small. */
+function _cloudPhoto(p) {
+  const out = { url: p.url, caption: p.caption || '', takenAt: p.takenAt || '' };
+  if (p.day) out.day = p.day;
+  return out;
+}
+
 /** Strip binary data before sending a project to Cosmos. */
 function _buildProjectPayload(proj) {
   const cleanFloorPlan = proj.floorPlan
@@ -3928,7 +3995,7 @@ function _buildProjectPayload(proj) {
     items: (proj.items || []).map(item => {
       const cloudPhotos = (item.photos || [])
         .filter(p => p.url)
-        .map(p => ({ url: p.url, caption: p.caption || '', takenAt: p.takenAt || '' }));
+        .map(p => _cloudPhoto(p));
       const cloudAttachments = (item.attachments || [])
         .map(a => ({ id: a.id, name: a.name, type: a.type, ext: a.ext,
                      icon: a.icon, size: a.size, addedAt: a.addedAt, addedBy: a.addedBy }));
@@ -3939,7 +4006,7 @@ function _buildProjectPayload(proj) {
         cleanItem.towerWork = Object.assign({}, item.towerWork, {
           rooms: item.towerWork.rooms.map(r => (r.photos && r.photos.length)
             ? Object.assign({}, r, { photos: r.photos.filter(p => p.url)
-                .map(p => ({ url: p.url, caption: p.caption || '', takenAt: p.takenAt || '' })) })
+                .map(p => _cloudPhoto(p)) })
             : r)
         });
       }
@@ -4410,8 +4477,13 @@ function _mergeProjectIntoLocal(cloudProj) {
     // and no URL (the "Photo unavailable" tiles) and entries whose cloud copy
     // was deleted or replaced on another device. Dropping them here is what
     // lets every device self-heal instead of showing broken tiles forever.
+    // A photo moved to another day on another device arrives as a cloud
+    // copy with a new `day` — adopt it onto the local copy we keep.
+    const cloudDay   = new Map(cloudUrls.filter(p => p.day).map(p => [p.url, p.day]));
     const keptLocal  = local.filter(p =>
-      !_tombHit(tomb, p.url) && (hasLocalData(p) || (p.url && cloudUrlSet.has(p.url))));
+      !_tombHit(tomb, p.url) && (hasLocalData(p) || (p.url && cloudUrlSet.has(p.url))))
+      .map(p => (p.url && cloudDay.has(p.url) && cloudDay.get(p.url) !== p.day)
+        ? Object.assign(p, { day: cloudDay.get(p.url) }) : p);
     const freshCloud = cloudUrls.filter(p => !localUrlSet.has(p.url));
     out.photos = [...keptLocal, ...freshCloud];
     if (Object.keys(tomb).length) out.photoTombstones = tomb;
@@ -4510,8 +4582,12 @@ function _mergeProjectIntoLocal(cloudProj) {
       })
     : Object.assign({}, localProj, cloudProj, {
         id:        localPid,  // always keep local ID format
-        items:     orderedItems
+        items:     orderedItems,
+        // Per-day notes/finish flags merge day by day (newest wins), so two
+        // superintendents writing different days' notes never clobber each other.
+        days:      _mergeDays(localProj.days, cloudProj.days)
       });
+  if (!mergedProj.days || !Object.keys(mergedProj.days).length) delete mergedProj.days;
   // Environmental screenshots are stored as base64 on the device and never
   // sent to Cosmos — carry local ones forward or the merge erases them.
   if (!projDirty && localProj.envData && Array.isArray(localProj.envData.screenshots) && localProj.envData.screenshots.length) {
@@ -5511,6 +5587,7 @@ function navToProject(pid,fid)    {
   stack = _folderChain(fid);
   stack.push({view:'project',folderId:fid||'',projectId:pid});
   render();
+  _dayMaybePromptContinue(pid);
 }
 function navToSI(pid,sid) {
   const cur = route();
@@ -5736,6 +5813,7 @@ function showPhoneMenu() {
     html += `<div class="pm-section">This item${si ? ' · ' + _htmlEsc(si.num) : ''}</div>`;
     html += row('‹', 'Previous item', '', `navSI('${pid}','${sid}',-1)`);
     html += row('›', 'Next item', '', `navSI('${pid}','${sid}',1)`);
+    html += row('📧', 'AFQC Report', 'Send a field issue to the AFQC inbox', `showAfqcModal('${pid}','${sid}')`);
     html += row('📋', 'Duplicate', 'Copy this item into the same section', `duplicateSI('${pid}','${sid}')`);
     if (proj.sections.length > 1) html += row('📂', 'Move to Section…', '', `showMoveSISectionModal('${pid}','${sid}')`);
     html += row('🗑', 'Delete Scope Item', '', `confirmDeleteSI('${pid}','${sid}')`).replace('class="pm-row"', 'class="pm-row pm-danger"');
@@ -6003,10 +6081,11 @@ function renderLeft(r) {
     title.textContent='SCOPE ITEMS';
     const proj = getProject(r.projectId);
     if (!proj) { scroll.innerHTML = emptyMsg('Project not found'); return; }
-    let html='';
+    let html=_dayBarHTML(proj);
+    const _selDay=_dayGet(proj.id);
     const sortActive = _siSort !== 'manual';
     proj.sections.forEach(sec=>{
-      const items=proj.items.filter(i=>!i._deleted&&i.sectionId===sec.id&&(!q||
+      const items=proj.items.filter(i=>!i._deleted&&i.sectionId===sec.id&&(!_dayRemainingOnly||!_itemShotOn(i,_selDay))&&(!q||
         i.title.toLowerCase().includes(q)||
         i.num.toLowerCase().includes(q)||
         (i.notes||'').toLowerCase().includes(q)||
@@ -6019,10 +6098,12 @@ function renderLeft(r) {
         items.sort((a,b) => dir * String(_siSort==='num'?a.num:a.title)
           .localeCompare(String(_siSort==='num'?b.num:b.title), undefined, {numeric:true, sensitivity:'base'}));
       }
-      if(!items.length&&q) return;
+      if(!items.length&&(q||_dayRemainingOnly)) return;
       html+=`<div class="section-group">${sec.name}<span class="section-count">${items.length}</span></div>`;
       items.forEach(item=>{
-        const thumbSrc=item.photos.length?getPhotoSrcForDisplay(item.photos[0]):null;
+        // Thumbnail = first photo of the selected day; none yet shows the camera
+        const dayPhoto=item.photos.find(p=>_photoDay(p)===_selDay);
+        const thumbSrc=dayPhoto?getPhotoSrcForDisplay(dayPhoto):null;
         const thumb=thumbSrc?`<img src="${thumbSrc}" loading="lazy" />`:`<span>📷</span>`;
         const tw = item.towerWork;
         const twEnabled = tw && tw.enabled && tw.rooms && tw.rooms.length > 0;
@@ -6057,6 +6138,8 @@ function renderLeft(r) {
     // Phone: a project with no items at all gets a real empty state with an
     // "add" call to action instead of bare section headers with zero counts.
     if (isPhone && !q && !proj.items.some(i => !i._deleted)) html = _phoneEmptySI(proj.id);
+    else if (_dayRemainingOnly && !q && !proj.sections.some(sec => proj.items.some(i => !i._deleted && i.sectionId === sec.id && !_itemShotOn(i, _selDay))))
+      html += emptyMsg('✓ Every scope item has photos for ' + _dayLabel(_selDay));
     scroll.innerHTML = html || (q ? emptySearch(q) : emptyMsg('No items'));
     return;
   }
@@ -8111,9 +8194,9 @@ function buildSIEditor(pid,sid) {
   const customTags = item.customTags || [];
   const allTags = [...builtinTags];
 
-  const photosHTML = item.photos.length===0
-    ? `<div class="photo-empty"><div class="photo-empty-icon">📷</div>No photos yet</div>`
-    : item.photos.map((p,i)=>{
+  // Photos are shown for the selected site-visit day; other days collapse
+  // below (see _siDayPhotosHTML). Indices stay indices into item.photos.
+  const photoCell = (p,i)=>{
         const src = getPhotoSrcForDisplay(p); // local Blob preferred; falls back to Azure URL/base64
         const dateLabel = p.takenAt ? `<div class="photo-date-label">${p.takenAt}</div>` : '';
         const body = src
@@ -8132,7 +8215,8 @@ function buildSIEditor(pid,sid) {
           </div>
           ${dateLabel}
         </div>`;
-      }).join('');
+      };
+  const dayPh = _siDayPhotosHTML(pid, sid, item, photoCell);
 
   document.getElementById('v-si').innerHTML=`
     <div class="edit-header">
@@ -8164,6 +8248,10 @@ function buildSIEditor(pid,sid) {
             title="${s.label.replace(/^.\s/,'')}"
             onclick="setStatus('${pid}','${sid}','${s.key}')">${s.label}</div>`).join('')}
       </div>
+      <div class="afqc-row">
+        <button class="afqc-btn" onclick="showAfqcModal('${pid}','${sid}')">📧 AFQC Report</button>
+        ${_afqcLastHTML(item)}
+      </div>
       <div style="margin-top:14px">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px">
           <div class="field-label" style="margin-bottom:0">Section Progress</div>
@@ -8177,12 +8265,14 @@ function buildSIEditor(pid,sid) {
     <div class="edit-body" id="edit-body">
       <div class="field-group" id="si-progress-group">${_siProgressHTML(pid, sid)}</div>
       <div class="field-group">
-        <div class="field-label">Field Photos (${item.photos.length})</div>
+        <div class="field-label">Field Photos · ${_dayLabel(dayPh.day)} (${dayPh.count})</div>
+        ${dayPh.day !== _todayISO() ? `<div class="day-warn" style="margin-bottom:8px">📅 New photos go to <strong>${_dayLabel(dayPh.day, true)}</strong> — not today</div>` : ''}
         <div class="photo-actions">
           <button class="btn-photo camera" onclick="triggerCamera('${pid}','${sid}')">📷 Camera</button>
           <button class="btn-photo import" onclick="triggerImport('${pid}','${sid}')">🖼 Import</button>
         </div>
-        <div class="photo-grid">${photosHTML}</div>
+        ${dayPh.grid}
+        ${dayPh.others}
       </div>
           <div class="field-group">
             <div class="field-label" style="display:flex;align-items:center;justify-content:space-between">Field Notes / Observations
@@ -10245,7 +10335,7 @@ function handleFileImport(e) {
               ? ((curItem.towerWork && curItem.towerWork.rooms) || []).find(r => r.id === _pt.roomId)
               : null;
             if (_pt.roomId && !curRoom) { _importFail(file); return; }
-            const photoEntry = {data: blob, caption: '', takenAt};
+            const photoEntry = {data: blob, caption: '', takenAt, day: _dayGet(_pt.pid)};
             const targetList = curRoom ? (curRoom.photos = curRoom.photos || []) : (curItem.photos = curItem.photos || []);
             targetList.push(photoEntry);
             _logActivity(_pt.pid,{type:'photo',siId:_pt.sid,siNum:curItem.num,detail: curRoom?`Room ${curRoom.number} photo ${targetList.length}`:`Photo ${curItem.photos.length}`,by:_whoAmI()});
@@ -12097,7 +12187,7 @@ function _admRenderActivity() {
     ((e.by || '') + ' ' + (e.detail || '') + ' ' + (e.type || '') + ' ' + (e.siNum || '') + ' ' + e._pname).toLowerCase().includes(q));
   const shown = entries.slice(0, 300);
 
-  const icons = { photo: '📷', status: '🚦', note: '📝', si: '📋', delete: '🗑' };
+  const icons = { photo: '📷', status: '🚦', note: '📝', si: '📋', delete: '🗑', afqc: '📧' };
   const rows = shown.map(e => `
     <div class="adm-row">
       <span style="font-size:15px">${icons[e.type] || '•'}</span>
@@ -12530,6 +12620,19 @@ function showShareModal() {
   let _rgInclLabor     = true;
   let _rgInclAttach    = true;
   let _rgInclFloorPlan = true;
+  // Day-by-day: which site-visit day(s) the report covers. Defaults to the
+  // project's selected day when it has photos, otherwise every day (so an
+  // older project exports exactly as it always did).
+  const _rgSelDay   = _dayGet(proj.id);
+  let _rgDayType    = _dayStats(proj)[_rgSelDay] ? 'day' : 'all';   // day | range | all
+  let _rgDay        = _rgSelDay;
+  let _rgDayFrom    = _dayMonday(_rgSelDay);
+  let _rgDayTo      = _rgSelDay;
+  let _rgOnlyShot   = true;
+  const _rgDayMode  = () => _rgDayType === 'day'   ? { type:'day', day:_rgDay, onlyShot:_rgOnlyShot }
+                          : _rgDayType === 'range' ? { type:'range', from:_rgDayFrom <= _rgDayTo ? _rgDayFrom : _rgDayTo,
+                                                       to:_rgDayFrom <= _rgDayTo ? _rgDayTo : _rgDayFrom, onlyShot:_rgOnlyShot }
+                          : { type:'all' };
 
   // Section collapse state
   const _sec = { style:true, cover:true, images:false, include:false, branding:false };
@@ -12567,6 +12670,7 @@ function showShareModal() {
     get inclLabor()    { return _rgInclLabor; },
     get inclAttach()   { return _rgInclAttach; },
     get inclFloorPlan(){ return _rgInclFloorPlan; },
+    get dayMode()      { return _rgDayMode(); },
   };
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -12587,7 +12691,7 @@ function showShareModal() {
       return '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#64748b;font-size:12px">Loading preview…</div>';
     }
     const co = window.getActiveCompany?.() || ADH_COMPANIES[0];
-    const html = window.buildPDFPreviewHTML(proj, {
+    const html = window.buildPDFPreviewHTML(window._reportDayView(proj, _rgDayMode()), {
       style:       _rgStyle,
       filter:      _rgFilter,
       inclCover:   _rgInclCover,
@@ -12626,6 +12730,27 @@ function showShareModal() {
     return `
       <div class="rg-sidebar-topbar">
         <span style="font-size:14px">✏️</span> Edit Report
+      </div>
+
+      <!-- REPORT DAY (day-by-day site reports) -->
+      <div class="rg-day-box">
+        <div class="rg-day-title">📅 Report Day</div>
+        <div class="rg-filter-tabs" style="border:1px solid var(--border);border-radius:7px;overflow:hidden">
+          ${[['day','One day'],['range','Date range'],['all','All days']].map(([v,l])=>`
+            <div class="rg-tab ${_rgDayType===v?'active':''}" onclick="window._rgSetDay('type','${v}')">${l}</div>`).join('')}
+        </div>
+        ${_rgDayType==='day' ? `
+          <input class="field-input rg-day-input" type="date" value="${_rgDay}" onchange="window._rgSetDay('day',this.value)">` : ''}
+        ${_rgDayType==='range' ? `
+          <div style="display:flex;gap:6px;align-items:center">
+            <input class="field-input rg-day-input" type="date" value="${_rgDayFrom}" onchange="window._rgSetDay('from',this.value)">
+            <span style="color:var(--text3);font-size:11px">to</span>
+            <input class="field-input rg-day-input" type="date" value="${_rgDayTo}" onchange="window._rgSetDay('to',this.value)">
+          </div>` : ''}
+        ${_rgDayType!=='all' ? `
+          <label class="rg-check-row" style="padding:2px 0"><input type="checkbox" ${_rgOnlyShot?'checked':''} onchange="window._rgSetDay('onlyShot',this.checked)"> Only SIs photographed ${_rgDayType==='day'?'that day':'in that range'}</label>
+          <div style="font-size:10px;color:var(--text3);line-height:1.4">Photos from other days are left out unless an SI has "Include previous days' pictures" turned on.${_rgDayType==='day'?' Exporting marks the day finished.':''}</div>` : `
+          <div style="font-size:10px;color:var(--text3);line-height:1.4">Every photo from every day — the same report as before day-by-day.</div>`}
       </div>
 
       <!-- FILTER TABS -->
@@ -12895,6 +13020,15 @@ function showShareModal() {
   // ── Global handlers ────────────────────────────────────────────────────────
   window._rgRebuildAll     = () => { _rebuildSidebar(); _rebuildPreview(); };
   window._rgSetFilter      = v  => { _rgFilter  = v; _rebuildSidebar(); _rebuildPreview(); };
+  window._rgSetDay         = (k, v) => {
+    if (k === 'type') _rgDayType = v;
+    else if (k === 'onlyShot') _rgOnlyShot = !!v;
+    else if (!/^\d{4}-\d{2}-\d{2}$/.test(v || '')) return;
+    else if (k === 'day') _rgDay = v;
+    else if (k === 'from') _rgDayFrom = v;
+    else if (k === 'to') _rgDayTo = v;
+    _rebuildSidebar(); _rebuildPreview();
+  };
   window._rgSetStyle       = v  => { _rgStyle   = v; _rebuildSidebar(); _rebuildPreview(); };
   window._rgSetImgSize     = v  => { _rgImgSize = v; _rebuildSidebar(); _rebuildPreview(); };
   window._rgSetImgQual     = v  => { _rgImgQual = v; _rebuildSidebar(); _rebuildPreview(); };
@@ -13317,6 +13451,9 @@ function showPhotoMenu(e,pid,sid,idx) {
     <div class="ctx-item" onclick="closeCtxMenu();openAnnotation('${pid}','${sid}',${idx})">
       <span class="ctx-icon">🖊️</span> Markup
     </div>
+    <div class="ctx-item" onclick="closeCtxMenu();movePhotoToDay('${pid}','${sid}',${idx})">
+      <span class="ctx-icon">📅</span> Move to day…
+    </div>
     <div class="ctx-divider"></div>
     <div class="ctx-item danger" onclick="closeCtxMenu();deletePhoto('${pid}','${sid}',${idx})">
       <span class="ctx-icon">🗑</span> Delete Photo
@@ -13328,7 +13465,7 @@ function showPhotoMenu(e,pid,sid,idx) {
   let left=rect.right-mw;
   let top=rect.bottom+6;
   if(left<8) left=8;
-  if(top+110>window.innerHeight) top=rect.top-110;
+  if(top+150>window.innerHeight) top=rect.top-150;
   menu.style.left=left+'px';
   menu.style.top=top+'px';
 }
@@ -13360,6 +13497,7 @@ function showSIMenu(e,pid,sid) {
     <div class="ctx-item" style="pointer-events:none;opacity:0.55"><span class="ctx-icon">↕️</span> Switch to Manual sort to reorder</div>`}
     ${multiSec?`<div class="ctx-item" onclick="closeCtxMenu();showMoveSISectionModal('${pid}','${sid}')"><span class="ctx-icon">📂</span> Move to Section…</div>`:''}
     <div class="ctx-divider"></div>
+    <div class="ctx-item" onclick="closeCtxMenu();showAfqcModal('${pid}','${sid}')"><span class="ctx-icon">📧</span> AFQC Report</div>
     <div class="ctx-item" onclick="closeCtxMenu();duplicateSI('${pid}','${sid}')"><span class="ctx-icon">📋</span> Duplicate</div>
     <div class="ctx-divider"></div>
     <div class="ctx-item danger" onclick="closeCtxMenu();confirmDeleteSI('${pid}','${sid}')"><span class="ctx-icon">🗑</span> Delete</div>`;
@@ -13547,6 +13685,11 @@ async function duplicateProject(pid,fid,opts) {
   // A duplicate belongs to whoever made it (the source may be foreign-owned,
   // and foreign-owned projects are never pushed or indexed for this user).
   newProj.ownedBy = _currentUser?.userId || '';
+  // One Innergy job = one app project: the copy is app-local, so the
+  // original stays the job's project for imports and the weekly drift check.
+  delete newProj.innergyId; delete newProj.innergyLastCheck; delete newProj.innergyIgnoredWOs;
+  // Site-visit days (notes, finished flags) belong to the original's visits
+  delete newProj.days;
   // Don't copy tombstoned (deleted) scope items into the fresh copy
   newProj.items = newProj.items.filter(i => !i._deleted);
 
@@ -15079,7 +15222,7 @@ function _buildLaborLogPanelHTML(pid, sid) {
       <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:flex-end">
         <div style="display:flex;flex-direction:column;gap:3px">
           <label style="font-size:10px;font-family:var(--mono);color:var(--text3)">DATE</label>
-          <input type="date" id="mp-date-${sid}" value="${_todayISO()}"
+          <input type="date" id="mp-date-${sid}" value="${_dayGet(pid)}"
             style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:6px 9px;font-size:12px;color:var(--text);outline:none;width:140px"
             onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'" />
         </div>
@@ -16294,8 +16437,8 @@ function navToActivity(pid){
   stack.push({view:'activity',folderId:cur.folderId||'',projectId:pid});
   render();
 }
-const _actTypeLabel={status:'Status Change',note:'Note Saved',photo:'Photo Added',attach:'File Attached'};
-const _actTypeDot  ={status:'status',note:'note',photo:'photo',attach:'attach'};
+const _actTypeLabel={status:'Status Change',note:'Note Saved',photo:'Photo Added',attach:'File Attached',afqc:'AFQC Sent'};
+const _actTypeDot  ={status:'status',note:'note',photo:'photo',attach:'attach',afqc:'note'};
 window.confirmClearActivityLog = function(pid){
   const proj = getProject(pid); if(!proj) return;
   makeModal('Clear Activity Log', `
@@ -16350,6 +16493,530 @@ function buildActivityView(pid){
 }
 
 // ══════════════════════════════════════════════════════════════════
+// FEATURE: Day-by-day site reports
+// A project is ONE job for its whole life — no more duplicating it per site
+// visit. Photos are filed under the day they were taken for (photo.day,
+// YYYY-MM-DD); everything else (status, field check, notes, tags) is shared
+// across days. Per-day data — the daily note and the "finished" flag — lives
+// in proj.days and merges day by day (newest ts wins, client and server).
+// The selected day is per device (localStorage) and resets to today each
+// morning; an unfinished recent day triggers a "continue it?" prompt.
+// ══════════════════════════════════════════════════════════════════
+const _DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function _dayKey(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function _dayParse(key) { const [y, m, d] = key.split('-').map(Number); return new Date(y, m - 1, d); }
+function _dayAdd(key, n) { const d = _dayParse(key); d.setDate(d.getDate() + n); return _dayKey(d); }
+function _dayMonday(key) { const d = _dayParse(key); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return _dayKey(d); }
+/** 'Wed Oct 28' — or 'Wed Oct 28, 2026' with withYear */
+function _dayLabel(key, withYear) {
+  if (!key || !_DAY_RE.test(key)) return key || '';
+  return _dayParse(key).toLocaleDateString('en-US',
+    withYear ? { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }
+             : { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+/** Day a photo belongs to: its explicit tag, else the date it was taken.
+ *  takenAt is "MM/DD/YYYY HH:MM" (EXIF / file date) on every capture path;
+ *  ISO and anything Date.parse understands are accepted as a fallback. */
+function _photoDay(p) {
+  if (!p) return '';
+  if (p.day && _DAY_RE.test(p.day)) return p.day;
+  const t = String(p.takenAt || '');
+  let m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return m[3] + '-' + m[1].padStart(2, '0') + '-' + m[2].padStart(2, '0');
+  m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return m[1] + '-' + m[2] + '-' + m[3];
+  const d = t ? new Date(t) : null;
+  return d && !isNaN(d) ? _dayKey(d) : '';
+}
+
+// ── Selected day (per device, per project) ─────────────────────────────────
+function _dayGet(pid) {
+  try {
+    const s = JSON.parse(localStorage.getItem('adh_day_' + pid) || 'null');
+    if (s && s.on === _todayISO() && _DAY_RE.test(s.day)) return s.day;
+  } catch (e) {}
+  return _todayISO();
+}
+function _daySet(pid, day) {
+  try { localStorage.setItem('adh_day_' + pid, JSON.stringify({ day, on: _todayISO() })); } catch (e) {}
+}
+const _dayWeekShown = {};   // pid → Monday of the week the bar shows
+let _dayRemainingOnly = false;
+
+// ── Per-day project data ───────────────────────────────────────────────────
+function _mergeDays(a, b) {
+  const out = Object.assign({}, a || {});
+  Object.entries(b || {}).forEach(([k, v]) => {
+    if (!v || typeof v !== 'object') return;
+    if (!out[k] || (v.ts || 0) >= (out[k].ts || 0)) out[k] = v;
+  });
+  return out;
+}
+function _dayMeta(proj, day) { return (proj && proj.days && proj.days[day]) || {}; }
+function _dayPatch(pid, day, patch) {
+  const proj = getProject(pid); if (!proj) return;
+  proj.days = proj.days || {};
+  proj.days[day] = Object.assign({}, proj.days[day], patch, { ts: Date.now() });
+  markProjectDirty(pid); save();
+}
+window._dayMarkFinished = function (pid, day, how) {
+  const proj = getProject(pid); if (!proj || _dayMeta(proj, day).finishedAt) return;
+  _dayPatch(pid, day, { finishedAt: Date.now(), finishedBy: _whoAmI(), finishedHow: how || 'manual' });
+  if (route().projectId === pid) renderLeft(route());
+};
+
+function _dayEachPhoto(item, fn) {
+  (item.photos || []).forEach(fn);
+  ((item.towerWork && item.towerWork.rooms) || []).forEach(r => (r.photos || []).forEach(fn));
+}
+/** day → { photos, items:Set<itemId> } over the project's live items */
+function _dayStats(proj) {
+  const st = {};
+  activeItems(proj).forEach(it => _dayEachPhoto(it, p => {
+    const d = _photoDay(p); if (!d) return;
+    const s = st[d] || (st[d] = { photos: 0, items: new Set() });
+    s.photos++; s.items.add(it.id);
+  }));
+  return st;
+}
+function _itemShotOn(item, day) {
+  let hit = false;
+  _dayEachPhoto(item, p => { if (!hit && _photoDay(p) === day) hit = true; });
+  return hit;
+}
+
+// ── Week bar (top of the scope-item list — the project page on phones) ────
+function _dayBarHTML(proj) {
+  const pid = proj.id, today = _todayISO(), sel = _dayGet(pid);
+  const mon = _dayWeekShown[pid] || _dayMonday(sel);
+  const stats = _dayStats(proj);
+  const total = activeItems(proj).length;
+  const shot = (stats[sel] && stats[sel].items.size) || 0;
+  const meta = _dayMeta(proj, sel);
+  const pills = Array.from({ length: 7 }, (_, i) => {
+    const d = _dayAdd(mon, i), dt = _dayParse(d), n = (stats[d] && stats[d].photos) || 0;
+    const cls = ['day-pill', d === sel ? 'sel' : '', d === today ? 'today' : '',
+      _dayMeta(proj, d).finishedAt ? 'done' : ''].join(' ');
+    return `<button class="${cls}" onclick="_daySelect('${pid}','${d}')" title="${_dayLabel(d, true)}">
+      <span class="dp-name">${dt.toLocaleDateString('en-US', { weekday: 'short' })}</span>
+      <span class="dp-date">${dt.getDate()}</span>
+      <span class="dp-count">${n ? n : '·'}</span>
+    </button>`;
+  }).join('');
+  const sun = _dayAdd(mon, 6);
+  const range = _dayParse(mon).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' – ' +
+    _dayParse(sun).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `<div class="day-bar" onclick="event.stopPropagation()">
+    <div class="day-bar-top">
+      <button class="day-nav" onclick="_dayWeek('${pid}',-1)" title="Previous week">‹</button>
+      <span class="day-range">${range}</span>
+      <button class="day-nav" onclick="_dayWeek('${pid}',1)" title="Next week">›</button>
+      ${sel !== today || mon !== _dayMonday(today) ? `<button class="day-today" onclick="_daySelect('${pid}','${today}')">Today</button>` : ''}
+    </div>
+    <div class="day-pills">${pills}</div>
+    <div class="day-info">
+      <span class="day-info-label">${_dayLabel(sel)}</span>
+      <span class="day-info-count">${shot}/${total} SIs shot</span>
+      <span style="flex:1"></span>
+      <button class="day-chip ${_dayRemainingOnly ? 'on' : ''}" onclick="_dayToggleRemaining()" title="Show only scope items with no photos for this day">Remaining</button>
+      <button class="day-chip ${meta.note ? 'on' : ''}" onclick="_dayEditNote('${pid}')" title="Daily note for this day's report">📝 Note</button>
+      ${meta.finishedAt
+        ? `<button class="day-chip done" onclick="_dayReopen('${pid}','${sel}')" title="Finished ${new Date(meta.finishedAt).toLocaleString()}${meta.finishedBy ? ' by ' + _htmlEsc(meta.finishedBy) : ''} — tap to reopen">✓ Finished</button>`
+        : `<button class="day-chip" onclick="_dayFinish('${pid}','${sel}')" title="Mark this day's site visit finished">✓ Finish day</button>`}
+    </div>
+    ${sel !== today ? `<div class="day-warn">📅 New photos go to <strong>${_dayLabel(sel, true)}</strong> — not today</div>` : ''}
+  </div>`;
+}
+
+function _dayRefresh(pid) {
+  const r = route();
+  renderLeft(r);
+  if (r.view === 'si' && r.projectId === pid && r.siId) buildSIEditor(pid, r.siId);
+}
+window._daySelect = function (pid, day) {
+  const r = route();
+  if (r.view === 'si' && r.projectId === pid && r.siId) _doSave(pid, r.siId, false);
+  _daySet(pid, day);
+  _dayWeekShown[pid] = _dayMonday(day);
+  _dayRefresh(pid);
+};
+window._dayWeek = function (pid, dir) {
+  _dayWeekShown[pid] = _dayAdd(_dayWeekShown[pid] || _dayMonday(_dayGet(pid)), 7 * dir);
+  renderLeft(route());
+};
+window._dayToggleRemaining = function () { _dayRemainingOnly = !_dayRemainingOnly; renderLeft(route()); };
+window._dayFinish = function (pid, day) {
+  window._dayMarkFinished(pid, day, 'manual');
+  showToast(`✓ ${_dayLabel(day)} marked finished`, 'green');
+};
+window._dayReopen = function (pid, day) {
+  makeModal('Reopen day?', `<div style="font-size:13px;line-height:1.5">${_dayLabel(day, true)} is marked finished. Reopen it?
+    <div style="font-size:11px;color:var(--text3);margin-top:8px">You can always add photos to a finished day — reopening only brings back the "continue this day?" prompt.</div></div>`, () => {
+    _dayPatch(pid, day, { finishedAt: null, finishedBy: null, finishedHow: null });
+    closeModal(); renderLeft(route());
+  });
+};
+window._dayEditNote = function (pid) {
+  const proj = getProject(pid); if (!proj) return;
+  const day = _dayGet(pid), meta = _dayMeta(proj, day);
+  makeModal('📝 Daily Note · ' + _dayLabel(day), `
+    <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Printed at the top of ${_dayLabel(day, true)}'s report — weather, crew on site, what got done, anything the office should know.</div>
+    <textarea class="field-input" id="day-note-input" style="min-height:160px" placeholder="e.g. Clear, 58°F. 4 installers on site. Finished casework on L2, waiting on GC for L3 blocking.">${_esc(meta.note || '')}</textarea>`, () => {
+    const note = (document.getElementById('day-note-input')?.value || '').trim();
+    if (note !== (meta.note || '')) _dayPatch(pid, day, { note });
+    closeModal(); renderLeft(route());
+    showToast(note ? '✓ Daily note saved' : 'Daily note cleared', 'green');
+  });
+};
+
+// ── "Continue yesterday?" prompt ────────────────────────────────────────────
+// Opening a project on a new day, when the most recent visit day in the last
+// week has photos but was never finished, asks whether to keep adding to it.
+// Asked once per project per day; choosing either answer sets today's day.
+function _dayMaybePromptContinue(pid) {
+  const proj = getProject(pid); if (!proj) return;
+  const today = _todayISO();
+  try {
+    if (localStorage.getItem('adh_daycont_' + pid) === today) return;
+    const s = JSON.parse(localStorage.getItem('adh_day_' + pid) || 'null');
+    if (s && s.on === today) return;   // already picked a day today
+  } catch (e) { return; }
+  const stats = _dayStats(proj);
+  if (stats[today]) return;            // already shooting today
+  const weekAgo = _dayAdd(today, -7);
+  const last = Object.keys(stats).filter(d => d < today && d >= weekAgo).sort().pop();
+  if (!last || _dayMeta(proj, last).finishedAt) return;
+  try { localStorage.setItem('adh_daycont_' + pid, today); } catch (e) {}
+  const shot = stats[last].items.size, total = activeItems(proj).length;
+  makeModal('Continue ' + _dayLabel(last) + '?', `
+    <div style="font-size:13px;line-height:1.55;margin-bottom:14px">
+      <strong>${_dayLabel(last, true)}</strong> isn't finished — <strong>${shot} of ${total}</strong> scope items photographed.
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn-project-cta" style="max-width:none" onclick="closeModal();_daySelect('${pid}','${last}')">Continue ${_dayLabel(last)}</button>
+      <button class="btn-nav" style="text-align:center" onclick="closeModal();_daySelect('${pid}','${today}')">Start ${_dayLabel(today)}</button>
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-top:12px">Continuing files new photos under ${_dayLabel(last)}; each photo still keeps its real time stamp.</div>`, null, true);
+}
+
+// ── SI editor: photos for the selected day, other days collapsed ───────────
+function _siDayPhotosHTML(pid, sid, item, cellHTML) {
+  const day = _dayGet(pid);
+  const photos = item.photos || [];
+  const mine = [], other = {};
+  photos.forEach((p, i) => {
+    const d = _photoDay(p);
+    if (d === day) mine.push(i);
+    else (other[d || 'undated'] = other[d || 'undated'] || []).push(i);
+  });
+  const otherDays = Object.keys(other).sort().reverse();   // newest first, 'undated' last
+  if (otherDays[0] === 'undated') otherDays.push(otherDays.shift());
+  const nOther = photos.length - mine.length;
+  const carry = new Set(((item.carryDays || {})[day]) || []);
+  const carryOn = carry.size > 0;
+  const grid = mine.length
+    ? `<div class="photo-grid">${mine.map(i => cellHTML(photos[i], i)).join('')}</div>`
+    : `<div class="photo-empty"><div class="photo-empty-icon">📷</div>No photos for ${_dayLabel(day)} yet</div>`;
+  const others = !nOther ? '' : `
+    <details class="day-other" ${window._siOtherOpen ? 'open' : ''} ontoggle="window._siOtherOpen=this.open">
+      <summary>Other days (${nOther})</summary>
+      <label class="day-carry">
+        <input type="checkbox" ${carryOn ? 'checked' : ''} onchange="_siCarryToggle('${pid}','${sid}',this.checked)">
+        Include previous days' pictures in ${_dayLabel(day)}'s report
+      </label>
+      ${otherDays.map(d => `
+        <div class="day-other-group">
+          <div class="day-other-head">
+            ${carryOn && d !== 'undated' ? `<input type="checkbox" ${carry.has(d) ? 'checked' : ''} onchange="_siCarryDay('${pid}','${sid}','${d}',this.checked)" title="Include in ${_dayLabel(day)}'s report">` : ''}
+            <span>${d === 'undated' ? 'Undated' : _dayLabel(d, true)}</span>
+            <span class="day-other-n">${other[d].length} photo${other[d].length !== 1 ? 's' : ''}</span>
+          </div>
+          <div class="photo-grid day-other-grid">${other[d].map(i => cellHTML(photos[i], i)).join('')}</div>
+        </div>`).join('')}
+    </details>`;
+  return { grid, others, count: mine.length, day };
+}
+window._siCarryToggle = function (pid, sid, on) {
+  const item = getSI(pid, sid); if (!item) return;
+  const day = _dayGet(pid);
+  const carryDays = Object.assign({}, item.carryDays || {});
+  if (on) {
+    // Default to every earlier day that has photos; untick the ones you don't want
+    const days = new Set();
+    (item.photos || []).forEach(p => { const d = _photoDay(p); if (d && d !== day) days.add(d); });
+    carryDays[day] = [...days].sort();
+  } else delete carryDays[day];
+  markDirtyAndSave(item, { carryDays });
+  window._siOtherOpen = true;
+  buildSIEditor(pid, sid);
+};
+window._siCarryDay = function (pid, sid, d, on) {
+  const item = getSI(pid, sid); if (!item) return;
+  const day = _dayGet(pid);
+  const carryDays = Object.assign({}, item.carryDays || {});
+  const set = new Set(carryDays[day] || []);
+  on ? set.add(d) : set.delete(d);
+  if (set.size) carryDays[day] = [...set].sort(); else delete carryDays[day];
+  markDirtyAndSave(item, { carryDays });
+  window._siOtherOpen = true;
+  buildSIEditor(pid, sid);
+};
+
+// ── Move a photo to another day ─────────────────────────────────────────────
+window.movePhotoToDay = function (pid, sid, idx) {
+  if (_photoIdxStale()) return;
+  const item = getSI(pid, sid); const ph = item && item.photos && item.photos[idx];
+  if (!ph) return;
+  makeModal('📅 Move photo to day', `
+    <div class="field-group"><div class="field-label">File this photo under</div>
+      <input class="field-input" type="date" id="mv-day" value="${_photoDay(ph) || _dayGet(pid)}"></div>
+    <div style="font-size:11px;color:var(--text3)">The photo's own time stamp (${_htmlEsc(ph.takenAt || 'none')}) doesn't change.</div>`, () => {
+    const d = document.getElementById('mv-day')?.value;
+    if (!d || !_DAY_RE.test(d)) return showToast('Pick a date');
+    const cur = getSI(pid, sid); const p = cur && cur.photos && cur.photos[idx];
+    if (!p) return closeModal();
+    p.day = d;
+    markAsDirty(sid); scheduleDirtySync();
+    closeModal(); buildSIEditor(pid, sid); renderLeft(route());
+    showToast(`✓ Photo moved to ${_dayLabel(d)}`, 'green');
+  });
+};
+
+// ── Report view: the project as one day / date range sees it ──────────────
+// mode: { type:'all' } | { type:'day', day } | { type:'range', from, to },
+// plus onlyShot — drop scope items with no photos in the report.
+// Each SI's "include previous days" picks (item.carryDays[reportDay]) add
+// those days' photos. Undated photos only appear in an all-days report.
+window._reportDayView = function (proj, mode) {
+  if (!proj || !mode || mode.type === 'all') return proj;
+  let days;
+  if (mode.type === 'day') days = [mode.day];
+  else {
+    days = [];
+    for (let d = mode.from; d <= mode.to && days.length < 93; d = _dayAdd(d, 1)) days.push(d);
+  }
+  const inReport = new Set(days);
+  const items = (proj.items || []).map(it => {
+    if (it._deleted) return it;
+    const extra = new Set();
+    days.forEach(rd => (((it.carryDays || {})[rd]) || []).forEach(d => extra.add(d)));
+    const keep = p => { const d = _photoDay(p); return !!d && (inReport.has(d) || extra.has(d)); };
+    const out = Object.assign({}, it, { photos: (it.photos || []).filter(keep) });
+    if (it.towerWork && it.towerWork.rooms) {
+      out.towerWork = Object.assign({}, it.towerWork, {
+        rooms: it.towerWork.rooms.map(r => Object.assign({}, r, { photos: (r.photos || []).filter(keep) }))
+      });
+    }
+    return out;
+  }).filter(it => {
+    if (it._deleted || !mode.onlyShot) return true;
+    let n = 0; _dayEachPhoto(it, () => n++);
+    return n > 0;
+  });
+  const label = mode.type === 'day'
+    ? _dayLabel(mode.day, true)
+    : _dayLabel(mode.from) + ' – ' + _dayLabel(mode.to, true);
+  const notes = days.map(d => ({ day: d, label: _dayLabel(d, true), note: (_dayMeta(proj, d).note || '').trim() }))
+    .filter(n => n.note);
+  return Object.assign({}, proj, { items, date: label, _dayLabel: label, _dayNotes: notes });
+};
+
+// ══════════════════════════════════════════════════════════════════
+// FEATURE: AFQC report (Allegheny Field Quality Check)
+// One button on the SI → pick a category, describe the issue, tick photos,
+// Send. /api/sendAfqc mails it to the AFQC inbox through Microsoft 365
+// (recipient fixed server-side). Until that's configured — or when offline —
+// it falls back to the device's Mail app / share sheet. Every report is
+// logged on the SI (item.afqcLog) and in the project activity feed.
+// ══════════════════════════════════════════════════════════════════
+const _AFQC_TO   = 'afqc@alleghenymillwork.com';
+const _AFQC_CATS = ['Shipping', 'Material', 'Drafting', 'Special Purchasing', 'Production', 'Hardware', 'Install', 'Other'];
+const _AFQC_MAX_PHOTOS = 8;
+
+function _afqcLastHTML(item) {
+  const last = (item.afqcLog || [])[0];
+  if (!last) return '';
+  return `<span class="afqc-last">Last: ${_htmlEsc(last.category)} · ${new Date(last.at).toLocaleDateString()}${last.by ? ' · ' + _htmlEsc(last.by) : ''}</span>`;
+}
+
+window.showAfqcModal = function (pid, sid) {
+  const proj = getProject(pid), item = getSI(pid, sid);
+  if (!proj || !item) return;
+  if (route().view === 'si' && route().siId === sid) _doSave(pid, sid, false);
+  const day = _dayGet(pid);
+  const photos = (item.photos || []).map((p, i) => ({ p, i })).filter(x => getPhotoSrcForDisplay(x.p));
+  // Pre-tick the selected day's photos (newest visit), up to the attachment cap
+  const pre = new Set(photos.filter(x => _photoDay(x.p) === day).slice(0, _AFQC_MAX_PHOTOS).map(x => x.i));
+  let email = ''; try { email = localStorage.getItem('adh_afqc_email') || ''; } catch (e) {}
+  makeModal('📧 AFQC Report', `
+    <div class="afqc-target">To <strong>${_AFQC_TO}</strong> · ${_htmlEsc(item.num)} ${_htmlEsc(item.title || '')}</div>
+    <div class="field-group"><div class="field-label">Category</div>
+      <div class="afqc-cats">${_AFQC_CATS.map((c, i) => `
+        <label class="afqc-cat"><input type="radio" name="afqc-cat" value="${c}" ${i === 0 ? 'checked' : ''}><span>${c}</span></label>`).join('')}
+      </div></div>
+    <div class="field-group"><div class="field-label">Priority</div>
+      <div class="afqc-cats">
+        <label class="afqc-cat"><input type="radio" name="afqc-pri" value="Normal" checked><span>Normal</span></label>
+        <label class="afqc-cat urgent"><input type="radio" name="afqc-pri" value="Urgent"><span>Urgent</span></label>
+      </div></div>
+    <div class="field-group"><div class="field-label">What's the issue?</div>
+      <textarea class="field-input" id="afqc-desc" style="min-height:110px" placeholder="e.g. Panel 4B arrived with a crushed corner; need a replacement shipped before Friday's install."></textarea></div>
+    ${photos.length ? `<div class="field-group"><div class="field-label">Photos to attach (up to ${_AFQC_MAX_PHOTOS})</div>
+      <div class="afqc-photos">${photos.map(({ p, i }) => `
+        <label class="afqc-photo"><input type="checkbox" class="afqc-ph" value="${i}" ${pre.has(i) ? 'checked' : ''}>
+          <img src="${getPhotoSrcForDisplay(p)}" loading="lazy"><span>${_htmlEsc(_dayLabel(_photoDay(p)) || '')}</span></label>`).join('')}
+      </div></div>` : ''}
+    <div class="field-group"><div class="field-label">Your email for replies (optional)</div>
+      <input class="field-input" id="afqc-email" type="email" placeholder="you@alleghenymillwork.com" value="${_htmlEsc(email)}"></div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn-nav" style="flex:1;text-align:center" onclick="closeModal()">Cancel</button>
+      <button class="btn-project-cta" id="afqc-send" style="flex:2;max-width:none" onclick="_afqcSend('${pid}','${sid}')">Send to AFQC</button>
+    </div>`, null, true);
+};
+
+function _afqcForm(pid, sid) {
+  const proj = getProject(pid), item = getSI(pid, sid);
+  const pick = n => (document.querySelector(`input[name="${n}"]:checked`) || {}).value;
+  const idx = [...document.querySelectorAll('.afqc-ph:checked')].map(c => +c.value);
+  return {
+    proj, item,
+    category: pick('afqc-cat') || 'Other',
+    priority: pick('afqc-pri') || 'Normal',
+    description: (document.getElementById('afqc-desc')?.value || '').trim(),
+    email: (document.getElementById('afqc-email')?.value || '').trim(),
+    photos: idx.map(i => item.photos[i]).filter(Boolean),
+  };
+}
+
+/** Downscale one photo to a JPEG (≤1280px) and return its base64 body. */
+function _afqcPhotoB64(p) {
+  return new Promise(res => {
+    const src = getPhotoSrcForDisplay(p); if (!src) return res(null);
+    const img = new Image();
+    if (/^https?:/.test(src)) img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const k = Math.min(1, 1280 / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        const url = c.toDataURL('image/jpeg', 0.72);
+        c.width = c.height = 0;
+        res(url.slice(url.indexOf(',') + 1));
+      } catch (e) { res(null); }
+    };
+    img.onerror = () => res(null);
+    img.src = src;
+  });
+}
+
+function _afqcSubject(f) {
+  return [f.priority === 'Urgent' ? 'URGENT' : '', 'AFQC', f.category,
+    [f.proj.projectNumber, f.proj.name].filter(Boolean).join(' '),
+    [f.item.num, f.item.title].filter(Boolean).join(' ')].filter(Boolean).join(' – ');
+}
+
+function _afqcLog(pid, sid, f, via) {
+  const item = getSI(pid, sid); if (!item) return;
+  const entry = { at: Date.now(), category: f.category, priority: f.priority, by: _whoAmI(), via, photos: f.photos.length };
+  markDirtyAndSave(item, { afqcLog: [entry, ...(item.afqcLog || [])].slice(0, 30) });
+  _logActivity(pid, { type: 'afqc', siId: sid, siNum: item.num, detail: `AFQC · ${f.category}${f.priority === 'Urgent' ? ' (urgent)' : ''}${via === 'mail-app' ? ' · via Mail app' : ''}`, by: _whoAmI() });
+  if (route().view === 'si' && route().siId === sid) buildSIEditor(pid, sid);
+}
+
+window._afqcSend = async function (pid, sid) {
+  const f = _afqcForm(pid, sid);
+  if (!f.description) { showToast('Describe the issue first', 'red'); document.getElementById('afqc-desc')?.focus(); return; }
+  if (f.photos.length > _AFQC_MAX_PHOTOS) { showToast(`Pick up to ${_AFQC_MAX_PHOTOS} photos`, 'red'); return; }
+  try { localStorage.setItem('adh_afqc_email', f.email); } catch (e) {}
+  const btn = document.getElementById('afqc-send');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  let reason = 'offline';
+  if (navigator.onLine) {
+    try {
+      const photos = [];
+      for (let i = 0; i < f.photos.length; i++) {
+        if (btn) btn.textContent = `Preparing photo ${i + 1}/${f.photos.length}…`;
+        const b64 = await _afqcPhotoB64(f.photos[i]);
+        if (b64) photos.push({ name: `${(f.item.num || 'SI').replace(/\W+/g, '-')}-${i + 1}.jpg`, contentType: 'image/jpeg', base64: b64 });
+      }
+      if (btn) btn.textContent = 'Sending…';
+      const res = await fetch('/api/sendAfqc', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: f.category, priority: f.priority, description: f.description,
+          project: { name: f.proj.name, number: f.proj.projectNumber || '', client: f.proj.client || '' },
+          si: { num: f.item.num, title: f.item.title, status: (f.item.status || '').replace(/-/g, ' '),
+                fieldCheck: [f.item.statusCode, f.item.statusText].filter(Boolean).join(' ') },
+          by: _whoAmI(), replyEmail: f.email, photos,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j.ok) {
+        closeModal();
+        _afqcLog(pid, sid, f, 'email');
+        showToast(`✓ AFQC sent to ${j.to || _AFQC_TO}${j.photos ? ` with ${j.photos} photo${j.photos !== 1 ? 's' : ''}` : ''}`, 'green');
+        return;
+      }
+      reason = j.error === 'not_configured' || res.status === 404 ? 'not_configured' : 'failed';
+    } catch (e) { reason = 'failed'; }
+  }
+  _afqcFallback(pid, sid, f, reason);
+};
+
+/** Mail-app fallback: mailto (address/subject/body filled in, no photos) or
+ *  the share sheet (photos attached; pick Mail and add the address). */
+function _afqcFallback(pid, sid, f, reason) {
+  const body = [
+    `ALLEGHENY FIELD QUALITY CHECK${f.priority === 'Urgent' ? ' — URGENT' : ''}`, '',
+    `Project: ${[f.proj.projectNumber, f.proj.name].filter(Boolean).join(' · ')}`,
+    f.proj.client ? `Client: ${f.proj.client}` : '',
+    `Scope item: ${f.item.num} — ${f.item.title || ''}`,
+    `Category: ${f.category}`, `Reported by: ${_whoAmI()}`, '',
+    f.description, '',
+    f.photos.length ? `(${f.photos.length} photo${f.photos.length !== 1 ? 's' : ''} — attach from the app)` : '',
+  ].filter(l => l !== null).join('\n');
+  const subject = _afqcSubject(f);
+  window._afqcPending = { pid, sid, f, subject, body };
+  const why = reason === 'not_configured' ? 'One-tap sending isn’t set up yet (Microsoft 365 settings pending).'
+    : reason === 'offline' ? 'You’re offline — your Mail app will send it when you’re back in signal.'
+    : 'The send didn’t go through.';
+  makeModal('📧 Send AFQC from Mail', `
+    <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5">${why} Finish it in your Mail app:</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${f.photos.length && navigator.share ? `<button class="btn-project-cta" style="max-width:none" onclick="_afqcShare()">📎 Share with ${f.photos.length} photo${f.photos.length !== 1 ? 's' : ''} → Mail</button>
+      <div style="font-size:11px;color:var(--text3);margin:-2px 0 4px">Pick Mail, then add <strong>${_AFQC_TO}</strong> as the recipient.</div>` : ''}
+      <a class="btn-nav" style="text-align:center;text-decoration:none" href="mailto:${_AFQC_TO}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}"
+        onclick="setTimeout(()=>{closeModal();_afqcLog('${pid}','${sid}',window._afqcPending.f,'mail-app')},300)">✉ Open in Mail${f.photos.length ? ' (text only)' : ''}</a>
+    </div>`, null, true);
+}
+
+window._afqcShare = async function () {
+  const pend = window._afqcPending; if (!pend) return;
+  try {
+    const files = [];
+    for (let i = 0; i < pend.f.photos.length; i++) {
+      const b64 = await _afqcPhotoB64(pend.f.photos[i]); if (!b64) continue;
+      const bin = atob(b64), u8 = new Uint8Array(bin.length);
+      for (let k = 0; k < bin.length; k++) u8[k] = bin.charCodeAt(k);
+      files.push(new File([u8], `${(pend.f.item.num || 'SI').replace(/\W+/g, '-')}-${i + 1}.jpg`, { type: 'image/jpeg' }));
+    }
+    const data = { title: pend.subject, text: pend.subject + '\n\n' + pend.body };
+    if (files.length && navigator.canShare && navigator.canShare({ files })) data.files = files;
+    await navigator.share(data);
+    closeModal();
+    _afqcLog(pend.pid, pend.sid, pend.f, 'mail-app');
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+    showToast('Sharing failed — use Open in Mail', 'red');
+  }
+};
+
+// ══════════════════════════════════════════════════════════════════
 // FEATURE: Floor Plan Overlay
 // ══════════════════════════════════════════════════════════════════
 function navToFloorPlan(pid){
@@ -16373,12 +17040,54 @@ function handleFloorPlanUpload(e){
     // Persist in IndexedDB — not sent to CosmosDB (too large)
     _idbSet('fp_img_'+pid, {data:ev.target.result, type:file.type, isPDF}).catch(()=>{});
     markProjectDirty(pid); save();
+    window._fp.pid=null;   // new plan → page 1, fit to screen
     buildFloorPlanView(pid);
     showToast('✓ Floor plan uploaded','green');
   };
   reader.readAsDataURL(file);
   e.target.value='';
 }
+// The plan is drawn on a stage that pans and zooms (drag / pinch / wheel /
+// +−Fit). PDFs render page by page through PDF.js (vendor/pdfjs.*, loaded on
+// first use, precached by the SW) — the old <embed> + click-catcher overlay
+// swallowed every scroll and zoom, and Android had no viewer at all. Pins are
+// stored as % of the page (xPct/yPct) plus `page`; pins without `page` are
+// page 1. The stage transform scales pins with the plan; each pin is counter-
+// scaled so it stays the same size on screen.
+let _pdfjsP = null;
+function _loadPdfjs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  return _pdfjsP || (_pdfjsP = new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'vendor/pdfjs.min.js';
+    s.onload = () => {
+      const L = window.pdfjsLib;
+      if (!L) { _pdfjsP = null; return rej(new Error('PDF viewer did not initialise')); }
+      L.GlobalWorkerOptions.workerSrc = 'vendor/pdfjs.worker.min.js';
+      res(L);
+    };
+    s.onerror = () => { _pdfjsP = null; rej(new Error('PDF viewer failed to load')); };
+    document.head.appendChild(s);
+  }));
+}
+const _fpDocCache = {};   // pid → { src, doc } — parsed PDF reused across pages/renders
+async function _fpPdfDoc(pid, dataUrl) {
+  const c = _fpDocCache[pid];
+  if (c && c.src === dataUrl) return c.doc;
+  const L = await _loadPdfjs();
+  const b64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+  const bin = atob(b64), bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const doc = await L.getDocument({ data: bytes }).promise;
+  _fpDocCache[pid] = { src: dataUrl, doc };
+  return doc;
+}
+
+// View state for the open plan (one floor plan view at a time)
+window._fp = { pid: null, page: 1, pages: 1, z: 1, x: 0, y: 0, fitZ: 1, w: 0, h: 0 };
+
+function _fpPinPage(pin) { return parseInt(pin.page, 10) || 1; }
+
 function buildFloorPlanView(pid){
   const proj=getProject(pid); if(!proj) return;
   const el=document.getElementById('v-floorplan'); if(!el) return;
@@ -16398,63 +17107,44 @@ function buildFloorPlanView(pid){
 
   const hasImage = !!fp.imageData;
   const isPDF    = fp.isPDF || (fp.imageType||'').includes('pdf');
-
-  const pinsHTML = (fp.pins||[]).map(pin=>`
-    <div class="fp-pin" data-pinid="${pin.id}" style="left:${pin.xPct}%;top:${pin.yPct}%;position:absolute;transform:translate(-50%,-50%);z-index:20;cursor:pointer;font-size:18px;text-shadow:0 1px 4px rgba(0,0,0,0.6)"
-      title="${pin.siNum}: ${pin.siTitle}"
-      onclick="_fpPinClick(event,'${pid}','${pin.id}')">
-      📍<div class="fp-pin-label">${pin.siNum}</div>
-    </div>`).join('');
-
-  // For PDFs: use <embed> + transparent overlay for click-to-pin
-  // For images: use <img>
-  // Android Chrome has no built-in PDF viewer plugin, so <embed> renders blank —
-  // show a fallback with an "Open PDF" action instead of a dead crosshair overlay.
-  const isAndroid = /Android/i.test(navigator.userAgent);
-  const mediaHTML = isPDF
-    ? (isAndroid
-        ? `<div id="fp-inner" style="position:relative;width:100%;min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:24px;color:var(--text2)">
-            <div style="font-size:34px">📄</div>
-            <div style="font-size:12px;max-width:280px;line-height:1.5">PDF floor plans can't be previewed inline on Android. Open the PDF to view it, or upload/pin plans from a desktop browser.</div>
-            <button onclick="_fpOpenPDF('${pid}')" style="font-size:11px;font-family:var(--mono);padding:8px 14px;border:1px solid var(--border);background:var(--surface2);border-radius:7px;cursor:pointer;color:var(--text)">Open PDF</button>
-           </div>`
-        : `<div id="fp-inner" style="position:relative;width:100%;height:100%;min-height:600px">
-        <embed id="fp-embed" src="" type="application/pdf" style="width:100%;height:100%;min-height:600px;border:none;display:block">
-        <div id="fp-overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;cursor:crosshair;z-index:10"
-          onclick="_fpOverlayClick(event,'${pid}')"></div>
-        ${pinsHTML}
-       </div>`)
-    : `<div id="fp-inner" style="position:relative;display:inline-block;min-width:200px">
-        <img id="fp-img" src="" style="display:block;max-width:100%;user-select:none" draggable="false">
-        ${pinsHTML}
-       </div>`;
+  if (window._fp.pid !== pid) window._fp = { pid, page: 1, pages: 1, z: 1, x: 0, y: 0, fitZ: 1, w: 0, h: 0 };
+  const st = window._fp;
+  const pagePins = (fp.pins||[]).filter(p => _fpPinPage(p) === st.page);
 
   el.innerHTML=`
-    <div style="padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:8px;flex-wrap:wrap">
-      <div style="font-size:14px;font-weight:600">🗺️ Floor Plan <span style="font-size:11px;color:var(--text3);font-weight:400">${proj.name}</span></div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <div style="padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:8px;flex-wrap:wrap">
+      <div style="font-size:14px;font-weight:600">🗺️ Floor Plan <span style="font-size:11px;color:var(--text3);font-weight:400">${_htmlEsc(proj.name)}</span></div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         ${hasImage?`<span style="font-size:10px;font-family:var(--mono);color:var(--text3)">${(fp.pins||[]).length} pins · ${isPDF?'PDF':'Image'}</span>`:''}
-        <button onclick="document.getElementById('floorplan-input').click()" style="font-size:11px;font-family:var(--mono);padding:6px 12px;border:1px solid var(--border);background:var(--surface2);border-radius:7px;cursor:pointer;color:var(--text2)">📤 ${hasImage?'Replace':'Upload Plan'}</button>
-        ${hasImage?`<button onclick="_fpTogglePinMode(this)" id="fp-pin-btn" style="font-size:11px;font-family:var(--mono);padding:6px 12px;border:1px solid var(--border);background:var(--surface2);border-radius:7px;cursor:pointer;color:var(--text2)">📍 Place Pin</button>`:''}
-        ${hasImage&&(fp.pins||[]).length?`<button onclick="_fpClearPins('${pid}')" style="font-size:11px;font-family:var(--mono);padding:6px 12px;border:1px solid var(--red-dim);background:var(--red-dim);border-radius:7px;cursor:pointer;color:var(--red)">🗑 Clear Pins</button>`:''}
+        <button class="fp-btn" onclick="document.getElementById('floorplan-input').click()">📤 ${hasImage?'Replace':'Upload Plan'}</button>
+        ${hasImage?`<button class="fp-btn" onclick="_fpTogglePinMode(this)" id="fp-pin-btn">📍 Place Pin</button>`:''}
+        ${hasImage&&(fp.pins||[]).length?`<button class="fp-btn danger" onclick="_fpClearPins('${pid}')">🗑 Clear Pins</button>`:''}
       </div>
     </div>
-    <div style="flex:1;overflow:auto;position:relative;background:var(--surface2)" id="fp-scroll">
-      ${hasImage ? mediaHTML
-        : `<div style="text-align:center;padding:60px 24px;color:var(--text3)">
-            <div style="font-size:48px;opacity:0.15;margin-bottom:16px">🗺️</div>
-            <div style="font-size:14px;font-weight:600;color:var(--text2)">No floor plan yet</div>
-            <div style="font-size:12px;margin-top:6px;max-width:300px;margin-left:auto;margin-right:auto">Upload a PNG, JPG, or PDF. Supports multi-page PDFs — use browser PDF controls to navigate pages.</div>
-           </div>`}
+    ${hasImage ? `
+    <div class="fp-viewport" id="fp-viewport">
+      <div class="fp-stage" id="fp-stage">
+        ${isPDF ? `<canvas id="fp-canvas" class="fp-media"></canvas>` : `<img id="fp-img" class="fp-media" alt="Floor plan" draggable="false">`}
+        <div id="fp-pins">${pagePins.map(pin=>`
+          <div class="fp-pin" data-pinid="${pin.id}" style="left:${pin.xPct}%;top:${pin.yPct}%"
+            title="${_htmlEsc(pin.siNum)}: ${_htmlEsc(pin.siTitle)}">📍<div class="fp-pin-label">${_htmlEsc(pin.siNum)}</div></div>`).join('')}</div>
+      </div>
+      <div class="fp-loading" id="fp-loading">${isPDF?'Loading PDF…':'Loading…'}</div>
+      <div class="fp-zoom">
+        <button onclick="_fpZoomBy(1/1.4)" title="Zoom out">−</button>
+        <button onclick="_fpFit()" title="Fit to screen" style="font-size:10px">Fit</button>
+        <button onclick="_fpZoomBy(1.4)" title="Zoom in">+</button>
+      </div>
+      ${isPDF ? `<div class="fp-pages" id="fp-pages" style="display:none">
+        <button onclick="_fpGoPage(-1)">‹</button><span id="fp-page-lbl">Page 1</span><button onclick="_fpGoPage(1)">›</button>
+      </div>` : ''}
     </div>
-    ${hasImage?`
-    <div style="padding:6px 14px;background:var(--surface);border-top:1px solid var(--border);font-size:10px;font-family:var(--mono);color:var(--text3);flex-shrink:0;display:flex;align-items:center;gap:10px">
-      <span>📍 Place Pin → select SI → click plan</span>
-      ${isPDF?`<span style="color:var(--accent)">PDF: use browser controls to navigate pages before placing pins</span>`:''}
+    <div style="padding:6px 14px;background:var(--surface);border-top:1px solid var(--border);font-size:10px;font-family:var(--mono);color:var(--text3);flex-shrink:0">
+      Drag to move · pinch, scroll or +/− to zoom · double-tap to zoom in · 📍 Place Pin → pick SI → tap the plan
     </div>
-    <div id="fp-si-picker" style="display:none;position:fixed;bottom:50px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--accent);border-radius:10px;max-height:220px;overflow-y:auto;z-index:500;box-shadow:0 8px 32px rgba(0,0,0,0.4);min-width:280px;max-width:420px">
+    <div id="fp-si-picker" style="display:none;position:fixed;bottom:50px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--accent);border-radius:10px;max-height:260px;overflow-y:auto;z-index:500;box-shadow:0 8px 32px rgba(0,0,0,0.4);min-width:280px;max-width:min(420px,92vw)">
       <div style="padding:8px 12px;font-size:10px;font-family:var(--mono);color:var(--text3);border-bottom:1px solid var(--border);display:flex;justify-content:space-between">
-        <span>SELECT SI TO PIN</span>
+        <span>SELECT SI TO PIN${isPDF?' · PAGE '+st.page:''}</span>
         <span style="cursor:pointer" onclick="document.getElementById('fp-si-picker').style.display='none'">✕</span>
       </div>
       ${activeItems(proj).map(item=>`
@@ -16462,35 +17152,167 @@ function buildFloorPlanView(pid){
           onclick="_fpSelectSI('${pid}','${item.id}')"
           onmouseover="this.style.background='var(--accent-dim)'"
           onmouseout="this.style.background=''">
-          <span style="font-family:var(--mono);font-size:10px;color:var(--accent);flex-shrink:0">${item.num}</span>
-          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.title}</span>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--accent);flex-shrink:0">${_htmlEsc(item.num)}</span>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_htmlEsc(item.title)}</span>
           <div class="si-status ${item.status}" style="flex-shrink:0;margin-left:auto"></div>
         </div>`).join('')}
-    </div>`:''}`;
+    </div>` : `
+    <div style="flex:1;overflow:auto;background:var(--surface2)">
+      <div style="text-align:center;padding:60px 24px;color:var(--text3)">
+        <div style="font-size:48px;opacity:0.15;margin-bottom:16px">🗺️</div>
+        <div style="font-size:14px;font-weight:600;color:var(--text2)">No floor plan yet</div>
+        <div style="font-size:12px;margin-top:6px;max-width:300px;margin-left:auto;margin-right:auto">Upload a PNG, JPG, or PDF. Multi-page PDFs get a page picker; pins are kept per page.</div>
+      </div>
+    </div>`}`;
 
-  // Assign src via JS (never inline — avoids backtick issues + PDFs need embed.src set after DOM insert)
-  if(hasImage){
-    window._fpAddMode=false;
-    window._fpSelectedSI=null;
-    window._fpPid=pid;
-
-    if(isPDF){
-      const embed=document.getElementById('fp-embed');
-      if(embed) embed.src=fp.imageData;
-    } else {
-      const img=document.getElementById('fp-img');
-      if(img){ img.src=fp.imageData; }
-      // Wire click for image-based pinning
-      const inner=document.getElementById('fp-inner');
-      if(inner) inner.addEventListener('click',e=>{
-        if(e.target.closest('.fp-pin')) return;
-        _fpHandleClick(e,pid,'fp-img');
-      });
-    }
+  window._fpAddMode=false;
+  window._fpSelectedSI=null;
+  window._fpPid=pid;
+  if(!hasImage) return;
+  _fpWireGestures(pid);
+  if (isPDF) _fpRenderPdfPage(pid);
+  else {
+    const img=document.getElementById('fp-img');
+    img.onload=()=>{ _fpMediaReady(img.naturalWidth, img.naturalHeight); };
+    img.onerror=()=>{ const l=document.getElementById('fp-loading'); if(l) l.textContent='Could not load this image'; };
+    img.src=fp.imageData;
   }
 }
 
-// Open a PDF floor plan in a new tab (Android inline-preview fallback)
+async function _fpRenderPdfPage(pid) {
+  const proj = getProject(pid); const st = window._fp;
+  const loading = document.getElementById('fp-loading');
+  try {
+    const doc = await _fpPdfDoc(pid, proj.floorPlan.imageData);
+    if (window._fp !== st || st.pid !== pid) return;   // view rebuilt meanwhile
+    st.pages = doc.numPages;
+    st.page = Math.min(Math.max(1, st.page), st.pages);
+    const page = await doc.getPage(st.page);
+    // Render big enough to stay sharp when zoomed in, within iOS canvas limits
+    const base = page.getViewport({ scale: 1 });
+    const scale = Math.min(4, 2600 / Math.max(base.width, base.height));
+    const vp = page.getViewport({ scale });
+    const cv = document.getElementById('fp-canvas'); if (!cv) return;
+    cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+    await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+    const pg = document.getElementById('fp-pages');
+    if (pg) { pg.style.display = st.pages > 1 ? 'flex' : 'none'; document.getElementById('fp-page-lbl').textContent = `Page ${st.page} / ${st.pages}`; }
+    _fpMediaReady(cv.width, cv.height);
+  } catch (e) {
+    console.warn('[FloorPlan] PDF render failed:', e && e.message);
+    if (loading) loading.innerHTML = `Could not display this PDF here.<br><button class="fp-btn" style="margin-top:8px" onclick="_fpOpenPDF('${pid}')">Open PDF</button>`;
+  }
+}
+
+/** Size the stage to the plan and fit it into the viewport. */
+function _fpMediaReady(w, h) {
+  const st = window._fp, stage = document.getElementById('fp-stage'), vpEl = document.getElementById('fp-viewport');
+  if (!stage || !vpEl || !w || !h) return;
+  const keep = st.w === w && st.h === h && st.z !== 1;   // same page size → keep the user's zoom
+  st.w = w; st.h = h;
+  stage.style.width = w + 'px'; stage.style.height = h + 'px';
+  const r = vpEl.getBoundingClientRect();
+  st.fitZ = Math.min((r.width - 16) / w, (r.height - 16) / h);
+  if (!keep) _fpFit(); else _fpApply();
+  const l = document.getElementById('fp-loading'); if (l) l.style.display = 'none';
+}
+
+function _fpApply() {
+  const st = window._fp, stage = document.getElementById('fp-stage');
+  if (!stage) return;
+  stage.style.transform = `translate(${st.x}px,${st.y}px) scale(${st.z})`;
+  // Pins keep their on-screen size whatever the zoom
+  stage.style.setProperty('--fp-pin-scale', String(1 / st.z));
+}
+window._fpFit = function () {
+  const st = window._fp, vpEl = document.getElementById('fp-viewport'); if (!vpEl || !st.w) return;
+  const r = vpEl.getBoundingClientRect();
+  st.z = st.fitZ;
+  st.x = (r.width - st.w * st.z) / 2; st.y = (r.height - st.h * st.z) / 2;
+  _fpApply();
+};
+/** Zoom by factor k around a point in viewport coordinates (default: centre). */
+function _fpZoomAt(k, cx, cy) {
+  const st = window._fp, vpEl = document.getElementById('fp-viewport'); if (!vpEl || !st.w) return;
+  const r = vpEl.getBoundingClientRect();
+  if (cx == null) { cx = r.width / 2; cy = r.height / 2; }
+  const nz = Math.min(Math.max(st.z * k, st.fitZ * 0.5), Math.max(st.fitZ * 12, 3));
+  const f = nz / st.z;
+  st.x = cx - (cx - st.x) * f; st.y = cy - (cy - st.y) * f; st.z = nz;
+  _fpApply();
+}
+window._fpZoomBy = function (k) { _fpZoomAt(k); };
+window._fpGoPage = function (dir) {
+  const st = window._fp;
+  const np = Math.min(Math.max(1, st.page + dir), st.pages);
+  if (np === st.page) return;
+  st.page = np;
+  buildFloorPlanView(st.pid);
+};
+
+/** Pan (1 finger / mouse drag), pinch (2 fingers), wheel zoom, double-tap,
+ *  and tap → pin placement / pin open. A tap is a press that moved < 8px. */
+function _fpWireGestures(pid) {
+  const vpEl = document.getElementById('fp-viewport'); if (!vpEl) return;
+  const pts = new Map();
+  let start = null, pinch = null, lastTap = 0;
+  const local = e => { const r = vpEl.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  vpEl.addEventListener('pointerdown', e => {
+    if (e.target.closest('.fp-zoom,.fp-pages,button')) return;
+    vpEl.setPointerCapture(e.pointerId);
+    pts.set(e.pointerId, local(e));
+    const st = window._fp;
+    if (pts.size === 1) start = { p: local(e), x: st.x, y: st.y, moved: false, target: e.target, cx: e.clientX, cy: e.clientY };
+    if (pts.size === 2) {
+      const [a, b] = [...pts.values()];
+      pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), z: st.z, x: st.x, y: st.y, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+      if (start) start.moved = true;
+    }
+  });
+  vpEl.addEventListener('pointermove', e => {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, local(e));
+    const st = window._fp;
+    if (pts.size >= 2 && pinch) {
+      const [a, b] = [...pts.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      const nz = Math.min(Math.max(pinch.z * d / pinch.d, st.fitZ * 0.5), Math.max(st.fitZ * 12, 3));
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, f = nz / pinch.z;
+      st.z = nz; st.x = mx - (pinch.mx - pinch.x) * f; st.y = my - (pinch.my - pinch.y) * f;
+      _fpApply();
+    } else if (start) {
+      const p = local(e), dx = p.x - start.p.x, dy = p.y - start.p.y;
+      if (!start.moved && Math.hypot(dx, dy) < 8) return;
+      start.moved = true;
+      st.x = start.x + dx; st.y = start.y + dy;
+      _fpApply();
+    }
+  });
+  const end = e => {
+    if (!pts.has(e.pointerId)) return;
+    pts.delete(e.pointerId);
+    if (pts.size < 2) pinch = null;
+    if (pts.size === 0 && start) {
+      const s = start; start = null;
+      if (s.moved || e.type === 'pointercancel') return;
+      const pinEl = s.target.closest && s.target.closest('.fp-pin');
+      if (pinEl && !window._fpAddMode) { _fpPinClick({ stopPropagation(){} }, pid, pinEl.dataset.pinid); return; }
+      const now = Date.now();
+      if (!window._fpAddMode && now - lastTap < 320) { lastTap = 0; const p = local(e); _fpZoomAt(2, p.x, p.y); return; }
+      lastTap = now;
+      _fpHandleClick({ clientX: s.cx, clientY: s.cy }, pid, 'fp-stage');
+    }
+  };
+  vpEl.addEventListener('pointerup', end);
+  vpEl.addEventListener('pointercancel', end);
+  vpEl.addEventListener('wheel', e => {
+    e.preventDefault();
+    const p = local(e);
+    _fpZoomAt(Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0025)), p.x, p.y);
+  }, { passive: false });
+}
+
+// Open a PDF floor plan in a new tab (fallback if the viewer can't render it)
 window._fpOpenPDF=function(pid){
   const proj=getProject(pid);
   const data=proj && proj.floorPlan && proj.floorPlan.imageData;
@@ -16500,35 +17322,31 @@ window._fpOpenPDF=function(pid){
 // Toggle pin placement mode
 window._fpTogglePinMode=function(btn){
   window._fpAddMode=!window._fpAddMode;
-  btn.style.background   = window._fpAddMode?'var(--accent-dim)':'var(--surface2)';
-  btn.style.borderColor  = window._fpAddMode?'var(--accent)':'var(--border)';
-  btn.style.color        = window._fpAddMode?'var(--accent)':'var(--text2)';
-  if(window._fpAddMode) showToast('📍 Select an SI from the list, then click the plan');
-  else { document.getElementById('fp-si-picker').style.display='none'; window._fpSelectedSI=null; }
+  btn.classList.toggle('on', window._fpAddMode);
+  const picker=document.getElementById('fp-si-picker');
+  if(window._fpAddMode){ if(picker) picker.style.display='block'; showToast('📍 Pick the SI, then tap its spot on the plan'); }
+  else { if(picker) picker.style.display='none'; window._fpSelectedSI=null; }
 };
 
-// Click handler for overlay (PDF) — coordinates relative to overlay div
-window._fpOverlayClick=function(e,pid){
-  _fpHandleClick(e,pid,'fp-overlay');
-};
-
-// Shared pin placement logic for both image and PDF
+// Pin placement: coordinates are % of the stage (= the plan page), so they
+// stay put at any zoom level and on any screen size.
 window._fpHandleClick=function(e,pid,refId){
   if(!window._fpAddMode) return;
   if(!window._fpSelectedSI){
     const picker=document.getElementById('fp-si-picker');
-    if(picker) picker.style.display=picker.style.display==='none'?'block':'none';
+    if(picker) picker.style.display='block';
     return;
   }
   const ref=document.getElementById(refId); if(!ref) return;
   const rect=ref.getBoundingClientRect();
-  const xPct=((e.clientX-rect.left)/rect.width*100).toFixed(2);
-  const yPct=((e.clientY-rect.top)/rect.height*100).toFixed(2);
+  const xp=(e.clientX-rect.left)/rect.width*100, yp=(e.clientY-rect.top)/rect.height*100;
+  if(xp<0||xp>100||yp<0||yp>100) return showToast('Tap inside the plan to place the pin');
   const si=window._fpSelectedSI;
   const proj=getProject(pid); if(!proj) return;
+  const page=window._fp.page||1;
   if(!proj.floorPlan.pins) proj.floorPlan.pins=[];
   proj.floorPlan.pins=proj.floorPlan.pins.filter(p=>p.siId!==si.id);
-  proj.floorPlan.pins.push({id:'pin_'+Date.now(),siId:si.id,siNum:si.num,siTitle:si.title,xPct,yPct});
+  proj.floorPlan.pins.push({id:'pin_'+Date.now(),siId:si.id,siNum:si.num,siTitle:si.title,xPct:xp.toFixed(2),yPct:yp.toFixed(2),page});
   markProjectDirty(pid); save();
   window._fpAddMode=false; window._fpSelectedSI=null;
   buildFloorPlanView(pid);
@@ -16540,7 +17358,7 @@ window._fpSelectSI=function(pid,siId){
   window._fpSelectedSI=proj.items.find(i=>i.id===siId);
   const picker=document.getElementById('fp-si-picker');
   if(picker) picker.style.display='none';
-  showToast(`📍 Now click the floor plan to place ${window._fpSelectedSI?.num}`);
+  showToast(`📍 Now tap the plan to place ${window._fpSelectedSI?.num}`);
 };
 
 window._fpPinClick=function(e,pid,pinId){
@@ -16895,6 +17713,21 @@ function _innergyAddr(proj) {
 }
 
 /** Total labor hours from budget groups response — handles Items or plain array */
+/** The live app project already linked to this Innergy job, if any. One
+ *  Innergy job = one app project: importing it again opens that project
+ *  instead of creating a duplicate (day-by-day reports replace per-visit copies). */
+function _innergyExisting(innergyProjectId) {
+  if (!innergyProjectId) return null;
+  return store.projects.find(p => !p._deleted && p.innergyId === innergyProjectId) || null;
+}
+function _innergyOpenExisting(pid) {
+  const proj = getProject(pid); if (!proj) return;
+  const fid = (store.folders.find(f => (f.projects || []).includes(pid)) || {}).id || '';
+  closeModal();
+  navToProject(pid, fid);
+  showToast('Opened the existing project for this Innergy job');
+}
+
 // State for the two-step Innergy modal
 let _innergyFid = '';
 let _innergyAllProjects = [];
@@ -16970,9 +17803,11 @@ function _innergyRenderPicker(filter) {
     const status = _htmlEsc(_innergyStatus(p));
     const pid    = p.Id || p.id || '';
     const sel    = _innergySelected && (_innergySelected.Id || _innergySelected.id) === pid ? 'selected' : '';
+    const inApp  = _innergyExisting(pid) ? `<span class="innergy-job-status" style="background:var(--green-dim);color:var(--green)">✓ In app</span>` : '';
     return `<div class="innergy-job-row ${sel}" onclick="_innergySelectJob('${pid}')">
       <span class="innergy-job-num">${num}</span>
       <span class="innergy-job-name">${name}</span>
+      ${inApp}
       <span class="innergy-job-client">${client}</span>
       <span class="innergy-job-status">${status}</span>
     </div>`;
@@ -17020,6 +17855,7 @@ async function _innergySelectJob(projectId) {
   const num    = _innergyNumber(p);
   const client = _innergyClient(p);
   const addr   = _innergyAddr(p);
+  const existing = _innergyExisting(p.Id || p.id);
 
   const installs = _innergyWorkOrders.filter(w => (w.Type||w.type||'') === 'Installation');
   const others   = _innergyWorkOrders.filter(w => (w.Type||w.type||'') !== 'Installation');
@@ -17053,16 +17889,26 @@ async function _innergySelectJob(projectId) {
       ${totalHrs > 0 ? `<div class="innergy-detail-field"><div class="innergy-detail-label">Est. Total Hours</div><div class="innergy-detail-value">${Math.round(totalHrs)} h</div></div>` : ''}
     </div>
     ${installs.length ? `<div class="innergy-section-title">Installation Work Orders (preview)</div><div>${woPreviewRows}${installs.length > 5 ? `<div style="font-size:11px;color:var(--text2);padding:4px 0">…and ${installs.length-5} more</div>` : ''}</div>` : '<div style="font-size:12px;color:var(--text2);padding:8px 0">No Installation work orders found.</div>'}
+    ${existing ? `
+    <div style="margin-top:14px;padding:10px 12px;border-radius:8px;background:var(--green-dim);border:1px solid var(--green);font-size:12px;color:var(--text)">
+      ✓ This job is already in the app as <strong>${_htmlEsc(existing.name)}</strong>. Use the day bar in that project for each site visit instead of a new copy.
+    </div>` : ''}
     <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
+      ${existing ? `
+      <button class="btn-add" onclick="_innergyOpenExisting('${existing.id}')" style="background:var(--green-dim);border-color:var(--green);color:var(--green);font-size:13px;padding:9px 20px">
+        Open Project ›
+      </button>` : `
       <button class="btn-add" onclick="_innergyCreateProject()" ${!installs.length ? 'disabled title="No Installation work orders to import"' : ''} style="background:rgba(139,92,246,0.15);border-color:rgba(139,92,246,0.4);color:#a78bfa;font-size:13px;padding:9px 20px">
         ＋ Create Project from This
-      </button>
+      </button>`}
     </div>`;
 }
 
 function _innergyCreateProject() {
   const p = _innergySelected;
   if (!p) return;
+  const existing = _innergyExisting(p.Id || p.id);
+  if (existing) { _innergyOpenExisting(existing.id); return; }
 
   const num    = _innergyNumber(p);
   const client = _innergyClient(p);
@@ -17140,6 +17986,8 @@ function _innergyCreateProject() {
   `, () => {
     const name = document.getElementById('m-name')?.value.trim();
     if (!name) return showToast('Project name required');
+    const already = _innergyExisting(p.Id || p.id);
+    if (already) { _innergyOpenExisting(already.id); return; }
 
     const includeHours = document.getElementById('innergy-inc-hours')?.checked ?? true;
     const includeDates = document.getElementById('innergy-inc-dates')?.checked ?? true;
