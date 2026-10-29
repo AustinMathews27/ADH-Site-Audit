@@ -202,7 +202,7 @@ Scroll down for the rest:
 A project is one job for its whole life — you don't duplicate it for each site visit. Instead, the **day bar** at the top of the scope-item list (**‹ week › Mon … Sun**) picks the day you're on site; each day shows how many photos it has.
 
 - New photos are filed under the **selected day**. It defaults to today; if you pick another day an amber banner says *"New photos go to Mon Oct 26 — not today"*.
-- Everything else — status, field check, notes, tags — is shared across days. Only photos are per day.
+- **Each day keeps its own status, field check, notes, tags and completion %.** They carry forward to the next day, but editing them on Thursday doesn't change Wednesday — Wednesday's report still shows what was true on Wednesday. Picking an earlier day shows the SI as it stood then; if later days changed it, those fields are read-only there (an amber banner says so) — pick the latest day to edit. Dates, assignee and trade stay shared.
 - The SI editor shows **that day's photos**; earlier days sit under a collapsed **Other days**. Turn on **Include previous days' pictures in …'s report** there and tick which days to bring into this day's report.
 - **Remaining** filters the list to SIs with no photos yet for the day (with an *x/y SIs shot* count) — handy when you split a walk over two days.
 - **📝 Note** — a daily note (weather, crew, what got done) printed at the top of that day's report.

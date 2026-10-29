@@ -3508,7 +3508,7 @@ window.bulkSetStatus = function(status) {
   if(!proj) return;
   window._bulkSelected.forEach(siId => {
     const item = proj.items.find(i => i.id === siId);
-    if(item) { item.status = status; markAsDirty(siId); }
+    if(item) { _dayPreCapture(item); item.status = status; markAsDirty(siId); }
   });
   save();
   window._bulkSelected.clear();
@@ -3593,7 +3593,7 @@ let store = JSON.parse(JSON.stringify(SEED));
 
 // Keep in lockstep with CACHE_VERSION in sw.js — shown in the Admin
 // Console header so a stale cached client is diagnosable at a glance.
-const APP_VERSION = '8.61';
+const APP_VERSION = '8.62';
 
 let _currentUser = null; // { userId, userDetails, userRoles }
 
@@ -3885,6 +3885,7 @@ function markAsDirty(itemId) {
     if (item) {
       item._dirty        = true;
       item._lastModified = new Date().toISOString();
+      _dayRecord(proj, item);   // freeze tracked fields per site-visit day
     }
   }
   store.lastUpdated = Date.now();
@@ -6126,9 +6127,9 @@ function renderLeft(r) {
             <div class="si-title">${item.title}</div>
           </div>
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-            ${(() => { const pv = _siEffProgress(item); return pv == null ? '' :
+            ${(() => { const pv = _siEffProgress(_siView(proj.id, item)); return pv == null ? '' :
               `<span style="font-family:var(--mono);font-size:10px;font-weight:700;color:${pv >= 100 ? 'var(--green)' : 'var(--text2)'}">${pv}%</span>`; })()}
-            <div class="si-status ${item.status}"></div>
+            <div class="si-status ${_siView(proj.id, item).status}"></div>
             <div class="si-more-btn" title="Move / duplicate"
               onclick="event.stopPropagation();showSIMenu(event,'${proj.id}','${item.id}')">⋯</div>
           </div>
@@ -8172,8 +8173,13 @@ function navToSchedule(pid) {
 
 // SI EDITOR
 function buildSIEditor(pid,sid) {
-  const proj=getProject(pid); const item=getSI(pid,sid);
-  if(!item||!proj) return;
+  const proj=getProject(pid); const liveItem=getSI(pid,sid);
+  if(!liveItem||!proj) return;
+  _dayPreCapture(liveItem);
+  // On a past day that later days changed, show the SI as it stood that day
+  // (status, field check, notes, tags, completion are read-only there).
+  const item=_siView(pid,liveItem);
+  const hist=item!==liveItem;
   const sec=proj.sections.find(s=>s.id===item.sectionId);
 
   const sectionItems = proj.items.filter(i => !i._deleted && i.sectionId === item.sectionId);
@@ -8248,6 +8254,7 @@ function buildSIEditor(pid,sid) {
             title="${s.label.replace(/^.\s/,'')}"
             onclick="setStatus('${pid}','${sid}','${s.key}')">${s.label}</div>`).join('')}
       </div>
+      ${hist ? `<div class="day-warn" style="margin-top:10px">📅 Showing this SI as of <strong>${_dayLabel(item._histDay, true)}</strong>. Later days changed it, so status, field check, notes, tags and completion are read-only here. Pick the latest day to edit them.</div>` : ''}
       <div class="afqc-row">
         <button class="afqc-btn" onclick="showAfqcModal('${pid}','${sid}')">📧 AFQC Report</button>
         ${_afqcLastHTML(item)}
@@ -8278,7 +8285,7 @@ function buildSIEditor(pid,sid) {
             <div class="field-label" style="display:flex;align-items:center;justify-content:space-between">Field Notes / Observations
               <button class="voice-btn" id="voice-btn" onclick="toggleVoice('${pid}','${sid}')" title="Voice note">🎤</button>
             </div>
-            <textarea class="field-input" id="notes-input" placeholder="Describe current field conditions, what changed, what's blocking..." oninput="scheduleAutoSave('${pid}','${sid}')">${_esc(item.notes||'')}</textarea>
+            <textarea class="field-input" id="notes-input" ${hist ? 'readonly style="opacity:.75"' : ''} placeholder="Describe current field conditions, what changed, what's blocking..." oninput="scheduleAutoSave('${pid}','${sid}')">${_esc(item.notes||'')}</textarea>
           </div>
           <div class="field-row">
             <div class="field-group">
@@ -9858,6 +9865,7 @@ function deleteEnvScreenshot(pid, idx) {
 // ══════════════════════════════════════════
 function setStatus(pid,sid,status) {
   const item=getSI(pid,sid); if(!item) return;
+  if (_siLocked(pid, item)) return;
   syncEditorToStore(pid,sid);
   const prev=item.status;
   item.status=status;
@@ -9883,6 +9891,8 @@ function moveSISection(pid,sid,newSecId) {
 window.updateSIField = function(pid, sid, field, value) {
   const item = getSI(pid, sid);
   if (!item) return;
+  if (_DAY_FIELDS.includes(field) && _siLocked(pid, item)) { buildSIEditor(pid, sid); return; }
+  _dayPreCapture(item);
   item[field] = value;
   // markDirtyAndSave below is a strict superset of markAsDirty+save (it also
   // stamps _fieldTs) — running both did the full dirty pipeline twice per
@@ -9906,7 +9916,7 @@ function _siEffProgress(item) {
 }
 
 function _siProgressHTML(pid, sid) {
-  const item = getSI(pid, sid); if (!item) return '';
+  const item = _siView(pid, getSI(pid, sid)); if (!item) return '';
   const rows = item.progressItems || [];
   const eff  = _siEffProgress(item);
   const auto = rows.length > 0;
@@ -9953,6 +9963,8 @@ function _siProgressRerender(pid, sid) {
 
 function setSIProgress(pid, sid, val) {
   const item = getSI(pid, sid); if (!item) return;
+  if (_siLocked(pid, item)) { _siProgressRerender(pid, sid); return; }
+  _dayPreCapture(item);
   const prev = _siEffProgress(item);
   item.progressPct = Math.max(0, Math.min(100, val));
   item._updatedBy = _whoAmI();
@@ -9964,6 +9976,8 @@ function setSIProgress(pid, sid, val) {
 
 function addSIProgressItem(pid, sid) {
   const item = getSI(pid, sid); if (!item) return;
+  if (_siLocked(pid, item)) { _siProgressRerender(pid, sid); return; }
+  _dayPreCapture(item);
   const inp = document.getElementById('si-prog-new');
   const name = (inp?.value || '').trim();
   if (!name) return showToast('Line name required');
@@ -9977,6 +9991,8 @@ function addSIProgressItem(pid, sid) {
 
 function setSIProgressItemPct(pid, sid, rowId, val) {
   const item = getSI(pid, sid); if (!item) return;
+  if (_siLocked(pid, item)) { _siProgressRerender(pid, sid); return; }
+  _dayPreCapture(item);
   const row = (item.progressItems || []).find(r => r.id === rowId); if (!row) return;
   row.pct = Math.max(0, Math.min(100, val));
   item._updatedBy = _whoAmI();
@@ -9988,6 +10004,8 @@ function setSIProgressItemPct(pid, sid, rowId, val) {
 
 function removeSIProgressItem(pid, sid, rowId) {
   const item = getSI(pid, sid); if (!item) return;
+  if (_siLocked(pid, item)) { _siProgressRerender(pid, sid); return; }
+  _dayPreCapture(item);
   item.progressItems = (item.progressItems || []).filter(r => r.id !== rowId);
   item._updatedBy = _whoAmI();
   markAsDirty(sid); save();
@@ -10002,10 +10020,11 @@ function removeSIProgressItem(pid, sid, rowId) {
 
 function toggleTag(pid,sid,tag) {
   const item=getSI(pid,sid); if(!item) return;
+  if (_siLocked(pid, item)) return;
   syncEditorToStore(pid,sid);
   const idx=item.tags.indexOf(tag);
   if(idx>=0) item.tags.splice(idx,1); else item.tags.push(tag);
-  save(); buildSIEditor(pid,sid);
+  markAsDirty(sid); save(); buildSIEditor(pid,sid);
 }
 
 function toggleTradeField(pid, sid) {
@@ -10036,6 +10055,7 @@ window.addCustomTag=function(pid,sid){
   const tag=(input?.value||'').trim();
   if(!tag) return;
   const item=getSI(pid,sid); if(!item) return;
+  if (_siLocked(pid, item)) return;
   if(!item.customTags) item.customTags=[];
   if(item.customTags.includes(tag)||['Not Ready for Install','Layout Change','Plumbing Issue','Electrical Pending','Structural Pending','Awaiting GC','Design Change','Field Verified','Ready to Proceed','Demo Required'].includes(tag)) {
     showToast('Tag already exists'); return;
@@ -10048,6 +10068,7 @@ window.addCustomTag=function(pid,sid){
 
 window.removeCustomTag=function(pid,sid,tag){
   const item=getSI(pid,sid); if(!item) return;
+  if (_siLocked(pid, item)) return;
   if(!item.customTags) return;
   syncEditorToStore(pid,sid);
   item.customTags=item.customTags.filter(t=>t!==tag);
@@ -10059,6 +10080,7 @@ window.removeCustomTag=function(pid,sid,tag){
 // Must be called before save() whenever the editor DOM will be rebuilt.
 function syncEditorToStore(pid, sid) {
   const item = getSI(pid, sid); if(!item) return;
+  _dayPreCapture(item);
   const n  = document.getElementById('notes-input');
   const a  = document.getElementById('assigned-input');
   const tr = document.getElementById('trade-input');
@@ -10066,7 +10088,7 @@ function syncEditorToStore(pid, sid) {
   const dd = document.getElementById('si-delivery-date');
   const pd = document.getElementById('si-punch-date');
   const ps = document.getElementById('si-projected-start');
-  if(n)  item.notes        = n.value;
+  if(n && !n.readOnly) item.notes = n.value;   // read-only = viewing a past day's notes
   if(a)  item.assignedTo   = a.value;
   if(tr) item.trade        = tr.value;
   if(d)  item.dueDate      = d.value;
@@ -16589,6 +16611,96 @@ function _itemShotOn(item, day) {
   return hit;
 }
 
+// ── Per-day SI history ─────────────────────────────────────────────────────
+// Status, field check, notes, tags and completion are frozen per day: an edit
+// made on Thursday must not rewrite Wednesday's report. The live fields always
+// hold the LATEST state; item.dayLog stores, per day, only the values those
+// fields had BEFORE that day's first change ({ "2026-10-29": { notes: "…" } }).
+// The SI as of day X = live fields, rolled back through every entry after X.
+// Nothing is stored for days without edits, and the whole project's history
+// is capped (_DAYLOG_BUDGET, oldest trimmed first) so the Cosmos document can
+// never be pushed toward its 2 MB limit by this feature.
+const _DAY_FIELDS = ['status', 'statusCode', 'statusText', 'notes', 'tags', 'progressPct', 'progressItems'];
+const _DAYLOG_MAX_DAYS = 60;            // per SI
+const _DAYLOG_BUDGET   = 500 * 1024;    // per project, serialized bytes
+const _dayPre = new WeakMap();          // item → tracked values before the pending edit
+
+function _dayTracked(item) {
+  const o = {};
+  _DAY_FIELDS.forEach(f => { o[f] = item[f] === undefined ? null : JSON.parse(JSON.stringify(item[f])); });
+  return o;
+}
+const _daySame = (a, b) => JSON.stringify(a == null ? null : a) === JSON.stringify(b == null ? null : b);
+/** Remember how the SI looks before an edit (first capture since the last record wins). */
+function _dayPreCapture(item) { if (item && !_dayPre.has(item)) _dayPre.set(item, _dayTracked(item)); }
+function _dayLogMax(item) { const k = Object.keys(item.dayLog || {}).sort(); return k[k.length - 1] || ''; }
+
+/** The SI's tracked fields as they stood at the end of `day` (null = live). */
+function _siStateAt(item, day) {
+  const log = item && item.dayLog; if (!log) return null;
+  const later = Object.keys(log).filter(k => k > day).sort().reverse();
+  if (!later.length) return null;
+  const st = _dayTracked(item);
+  later.forEach(k => Object.entries(log[k] || {}).forEach(([f, v]) => { if (_DAY_FIELDS.includes(f)) st[f] = v; }));
+  return st;
+}
+/** The SI as the selected day sees it (a copy when that day is in the past). */
+function _siView(pid, item) {
+  const st = item && _siStateAt(item, _dayGet(pid));
+  return st ? Object.assign({}, item, st, { _histDay: _dayGet(pid) }) : item;
+}
+/** Past day with later changes → tracked fields are read-only. Toasts and returns true. */
+function _siLocked(pid, item) {
+  if (!item || !_siStateAt(item, _dayGet(pid))) return false;
+  showToast(`Viewing ${_dayLabel(_dayGet(pid))} — later days changed this SI. Switch to the latest day to edit.`, 'red');
+  return true;
+}
+
+/** Called from markAsDirty: file any tracked-field change under the day it
+ *  was made on, storing the value it replaced. */
+function _dayRecord(proj, item) {
+  const pre = _dayPre.get(item);
+  const cur = _dayTracked(item);
+  _dayPre.set(item, cur);
+  if (!pre) return;
+  const changed = _DAY_FIELDS.filter(f => !_daySame(pre[f], cur[f]));
+  if (!changed.length) return;
+  const sel = _dayGet(proj.id), max = _dayLogMax(item);
+  const target = max > sel ? max : sel;   // live edits made while viewing an older day belong to the latest one
+  const log = Object.assign({}, item.dayLog || {});
+  const entry = Object.assign({}, log[target] || {});
+  changed.forEach(f => { if (!(f in entry)) entry[f] = pre[f]; });
+  // A field changed back to what it was at the start of the day needs no entry
+  Object.keys(entry).forEach(f => { if (_daySame(entry[f], cur[f])) delete entry[f]; });
+  if (Object.keys(entry).length) log[target] = entry; else delete log[target];
+  const keys = Object.keys(log).sort();
+  while (keys.length > _DAYLOG_MAX_DAYS) delete log[keys.shift()];
+  _daySetLog(item, log);
+  _dayTrimBudget(proj);
+}
+function _daySetLog(item, log) {
+  if (Object.keys(log).length) item.dayLog = log; else delete item.dayLog;
+  item._fieldTs = item._fieldTs || {};
+  item._fieldTs.dayLog = Date.now();
+}
+/** Keep the project's total history under budget — drop the oldest day entries first. */
+function _dayTrimBudget(proj) {
+  const items = (proj.items || []).filter(i => i.dayLog);
+  let size = items.reduce((s, i) => s + JSON.stringify(i.dayLog).length, 0);
+  if (size <= _DAYLOG_BUDGET) return;
+  const all = [];
+  items.forEach(i => Object.keys(i.dayLog).forEach(k => all.push({ i, k })));
+  all.sort((a, b) => a.k < b.k ? -1 : a.k > b.k ? 1 : 0);
+  for (const { i, k } of all) {
+    if (size <= _DAYLOG_BUDGET * 0.9) break;
+    size -= JSON.stringify(i.dayLog[k] || {}).length + k.length + 4;
+    const log = Object.assign({}, i.dayLog); delete log[k];
+    _daySetLog(i, log);
+    i._dirty = true;
+  }
+  console.warn('[DayLog] history trimmed to stay within the project budget');
+}
+
 // ── Week bar (top of the scope-item list — the project page on phones) ────
 function _dayBarHTML(proj) {
   const pid = proj.id, today = _todayISO(), sel = _dayGet(pid);
@@ -16805,7 +16917,9 @@ window._reportDayView = function (proj, mode) {
     const extra = new Set();
     days.forEach(rd => (((it.carryDays || {})[rd]) || []).forEach(d => extra.add(d)));
     const keep = p => { const d = _photoDay(p); return !!d && (inReport.has(d) || extra.has(d)); };
-    const out = Object.assign({}, it, { photos: (it.photos || []).filter(keep) });
+    // Status, field check, notes, tags, completion as they stood that day
+    const asOf = _siStateAt(it, days[days.length - 1]) || {};
+    const out = Object.assign({}, it, asOf, { photos: (it.photos || []).filter(keep) });
     if (it.towerWork && it.towerWork.rooms) {
       out.towerWork = Object.assign({}, it.towerWork, {
         rooms: it.towerWork.rooms.map(r => Object.assign({}, r, { photos: (r.photos || []).filter(keep) }))
