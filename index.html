@@ -3593,7 +3593,7 @@ let store = JSON.parse(JSON.stringify(SEED));
 
 // Keep in lockstep with CACHE_VERSION in sw.js — shown in the Admin
 // Console header so a stale cached client is diagnosable at a glance.
-const APP_VERSION = '8.62';
+const APP_VERSION = '8.63';
 
 let _currentUser = null; // { userId, userDetails, userRoles }
 
@@ -4001,6 +4001,10 @@ function _buildProjectPayload(proj) {
         .map(a => ({ id: a.id, name: a.name, type: a.type, ext: a.ext,
                      icon: a.icon, size: a.size, addedAt: a.addedAt, addedBy: a.addedBy }));
       const cleanItem = Object.assign({}, item, { photos: cloudPhotos, attachments: cloudAttachments });
+      // _dirty is this device's own bookkeeping. Synced, it came back on every
+      // pull and left items "dirty" forever on every device, so later pulls
+      // skipped them and stale copies of them were pushed back.
+      delete cleanItem._dirty; delete cleanItem._lastModified;
       // Tower room photos: same rule as SI photos — only uploaded URLs go to
       // Cosmos; pending local Blobs stay on-device until _flushPendingPhotos.
       if (item.towerWork && item.towerWork.rooms) {
@@ -4525,6 +4529,11 @@ function _mergeProjectIntoLocal(cloudProj) {
 
   // Merge items: skip _dirty local items, merge the rest field-by-field
   const localItemMap = new Map((localProj.items || []).map(i => [i.id, i]));
+  // Push the local edits the cloud was missing (owned projects only — a
+  // foreign project can never push, and leaving it dirty here would freeze
+  // its items and project-level fields on this device forever).
+  const ownsIt = !localProj.ownedBy || localProj.ownedBy === (_currentUser?.userId || '');
+  let keptLocalEdits = false;
   (cloudProj.items || []).forEach(ci => {
     const li = localItemMap.get(ci.id);
     if (!li) {
@@ -4533,6 +4542,14 @@ function _mergeProjectIntoLocal(cloudProj) {
     } else if (!li._dirty) {
       // Safe to merge — no unsaved local changes
       const merged = Object.assign({}, li, ci);
+      // …except a field this device stamped NEWER than the cloud copy: the
+      // cloud never received that edit, so taking the cloud value would
+      // silently erase it (how a super's notes vanished on a manual sync).
+      // Keep ours, and re-push so the cloud catches up.
+      if (_keepNewerLocalFields(li, ci, merged)) {
+        keptLocalEdits = true;
+        if (ownsIt) merged._dirty = true;   // guard it until the re-push lands
+      }
       // Attachment file bytes live only on the device (the cloud doc holds
       // data-less stubs) — carry local data forward or the merge erases the
       // only copy of the file.
@@ -4631,7 +4648,40 @@ function _mergeProjectIntoLocal(cloudProj) {
   // and anything they write afterwards would silently vanish.
   delete localProj.projectId;
   Object.assign(localProj, mergedProj);
+
+  if (keptLocalEdits && ownsIt && typeof _dirtyProjectIds !== 'undefined') {
+    _dirtyProjectIds.add(localPid);
+    _persistDirtyState();
+    scheduleDirtySync();
+  }
   return changed;
+}
+
+// Item fields stamped in _fieldTs (see markDirtyAndSave / syncEditorToStore)
+// resolve conflicts newest-wins. A local stamp the cloud copy lacks, or that
+// is newer than the cloud's, is an edit the cloud never received — copy the
+// local value into `merged` instead of the cloud one. Photo/attachment lists
+// have their own merge rules and are skipped. The stamp maps are combined
+// (newest per field) so neither side's history is dropped.
+// Returns true when at least one local value was kept.
+const _FIELD_TS_SKIP = new Set(['photos', 'attachments', 'towerWork', 'photoTombstones']);
+function _keepNewerLocalFields(li, ci, merged) {
+  const lTs = li._fieldTs || {}, cTs = ci._fieldTs || {};
+  let kept = false;
+  Object.keys(lTs).forEach(k => {
+    if (_FIELD_TS_SKIP.has(k) || !(lTs[k] > (cTs[k] || 0))) return;
+    if (k in li) merged[k] = li[k]; else delete merged[k];
+    if (k === '_deleted') {
+      if ('_deletedAt' in li) merged._deletedAt = li._deletedAt; else delete merged._deletedAt;
+    }
+    kept = true;
+  });
+  if (Object.keys(lTs).length) {
+    const ts = Object.assign({}, cTs);
+    Object.keys(lTs).forEach(k => { if (!(ts[k] >= lTs[k])) ts[k] = lTs[k]; });
+    merged._fieldTs = ts;
+  }
+  return kept;
 }
 
 // ── Main sync function ────────────────────────────────────────────────────────
@@ -4689,6 +4739,34 @@ async function _flushPendingPhotos(proj) {
 }
 
 /**
+ * Bring this device's copy of a project up to date right before pushing it.
+ * A push sends the WHOLE project, so a device that hadn't pulled since another
+ * device's edits sent its old copy of every scope item and the server took it
+ * (field bug: opening a job on a super's iPad — the weekly Innergy check saves
+ * the project — wiped the notes and FC he had typed on his iPhone). Items with
+ * unpushed edits on this device (_dirty) are left alone by the merge.
+ * Conditional fetch: an unchanged doc costs a ~60-byte answer.
+ * Returns false when the cloud copy couldn't be checked; the push then waits
+ * for the next cycle rather than risk sending a stale copy.
+ */
+async function _refreshBeforePush(proj) {
+  if (proj._deleted) return true;
+  try {
+    const lastTs = _cloudTs.projects[proj.id] || 0;
+    const cp = await _apiGetProject(proj.id, lastTs);
+    if (!cp || cp.notModified) return true;   // not in the cloud yet / nothing newer
+    if ((cp._ts || 0) > lastTs) {
+      _mergeProjectIntoLocal(cp);
+      _cloudTs.projects[proj.id] = cp._ts;
+    }
+    return true;
+  } catch (e) {
+    console.warn(`[Sync] Pre-push refresh of ${proj.id} failed — push deferred:`, e.message);
+    return false;
+  }
+}
+
+/**
  * Push dirty local data to the cloud.
  *
  * isAuto=true  : only pushes dirty items, silent on success
@@ -4731,6 +4809,7 @@ async function syncChanges(isAuto = false) {
 
     for (const proj of projectsToPush) {
       try {
+        if (!(await _refreshBeforePush(proj))) continue;   // stays dirty, retried next cycle
         if (!proj._deleted) await _flushPendingPhotos(proj); // no uploads for tombstones
         // Clear the dirty flag BEFORE the request: edits that land while the
         // push is in flight re-add it, so they get picked up next cycle
@@ -4820,6 +4899,7 @@ async function _syncSingleProject(pid) {
   // ── Push (only if we own it and it's dirty) ────────────────────────────
   if (isOwned && _dirtyProjectIds.has(pid)) {
     try {
+      if (!(await _refreshBeforePush(proj))) throw new Error('cloud copy unreachable — push deferred');
       if (!proj._deleted) await _flushPendingPhotos(proj);
       // Same in-flight guard as syncChanges: clear dirty before the request
       // so edits made during the push re-mark and survive to the next cycle.
@@ -10078,23 +10158,34 @@ window.removeCustomTag=function(pid,sid,tag){
 
 // Flush the SI editor DOM fields into the store without saving.
 // Must be called before save() whenever the editor DOM will be rebuilt.
+// Every field that actually changed gets a _fieldTs stamp: without one, a sync
+// merge can't tell the new text from an older cloud copy and the older copy
+// won (field bug: a super's notes vanished on the next day's sync).
+// Returns true when anything changed.
+const _EDITOR_FIELDS = [
+  ['notes-input',        'notes'],
+  ['assigned-input',     'assignedTo'],
+  ['trade-input',        'trade'],
+  ['due-input',          'dueDate'],
+  ['si-delivery-date',   'deliveryDate'],
+  ['si-punch-date',      'punchDate'],
+  ['si-projected-start', 'projectedStartDate'],
+];
 function syncEditorToStore(pid, sid) {
-  const item = getSI(pid, sid); if(!item) return;
-  _dayPreCapture(item);
-  const n  = document.getElementById('notes-input');
-  const a  = document.getElementById('assigned-input');
-  const tr = document.getElementById('trade-input');
-  const d  = document.getElementById('due-input');
-  const dd = document.getElementById('si-delivery-date');
-  const pd = document.getElementById('si-punch-date');
-  const ps = document.getElementById('si-projected-start');
-  if(n && !n.readOnly) item.notes = n.value;   // read-only = viewing a past day's notes
-  if(a)  item.assignedTo   = a.value;
-  if(tr) item.trade        = tr.value;
-  if(d)  item.dueDate      = d.value;
-  if(dd) item.deliveryDate = dd.value;
-  if(pd) item.punchDate    = pd.value;
-  if(ps) item.projectedStartDate = ps.value;
+  const item = getSI(pid, sid); if(!item) return false;
+  _dayPreCapture(item);   // per-day history: remember the SI before this edit
+  const now = Date.now();
+  let changed = false;
+  _EDITOR_FIELDS.forEach(([elId, key]) => {
+    const el = document.getElementById(elId);
+    // read-only = a past day's notes on display, never written back
+    if (!el || el.readOnly || (item[key] || '') === el.value) return;
+    item[key] = el.value;
+    item._fieldTs = item._fieldTs || {};
+    item._fieldTs[key] = now;
+    changed = true;
+  });
+  return changed;
 }
 
 function _doSave(pid,sid,toast=true) {
@@ -14771,8 +14862,11 @@ function _initMobileQoL() {
     clearTimeout(_autoSaveTimer);
     clearTimeout(_saveTimer);   // cancel debounce
     const r = route();
-    if (r.view === 'si') {
-      syncEditorToStore(r.projectId, r.siId);
+    // Text typed in the last 800ms (autosave not yet fired) must also be
+    // flagged dirty — copying it into the store alone meant it was never
+    // pushed, and the next sync replaced it with the older cloud copy.
+    if (r.view === 'si' && syncEditorToStore(r.projectId, r.siId)) {
+      markAsDirty(r.siId);
     }
     // Synchronous fallback: write to localStorage as a safety net
     // (IDB writes are async and may not complete before the page is killed)
