@@ -4000,6 +4000,10 @@ function _buildProjectPayload(proj) {
         .map(a => ({ id: a.id, name: a.name, type: a.type, ext: a.ext,
                      icon: a.icon, size: a.size, addedAt: a.addedAt, addedBy: a.addedBy }));
       const cleanItem = Object.assign({}, item, { photos: cloudPhotos, attachments: cloudAttachments });
+      // _dirty is this device's own bookkeeping. Synced, it came back on every
+      // pull and left items "dirty" forever on every device, so later pulls
+      // skipped them and stale copies of them were pushed back.
+      delete cleanItem._dirty; delete cleanItem._lastModified;
       // Tower room photos: same rule as SI photos — only uploaded URLs go to
       // Cosmos; pending local Blobs stay on-device until _flushPendingPhotos.
       if (item.towerWork && item.towerWork.rooms) {
@@ -4734,6 +4738,34 @@ async function _flushPendingPhotos(proj) {
 }
 
 /**
+ * Bring this device's copy of a project up to date right before pushing it.
+ * A push sends the WHOLE project, so a device that hadn't pulled since another
+ * device's edits sent its old copy of every scope item and the server took it
+ * (field bug: opening a job on a super's iPad — the weekly Innergy check saves
+ * the project — wiped the notes and FC he had typed on his iPhone). Items with
+ * unpushed edits on this device (_dirty) are left alone by the merge.
+ * Conditional fetch: an unchanged doc costs a ~60-byte answer.
+ * Returns false when the cloud copy couldn't be checked; the push then waits
+ * for the next cycle rather than risk sending a stale copy.
+ */
+async function _refreshBeforePush(proj) {
+  if (proj._deleted) return true;
+  try {
+    const lastTs = _cloudTs.projects[proj.id] || 0;
+    const cp = await _apiGetProject(proj.id, lastTs);
+    if (!cp || cp.notModified) return true;   // not in the cloud yet / nothing newer
+    if ((cp._ts || 0) > lastTs) {
+      _mergeProjectIntoLocal(cp);
+      _cloudTs.projects[proj.id] = cp._ts;
+    }
+    return true;
+  } catch (e) {
+    console.warn(`[Sync] Pre-push refresh of ${proj.id} failed — push deferred:`, e.message);
+    return false;
+  }
+}
+
+/**
  * Push dirty local data to the cloud.
  *
  * isAuto=true  : only pushes dirty items, silent on success
@@ -4776,6 +4808,7 @@ async function syncChanges(isAuto = false) {
 
     for (const proj of projectsToPush) {
       try {
+        if (!(await _refreshBeforePush(proj))) continue;   // stays dirty, retried next cycle
         if (!proj._deleted) await _flushPendingPhotos(proj); // no uploads for tombstones
         // Clear the dirty flag BEFORE the request: edits that land while the
         // push is in flight re-add it, so they get picked up next cycle
@@ -4865,6 +4898,7 @@ async function _syncSingleProject(pid) {
   // ── Push (only if we own it and it's dirty) ────────────────────────────
   if (isOwned && _dirtyProjectIds.has(pid)) {
     try {
+      if (!(await _refreshBeforePush(proj))) throw new Error('cloud copy unreachable — push deferred');
       if (!proj._deleted) await _flushPendingPhotos(proj);
       // Same in-flight guard as syncChanges: clear dirty before the request
       // so edits made during the push re-mark and survive to the next cycle.

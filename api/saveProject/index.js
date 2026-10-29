@@ -11,8 +11,8 @@
 // Concurrent edits to the SAME project are handled with:
 //   - ETag optimistic concurrency (up to 5 retries on 412)
 //   - Item-level merge: two supers editing different SI items both survive
-//   - Dirty-flag guard: items flagged _dirty on the server are not overwritten
-//     by stale incoming data (last-modified-wins per item)
+//   - Per-field timestamps (_fieldTs): a stamped field is only replaced by a
+//     push carrying a stamp at least as new (see mergeFields)
 
 const { CosmosClient } = require("@azure/cosmos");
 const https = require("https");
@@ -150,6 +150,9 @@ function mergeItems(currentItems, incomingItems) {
     });
     if (Object.keys(tomb).length) incomingClean.photoTombstones = tomb;
     else delete incomingClean.photoTombstones;
+    // Per-device dirty bookkeeping never belongs in the shared doc (older
+    // clients still send it) — see _buildProjectPayload in index.html.
+    delete incomingClean._dirty; delete incomingClean._lastModified;
 
     if (cur) {
       // Merge field by field — field timestamps resolve conflicts
@@ -160,6 +163,7 @@ function mergeItems(currentItems, incomingItems) {
       const incomingUrls = new Set((incomingClean.photos || []).map(p => p.url));
       const extraPhotos = currentUrlPhotos.filter(p => !incomingUrls.has(p.url));
       merged.photos = [...(incomingClean.photos || []), ...extraPhotos];
+      delete merged._dirty; delete merged._lastModified;
       if (Object.keys(tomb).length) merged.photoTombstones = tomb;
       else delete merged.photoTombstones;
       currentMap.set(id, merged);
