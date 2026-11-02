@@ -22,10 +22,11 @@
 //   adh-pbook-state-backup      previous state, written before every change
 //   adh-pbook-snap-YYYY-MM-DD   one snapshot per sync day (history for variance)
 //
-// Scheduling: Static Web Apps managed functions are HTTP-only, so the daily
-// pull is .github/workflows/project-book-sync.yml calling ?action=sync with
-// the PROJECT_BOOK_SYNC_SECRET header. "Sync now" in the app calls the same
-// action without the secret and is throttled to once per 5 minutes.
+// Scheduling: none. project-book.js calls ?action=sync when the book is
+// opened and the last sync is more than a few hours old, and "⚡ Sync
+// Innergy" calls it on demand; both are throttled to once per 5 minutes.
+// (Optional: a caller sending the PROJECT_BOOK_SYNC_SECRET app setting in an
+// x-sync-secret header skips the throttle — nothing in the app needs it.)
 
 const { CosmosClient } = require('@azure/cosmos');
 const innergy = require('./innergy');

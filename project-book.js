@@ -18,6 +18,7 @@
   // ── state ──
   let book = null;              // last /api/projectBook payload
   let loading = false;
+  let syncing = false;          // a sync request is in flight
   const ui = { view: 'gantt', superFilter: '', showArchived: false, showBaseline: true, rangeMonths: 14 };
 
   // ── styles (injected once; never touches the app's structural CSS) ──
@@ -126,11 +127,31 @@ html.is-phone .pb-head h2{font-size:17px}
     return data;
   }
 
+  // No scheduler: the book refreshes itself from Innergy when someone opens
+  // it and the last sync is older than this. "⚡ Sync Innergy" forces one.
+  const AUTO_SYNC_HOURS = 6;
+
   async function load() {
     loading = true; paint();
     try { book = await api('state'); }
     catch (e) { book = null; toast('Project Book: ' + e.message, 'red'); }
     loading = false; paint();
+    if (book && isStale()) autoSync();
+  }
+
+  function isStale() {
+    const at = book.lastSync && Date.parse(book.lastSync.at);
+    return !at || Date.now() - at > AUTO_SYNC_HOURS * 36e5;
+  }
+
+  // Background refresh: the cached book stays on screen meanwhile, and a
+  // failure is quiet (the sync-error banner reports it if Innergy failed).
+  async function autoSync() {
+    if (syncing) return;
+    syncing = true; paint();
+    try { book = await api('sync', { trigger: 'auto' }); }
+    catch (e) { /* 429 = someone else just synced; anything else shows next open */ }
+    syncing = false; paint();
   }
 
   async function act(action, body, okMsg) {
@@ -150,11 +171,11 @@ html.is-phone .pb-head h2{font-size:17px}
   window.buildProjectBookView = function () {
     ensureStyles();
     const el = document.getElementById('v-pbook'); if (!el) return;
-    if (!book && !loading) load(); else paint();
+    if (!book && !loading) load();
+    else { paint(); if (book && !loading && isStale()) autoSync(); }
   };
 
   window.pbUI = function (k, v) { ui[k] = v; paint(); };
-  let syncing = false;
   window.pbSync = async () => {
     if (syncing) return;
     syncing = true; paint();
@@ -296,7 +317,7 @@ html.is-phone .pb-head h2{font-size:17px}
 
     const S = book.summary, H = S.health;
     const ls = book.lastSync;
-    const syncTxt = ls ? `${ls.ok ? 'Synced' : 'Sync had errors'} ${fmtTs(ls.at)} (${ls.trigger})` : 'Never synced — press Sync Innergy';
+    const syncTxt = syncing ? 'Updating from Innergy…' : ls ? `${ls.ok ? 'Synced' : 'Sync had errors'} ${fmtTs(ls.at)}` : 'Never synced — press Sync Innergy';
 
     const newJobs = S.newJobs.map(jobById).filter(Boolean);
     const archCands = S.archiveCandidates.map(jobById).filter(Boolean);
