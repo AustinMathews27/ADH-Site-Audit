@@ -139,6 +139,7 @@ function isClosed(project, settings) {
 function milestonesChanged(a, b, noiseDays) {
   if (!a || !b) return true;
   return ['firstFieldCheck', 'firstDelivery', 'substantialCompletion'].some(k => {
+    if (!a[k]) return false;                 // a date appearing is "filled in", not a change
     const d = M.daysBetween(a[k], b[k]);
     if (d == null) return (a[k] || null) !== (b[k] || null);
     return Math.abs(d) > noiseDays;
@@ -161,7 +162,11 @@ async function runSync(state, context, trigger) {
     return state;
   }
 
-  const open = projects.filter(p => !isClosed(p, settings));
+  // Jobs whose work orders were read longest ago go first, so when the time
+  // budget runs out the next sync carries on where this one stopped.
+  const woAge = p => { const j = state.jobs[String(p.Id || p.id || '')]; return (j && j.woReadAt) || ''; };
+  const open = projects.filter(p => !isClosed(p, settings))
+    .sort((a, b) => woAge(a) < woAge(b) ? -1 : woAge(a) > woAge(b) ? 1 : 0);
   const seen = new Set();
   // The very first sync is the starting book, not "new jobs" — don't open
   // with an alert listing every job in Innergy.
@@ -169,7 +174,7 @@ async function runSync(state, context, trigger) {
   const deadline = started + SYNC_TIME_BUDGET_MS;
   let skipped = 0;
 
-  await innergy.mapLimit(open, 4, async (p) => {
+  await innergy.mapLimit(open, 6, async (p) => {
     const id = String(p.Id || p.id || '');
     if (!id) return;
     seen.add(id);
@@ -178,17 +183,21 @@ async function runSync(state, context, trigger) {
     const client = (p.Customer && p.Customer.Name) || p.customerName || '';
     const status = p.Status || p.status || '';
 
+    let job = state.jobs[id];
+
+    // Work orders are only needed for the field-check date (and as a
+    // fallback for the other two); jobs archived by hand don't need them.
     let wos = null;
-    if (Date.now() > deadline) skipped++;
+    if (job && job.archived && job.archiveReason === 'manual') { /* skip */ }
+    else if (Date.now() > deadline) skipped++;
     else {
       try { wos = await innergy.listWorkOrders(id); }
       catch (e) { errors.push(`${number || id}: ${e.message}`); }
     }
 
-    const supFromInnergy = M.deriveSuperintendent(p, settings);
+    const supFromInnergy = M.deriveSuperintendent(p, settings, wos);
     const resolved = resolveSupers(supFromInnergy.name, state.roster);
 
-    let job = state.jobs[id];
     const isNew = !job;
     if (isNew) {
       job = state.jobs[id] = {
@@ -211,34 +220,47 @@ async function runSync(state, context, trigger) {
       job.archived = false; job.archivedAt = null; job.archiveReason = '';
       logLine(state, 'restore', `${number} ${name} reopened in Innergy — restored`, id);
     }
-    if (supFromInnergy.name) {
+    // Without work orders a WO.* super path can't be checked — keep last one.
+    if (supFromInnergy.name || (wos && job.super.source)) {
       job.super.raw = supFromInnergy.name;
       job.super.names = resolved.names;
       job.super.unresolved = resolved.unresolved;
-      job.super.source = 'innergy:' + supFromInnergy.path;
+      job.super.source = supFromInnergy.name ? 'innergy:' + supFromInnergy.path : '';
     }
 
-    if (wos) {
-      const derived = M.deriveMilestones(wos, settings);
-      const next = { firstFieldCheck: derived.firstFieldCheck, firstDelivery: derived.firstDelivery, substantialCompletion: derived.substantialCompletion };
+    const derived = M.deriveMilestones(wos, settings, p);
+    const next = { firstFieldCheck: derived.firstFieldCheck, firstDelivery: derived.firstDelivery, substantialCompletion: derived.substantialCompletion };
+    const source = Object.assign({}, derived.source);
+    if (!wos && job.current) {
+      // Work orders not read this time: keep whatever came from them before.
+      ['firstFieldCheck', 'firstDelivery', 'substantialCompletion'].forEach(k => {
+        if (!next[k]) { next[k] = job.current[k] || null; if (job.source) source[k] = job.source[k]; }
+      });
+    }
+    if (wos) job.woReadAt = new Date().toISOString();
+    if (wos || next.firstDelivery || next.substantialCompletion || next.firstFieldCheck) {
       if (!isNew && job.current && milestonesChanged(job.current, next, settings.noiseDays)) {
         ['firstFieldCheck', 'firstDelivery', 'substantialCompletion'].forEach(k => {
           const d = M.daysBetween(job.current[k], next[k]);
           if (d != null && Math.abs(d) > settings.noiseDays) {
             logLine(state, 'change', `${number} ${name}: ${k} ${job.current[k]} → ${next[k]} (${d > 0 ? '+' : ''}${d} d)`, id);
-          } else if ((job.current[k] || null) !== (next[k] || null)) {
+          } else if (job.current[k] && job.current[k] !== (next[k] || null)) {
             logLine(state, 'change', `${number} ${name}: ${k} ${job.current[k] || '—'} → ${next[k] || '—'}`, id);
           }
         });
         job.lastChanged = today;
       }
       job.current = next;
-      job.source = derived.source;
-      job.counts = derived.counts;
+      job.source = source;
+      if (derived.counts) job.counts = derived.counts;
       // Baseline = first sync that produced any date (or a manual set later).
       if (!job.baseline && (next.firstFieldCheck || next.firstDelivery || next.substantialCompletion)) {
         job.baseline = Object.assign({}, next, { setAt: today, source: 'first-sync' });
-        logLine(state, 'baseline', `${number} ${name}: baseline captured from first Innergy snapshot`, id);
+        if (!firstSync) logLine(state, 'baseline', `${number} ${name}: baseline captured from first Innergy snapshot`, id);
+      } else if (job.baseline && job.baseline.source === 'first-sync') {
+        // A date Innergy didn't have yet (or that wasn't read) at baseline
+        // time joins the baseline the first time it shows up.
+        ['firstFieldCheck', 'firstDelivery', 'substantialCompletion'].forEach(k => { if (!job.baseline[k] && next[k]) job.baseline[k] = next[k]; });
       }
       job.variance = M.classifyVariance(job.current, job.baseline, settings);
     }
@@ -264,7 +286,6 @@ async function runSync(state, context, trigger) {
     logLine(state, 'archive', `${job.number} ${job.name} archived — ${job.archiveReason}`, id);
   }
 
-  if (skipped) errors.push(`${skipped} job${skipped === 1 ? '' : 's'} not read (time limit) — previous dates kept`);
   if (firstSync) logLine(state, 'sync', `Project Book started with ${Object.keys(state.jobs).length} jobs from Innergy`);
 
   // Daily snapshot (one doc per day, overwritten by later syncs the same day).
@@ -288,10 +309,15 @@ async function runSync(state, context, trigger) {
   state.lastSync = {
     at: new Date().toISOString(), ok: errors.length === 0, trigger,
     projects: open.length, closedSkipped: projects.length - open.length,
+    // Not an error: these jobs got their project dates, and their work
+    // orders are first in line next sync.
+    woDeferred: skipped,
     errors, durationMs: Date.now() - started,
   };
   logLine(state, errors.length ? 'warn' : 'sync',
-    `Sync (${trigger}): ${open.length} open jobs read${errors.length ? ', ' + errors.length + ' error' + (errors.length === 1 ? '' : 's') : ''}`);
+    `Sync (${trigger}): ${open.length} open jobs read` +
+    (skipped ? `, ${skipped} jobs' work orders left for next sync` : '') +
+    (errors.length ? ', ' + errors.length + ' error' + (errors.length === 1 ? '' : 's') : ''));
   return state;
 }
 
@@ -371,26 +397,52 @@ module.exports = async function (context, req) {
     }
 
     if (action === 'discover') {
-      // Field-mapping aid: raw shapes of one open project and a few of its
-      // work orders, so superintendentPaths / fieldCheckPatterns can be set
-      // against what Innergy actually returns. Read-only.
+      // Field-mapping aid, read-only. Answers "where does Innergy keep the
+      // superintendent?" by tallying who appears in each people field across
+      // every open job, plus the people on recent Installation work orders.
+      // Names and dates only: no money, notes or addresses.
       if (!innergy.hasKey()) return respond(context, 503, { error: 'INNERGY_API_KEY not set' });
       const projects = await innergy.listProjects();
       const settings = M.settingsWithDefaults((await loadState()).settings);
-      const sample = projects.find(p => !isClosed(p, settings)) || projects[0];
-      if (!sample) return respond(context, 200, { projects: 0 });
-      const wos = await innergy.listWorkOrders(sample.Id || sample.id);
-      const types = {}; wos.forEach(w => { const t = w.Type || w.type || '—'; types[t] = (types[t] || 0) + 1; });
+      const open = projects.filter(p => !isClosed(p, settings));
+      const tally = (into, key, val) => { if (!val) return; (into[key] = into[key] || {}); into[key][val] = (into[key][val] || 0) + 1; };
+      const PEOPLE = ['ProjectManager', 'Coordinators', 'Engineers', 'Estimators', 'SalesPersons', 'Installers', 'InstallerGroupEmployees', 'InstallerGroups'];
+      const projectPeople = {}, customFields = {};
+      const withDates = { FirstDelivery: 0, SubstantialCompletion: 0 };
+      for (const p of open) {
+        PEOPLE.forEach(k => tally(projectPeople, k, M.personName(p[k])));
+        (p.CustomFields || []).forEach(f => tally(customFields, f.Name, M.personName(f.Value) || '(empty)'));
+        if (p.FirstDelivery) withDates.FirstDelivery++;
+        if (p.SubstantialCompletion) withDates.SubstantialCompletion++;
+      }
+      // Newest three open jobs (most likely to have install WOs staffed).
+      const recent = open.slice().sort((a, b) => String(b.CreatedOn || '').localeCompare(String(a.CreatedOn || ''))).slice(0, 3);
+      const WO_PEOPLE = ['Installers', 'InstallerGroupEmployees', 'TeamLead', 'Owner', 'Assignees', 'ProjectManager'];
+      const samples = [];
+      for (const p of recent) {
+        let wos = [];
+        try { wos = await innergy.listWorkOrders(p.Id || p.id); } catch (e) { samples.push({ job: p.Number, error: e.message }); continue; }
+        const types = {}; wos.forEach(w => { const t = w.Type || '—'; types[t] = (types[t] || 0) + 1; });
+        const installPeople = {};
+        wos.filter(w => /install/i.test(w.Type || '')).forEach(w => WO_PEOPLE.forEach(k => tally(installPeople, k, M.personName(w[k]))));
+        samples.push({
+          job: `${p.Number} ${p.Name}`,
+          workOrderTypes: types,
+          installWorkOrderPeople: installPeople,
+          workOrdersWithFieldVerifiedDate: wos.filter(w => w.FieldVerifiedStepItemPlannedDate).length,
+          workOrdersWithReadyForFVDate: wos.filter(w => w.ReadyForFieldVerificationStepItemPlannedDate).length,
+          superintendentGuess: M.deriveSuperintendent(p, settings, wos),
+          milestonesGuess: M.deriveMilestones(wos, settings, p),
+        });
+      }
       return respond(context, 200, {
         projectCount: projects.length,
-        projectKeys: Object.keys(sample),
-        sampleProject: sample,
-        workOrderCount: wos.length,
-        workOrderTypes: types,
-        workOrderKeys: wos[0] ? Object.keys(wos[0]) : [],
-        sampleWorkOrders: wos.slice(0, 3),
-        superintendentGuess: M.deriveSuperintendent(sample, settings),
-        milestonesGuess: M.deriveMilestones(wos, settings),
+        openCount: open.length,
+        openWithProjectDates: withDates,
+        superintendentPathsTried: settings.superintendentPaths,
+        projectPeople,           // field → { name: number of open jobs }
+        customFields,            // custom field name → { value: count }
+        recentJobs: samples,
       });
     }
 
@@ -412,7 +464,7 @@ module.exports = async function (context, req) {
     }
 
     const jobId = String(body.jobId || '');
-    const needJob = ['assign', 'baseline', 'archive', 'restore'].includes(action) || (action === 'acknowledge' && !body.all);
+    const needJob = ['assign', 'baseline', 'restore'].includes(action) || (action === 'acknowledge' && !body.all) || (action === 'archive' && !body.candidates);
     const job = needJob ? state.jobs[jobId] : null;
     if (needJob && !job) return respond(context, 404, { error: 'Unknown jobId', jobId });
 
@@ -443,6 +495,11 @@ module.exports = async function (context, req) {
     else if (action === 'acknowledge') {
       if (body.all) Object.values(state.jobs).forEach(j => { j.acknowledged = true; });
       else job.acknowledged = true;
+    }
+    else if (action === 'archive' && body.candidates) {
+      const list = Object.values(state.jobs).filter(j => !j.archived && j.archiveCandidate);
+      list.forEach(j => { j.archived = true; j.archivedAt = new Date().toISOString().slice(0, 10); j.archiveCandidate = false; j.archiveReason = 'manual'; });
+      logLine(state, 'archive', `${list.length} job${list.length === 1 ? '' : 's'} past Substantial Completion archived`);
     }
     else if (action === 'archive') {
       job.archived = true; job.archivedAt = new Date().toISOString().slice(0, 10); job.archiveCandidate = false; job.archiveReason = 'manual';

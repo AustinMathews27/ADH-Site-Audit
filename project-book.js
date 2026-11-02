@@ -186,6 +186,7 @@ html.is-phone .pb-head h2{font-size:17px}
   window.pbAck = id => act('acknowledge', { jobId: id });
   window.pbAckAll = () => act('acknowledge', { all: true });
   window.pbArchive = id => act('archive', { jobId: id }, 'Archived (hidden, not deleted)');
+  window.pbArchiveAll = n => { if (confirm(`Archive ${n} job${n === 1 ? '' : 's'} past Substantial Completion? They're hidden, not deleted, and can be restored.`)) act('archive', { candidates: true }, 'Archived'); };
   window.pbRestore = id => act('restore', { jobId: id }, 'Restored');
   window.pbRestoreBackup = () => { if (confirm('Roll the Project Book back to the previous saved version?')) act('restoreBackup', {}, 'Restored from backup'); };
 
@@ -230,8 +231,8 @@ html.is-phone .pb-head h2{font-size:17px}
       <div class="pb-form">
         <label>Superintendent roster (one per line)</label>
         <textarea id="pb-s-roster" style="min-height:140px">${esc(book.roster.join('\n'))}</textarea>
-        <label>Field-check work-order patterns (comma separated)</label><input id="pb-s-fc" value="${esc(s.fieldCheckPatterns.join(', '))}">
-        <label>Innergy fields to try for the superintendent (comma separated, first match wins)</label><input id="pb-s-sp" value="${esc(s.superintendentPaths.join(', '))}">
+        <label>Field-check work-order patterns — only used when a job has no Field Verified step date (comma separated)</label><input id="pb-s-fc" value="${esc(s.fieldCheckPatterns.join(', '))}">
+        <label>Innergy fields to try for the superintendent (comma separated, first match wins). Use a project field like <code>Installers</code>, a custom field like <code>CustomFields:Superintendent</code>, or an Installation work-order field like <code>WO.TeamLead</code></label><input id="pb-s-sp" value="${esc(s.superintendentPaths.join(', '))}">
         <label>Ignore date moves up to (days)</label><input id="pb-s-noise" type="number" min="0" value="${s.noiseDays}">
         <label>Archive jobs this many days after Substantial Completion</label><input id="pb-s-arch" type="number" min="0" value="${s.archiveAfterDays}">
         ${typeof isAdmin !== 'undefined' && isAdmin ? `<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="pb-btn" onclick="pbDiscover()">Show raw Innergy fields</button><button class="pb-btn" onclick="pbRestoreBackup()">Restore previous version</button></div>` : ''}
@@ -258,11 +259,8 @@ html.is-phone .pb-head h2{font-size:17px}
     try {
       const d = await api('discover');
       const body = document.querySelector('#modal-overlay .modal-body');
-      if (body) body.innerHTML = `<div style="font-size:12px;color:var(--text2);margin-bottom:6px">Use these names in Settings → superintendent fields / field-check patterns.</div>
-        <pre style="font-size:11px;white-space:pre-wrap;max-height:60vh;overflow:auto;background:var(--surface2);padding:10px;border-radius:8px">${esc(JSON.stringify({
-          projectKeys: d.projectKeys, workOrderTypes: d.workOrderTypes, workOrderKeys: d.workOrderKeys,
-          superintendentGuess: d.superintendentGuess, milestonesGuess: d.milestonesGuess, sampleProject: d.sampleProject,
-        }, null, 2))}</pre>`;
+      if (body) body.innerHTML = `<div style="font-size:12px;color:var(--text2);margin-bottom:6px">Who appears in each Innergy people field across your open jobs, and on recent Installation work orders. Find the field that holds your superintendents and put it first in Settings.</div>
+        <pre style="font-size:11px;white-space:pre-wrap;max-height:60vh;overflow:auto;background:var(--surface2);padding:10px;border-radius:8px">${esc(JSON.stringify(d, null, 2))}</pre>`;
     } catch (e) { toast(e.message, 'red'); }
   };
 
@@ -321,6 +319,8 @@ html.is-phone .pb-head h2{font-size:17px}
 
     const newJobs = S.newJobs.map(jobById).filter(Boolean);
     const archCands = S.archiveCandidates.map(jobById).filter(Boolean);
+    const CAP = 5;
+    const names = js => js.slice(0, CAP).map(j => `${esc(j.number)} ${esc(j.name)}`).join(', ') + (js.length > CAP ? `, and ${js.length - CAP} more` : '');
 
     el.innerHTML = `<div class="pb-wrap">
       <div class="pb-head">
@@ -333,10 +333,10 @@ html.is-phone .pb-head h2{font-size:17px}
       </div>
 
       ${ls && !ls.ok ? `<div class="pb-alert err"><div class="grow"><strong>Last sync had ${ls.errors.length} problem${ls.errors.length === 1 ? '' : 's'}</strong> — previous dates were kept for those jobs. ${esc(ls.errors.slice(0, 3).join(' · '))}</div></div>` : ''}
-      ${newJobs.length ? `<div class="pb-alert new"><div class="grow"><strong>${newJobs.length} new job${newJobs.length === 1 ? '' : 's'} from Innergy:</strong> ${newJobs.map(j => `${esc(j.number)} ${esc(j.name)}${supersOf(j).length ? '' : ' (no super)'}`).join(', ')}</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">${newJobs.map(j => `<button class="pb-btn" onclick="pbAssign('${esc(j.innergyId)}')">Assign ${esc(j.number)}</button>`).join('')}<button class="pb-btn" onclick="pbAckAll()">Dismiss</button></div></div>` : ''}
-      ${archCands.length ? `<div class="pb-alert"><div class="grow"><strong>${archCands.length} job${archCands.length === 1 ? '' : 's'} ready to archive</strong> (past Substantial Completion + ${S.settings.archiveAfterDays} d): ${archCands.map(j => `${esc(j.number)} ${esc(j.name)}`).join(', ')}. Archived jobs stay searchable; nothing is deleted.</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">${archCands.map(j => `<button class="pb-btn" onclick="pbArchive('${esc(j.innergyId)}')">Archive ${esc(j.number)}</button>`).join('')}</div></div>` : ''}
+      ${newJobs.length ? `<div class="pb-alert new"><div class="grow"><strong>${newJobs.length} new job${newJobs.length === 1 ? '' : 's'} from Innergy:</strong> ${names(newJobs)}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${newJobs.slice(0, CAP).map(j => `<button class="pb-btn" onclick="pbAssign('${esc(j.innergyId)}')">Assign ${esc(j.number)}</button>`).join('')}<button class="pb-btn" onclick="pbAckAll()">Dismiss</button></div></div>` : ''}
+      ${archCands.length ? `<div class="pb-alert"><div class="grow"><strong>${archCands.length} job${archCands.length === 1 ? '' : 's'} ready to archive</strong> (past Substantial Completion + ${S.settings.archiveAfterDays} d): ${names(archCands)}. Archived jobs are hidden, not deleted, and can be restored.</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="pb-btn" onclick="pbArchiveAll(${archCands.length})">Archive ${archCands.length === 1 ? 'it' : 'all ' + archCands.length}</button></div></div>` : ''}
 
       <div class="pb-kpis">
         ${kpi('Active jobs', S.activeJobs, `${newJobs.length} new · ${archCands.length} to archive`)}
