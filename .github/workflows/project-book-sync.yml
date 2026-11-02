@@ -1,0 +1,55 @@
+name: Daily Project Book sync
+
+# Pulls every open Innergy job into the Master Project Book (api/projectBook)
+# once a day so the book is fresh before the superintendent manager looks at
+# it. Static Web Apps managed functions are HTTP-only, so this workflow is
+# the scheduler; the function does the work.
+#
+# Secrets (GitHub → Settings → Secrets and variables → Actions):
+#   PROJECT_BOOK_SYNC_SECRET  — must equal the same-named Azure app setting;
+#                               lets the scheduled call bypass the 5-minute
+#                               UI throttle and be logged as "schedule".
+#   ADH_APP_URL               — e.g. https://gray-stone-03fbce60f.azurestaticapps.net
+#
+# THIS REPO IS PUBLIC: the job only prints counts, never job names.
+
+on:
+  schedule:
+    - cron: '45 12 * * 1-5'   # weekdays 12:45 UTC (5:45 am Pacific)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: project-book-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync Innergy → Project Book
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Call sync endpoint
+        env:
+          APP_URL: ${{ secrets.ADH_APP_URL }}
+          SECRET:  ${{ secrets.PROJECT_BOOK_SYNC_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "$APP_URL" ] || [ -z "$SECRET" ]; then
+            # Not configured yet — skip quietly instead of failing every weekday.
+            echo "::warning::ADH_APP_URL / PROJECT_BOOK_SYNC_SECRET not set — skipping Project Book sync"; exit 0; fi
+          code=$(curl -sS -o resp.json -w '%{http_code}' -X POST \
+            -H "x-sync-secret: $SECRET" -H 'Content-Type: application/json' \
+            --max-time 300 "$APP_URL/api/projectBook?action=sync" -d '{"trigger":"schedule"}')
+          echo "HTTP $code"
+          # Counts only — no names in public logs.
+          node -e '
+            const r = JSON.parse(require("fs").readFileSync("resp.json","utf8"));
+            if (r.error) { console.log("error:", r.error); process.exit(1); }
+            const s = r.summary || {}, l = r.lastSync || {};
+            console.log(`ok=${l.ok} open=${l.projects} active=${s.activeJobs} new=${(s.newJobs||[]).length} archiveCandidates=${(s.archiveCandidates||[]).length} errors=${(l.errors||[]).length} ms=${l.durationMs}`);
+            if (l.ok === false) process.exit(1);
+          '
+          [ "$code" = "200" ]

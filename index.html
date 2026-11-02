@@ -24,6 +24,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="vendor/jspdf.umd.min.js" defer></script> <!-- self-hosted (v4.2.1) so PDF export works offline from first launch -->
 <script src="pdf-export.js" defer></script>
+<script src="project-book.js" defer></script> <!-- Master Project Book view (Innergy-fed) -->
 <script src="vendor/xlsx.full.min.js" defer></script> <!-- self-hosted SheetJS (v0.20.3) - to upgrade, drop a newer xlsx.full.min.js from cdn.sheetjs.com into /vendor -->
 <script src="vendor/pdf-lib.min.js" defer></script> <!-- self-hosted (v1.17.1) — appends crew signature pages onto the original toolbox-talk PDFs, offline-safe -->
 <style>
@@ -3430,6 +3431,7 @@ html.is-phone .recovery-header { padding-top:calc(var(--sat) + 12px); }
     <div id="v-toolbox"  style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
     <div id="v-awi"      style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
     <div id="v-resources" style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
+    <div id="v-pbook"    style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
     <div id="v-tblog"    style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
     <div id="v-manpower" style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
     <div id="v-activity"  style="display:none;flex:1;overflow:hidden;flex-direction:column;"></div>
@@ -5825,6 +5827,10 @@ function renderNavBar(r) {
     crumbs.push(`<span class="crumb-sep">›</span>`);
     crumbs.push(`<span class="crumb active">📂 Resources</span>`);
   }
+  if (r.view==='pbook') {
+    crumbs.push(`<span class="crumb-sep">›</span>`);
+    crumbs.push(`<span class="crumb active">📘 Project Book</span>`);
+  }
   if (r.view==='tblog') {
     crumbs.push(`<span class="crumb-sep">›</span>`);
     crumbs.push(`<span class="crumb active">🦺 Toolbox Log</span>`);
@@ -5853,7 +5859,7 @@ function _routeTitle(r) {
   if (r.view === 'project') { const p = getProject(r.projectId);   return p ? p.name : 'Project'; }
   if (r.view === 'folder')  { const f = getFolder(r.folderId);     return f ? f.name : 'Folder'; }
   return { overview:'Overview', env:'Environmental', schedule:'Schedule', manpower:'Manpower',
-           contacts:'Contacts', toolbox:'Toolbox', awi:'AWI', resources:'Resources',
+           contacts:'Contacts', toolbox:'Toolbox', awi:'AWI', resources:'Resources', pbook:'Project Book',
            tblog:'Toolbox Log', activity:'Activity', floorplan:'Floor Plan' }[r.view] || 'Back';
 }
 
@@ -5928,6 +5934,7 @@ function showPhoneMenu() {
     + tile('🦺', 'Toolbox', 'navToToolbox()')
     + tile('📐', 'AWI', 'navToAWI()')
     + tile('📂', 'Resources', 'navToResources()')
+    + (isAdmin ? tile('📘', 'Project Book', 'navToProjectBook()') : '') // admin-only: keeps the crew menu a clean 4×3 grid
     + tile('🔔', 'Alerts', 'toggleNotifications()')
     + tile('🎨', 'Theme', 'showThemeModal()')
     + tile(isAdmin ? '🔐' : '🔓', 'Admin', 'showLoginModal()')
@@ -5988,7 +5995,7 @@ function renderLeft(r) {
   // Hide left panel on root home screen (option C) — folders shown in main grid instead
   const leftPanel = document.querySelector('.left-panel');
   const isRootView = !r.folderId && !r.projectId &&
-    !['contacts','toolbox','awi','resources','tblog','env','schedule','manpower','activity','floorplan'].includes(r.view);
+    !['contacts','toolbox','awi','resources','pbook','tblog','env','schedule','manpower','activity','floorplan'].includes(r.view);
 
   const q = (document.getElementById('search-input')?.value || '').toLowerCase();
   const isPhone = document.documentElement.classList.contains('is-phone');
@@ -6147,6 +6154,12 @@ function renderLeft(r) {
   if (r.view === 'resources') {
     title.textContent = 'RESOURCES';
     scroll.innerHTML = emptyMsg('Field forms, QC & safety docs');
+    return;
+  }
+
+  if (r.view === 'pbook') {
+    title.textContent = 'PROJECT BOOK';
+    scroll.innerHTML = emptyMsg('Jobs & superintendents from Innergy');
     return;
   }
 
@@ -6484,13 +6497,14 @@ renderLeft = function(r) {
 
 // ── RIGHT PANEL ──────────────────────────
 function renderRight(r) {
-  const views=['v-empty','v-root','v-folder','v-project','v-si','v-env','v-contacts','v-schedule','v-toolbox','v-awi','v-resources','v-tblog','v-manpower','v-activity','v-floorplan'];
+  const views=['v-empty','v-root','v-folder','v-project','v-si','v-env','v-contacts','v-schedule','v-toolbox','v-awi','v-resources','v-pbook','v-tblog','v-manpower','v-activity','v-floorplan'];
   views.forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display='none'; });
 
   if (r.view==='contacts') { buildContactBookView(); show('v-contacts'); }
   else if (r.view==='toolbox') { buildToolboxView(); show('v-toolbox'); }
   else if (r.view==='awi')     { buildAWIView();     show('v-awi'); }
   else if (r.view==='resources'){ buildResourcesView(); show('v-resources'); }
+  else if (r.view==='pbook')    { buildProjectBookView(); show('v-pbook'); }
   else if (r.view==='tblog')    { buildTbLogView(r.projectId); show('v-tblog'); }
   else if (r.view==='env') { buildEnvView(r.projectId); show('v-env'); }
   else if (r.view==='schedule') { buildScheduleView(r.projectId); show('v-schedule'); }
@@ -6538,6 +6552,11 @@ function buildRootView() {
         <div class="fc-name">Resources</div>
         <div class="fc-count">Forms · QC · Safety</div>
       </div>
+      ${isAdmin || !document.documentElement.classList.contains('is-phone') ? `<div class="folder-card" onclick="navToProjectBook()" style="border-color:var(--accent-dim)">
+        <div class="fc-icon">📘</div>
+        <div class="fc-name">Project Book</div>
+        <div class="fc-count">Jobs · Supers · Schedule</div>
+      </div>` : ''}
     </div>
 
     <div class="section-divider">Folders</div>
