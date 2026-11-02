@@ -9,13 +9,18 @@ const DAY = 86400000;
 // Everything a superintendent manager might want to tune lives in the state
 // doc's `settings` and overrides these. Keep the shapes flat and JSON-only.
 const DEFAULT_SETTINGS = {
-  // Work-order Type/Name patterns (case-insensitive) that count as a field check.
+  // Fallback only: work-order Type/Name patterns (case-insensitive) that count
+  // as a field check, used when no work order has a Field Verified step date.
   fieldCheckPatterns: ['field check', 'field verif', 'field measure', 'site verif', 'site measure'],
   // Work-order types that make up the install window (delivery → completion).
   installTypes: ['installation', 'install'],
-  // Dotted paths tried in order on the Innergy project object for the super.
-  // Confirm the real one with ?action=discover, then put it first.
-  superintendentPaths: ['Superintendent.Name', 'Superintendent', 'ProjectManager.Name', 'ProjectManager', 'Manager.Name', 'Foreman.Name'],
+  // Where to look for the superintendent, first non-empty wins. Innergy has no
+  // superintendent field, so these are the likely homes (check with
+  // ?action=discover):
+  //   Installers              a field on the project (people → their FullName)
+  //   CustomFields:<name>     a project custom field, matched by name
+  //   WO.<field>              that field on the job's Installation work orders
+  superintendentPaths: ['CustomFields:superintendent', 'CustomFields:super', 'Installers', 'InstallerGroupEmployees', 'WO.Installers'],
   // Days a milestone may drift before it counts as a change.
   noiseDays: 2,
   // All three milestones moving within this many days of each other = "Moved".
@@ -35,6 +40,21 @@ function settingsWithDefaults(s) {
 // ── Helpers ────────────────────────────────────────────────────────────────
 function pick(obj, path) {
   return String(path).split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+}
+
+/** Innergy people are { Id, FullName }; lists of them are arrays. → "A / B". */
+function personName(v) {
+  if (v == null) return '';
+  if (typeof v === 'string') return v.trim();
+  if (Array.isArray(v)) return [...new Set(v.map(personName).filter(Boolean))].join(' / ');
+  if (typeof v === 'object') return personName(v.FullName || v.Name || v.Value || '');
+  return '';
+}
+
+function customField(project, name) {
+  const cf = (project && project.CustomFields) || [];
+  const hit = cf.find(f => String(f.Name || '').toLowerCase() === String(name).toLowerCase());
+  return hit ? personName(hit.Value) : '';
 }
 
 /** Innergy dates arrive as ISO strings ("2026-03-23T00:00:00") or already-ISO
@@ -61,46 +81,58 @@ function woType(wo)   { return String(wo.Type || wo.type || '').toLowerCase(); }
 function woName(wo)   { return String(wo.Name || wo.name || '').toLowerCase(); }
 function woStatus(wo) { return String(wo.Status || wo.status || '').toLowerCase(); }
 function woStart(wo)  { return toISODate(wo.PlannedStartDate || wo.plannedStartDate); }
+function woFieldVerified(wo) { return toISODate(wo.FieldVerifiedStepItemPlannedDate); }
+function woReadyForFV(wo)    { return toISODate(wo.ReadyForFieldVerificationStepItemPlannedDate); }
 function woCrit(wo)   { return toISODate(wo.PlannedCriticalDate || wo.plannedCriticalDate); }
 function woShip(wo)   { return toISODate(wo.PlannedShipmentDate || wo.ShipmentDate || wo.shipmentDate); }
 
 // ── Milestones ─────────────────────────────────────────────────────────────
 /**
- * Derive { firstFieldCheck, firstDelivery, substantialCompletion } from a
- * project's work orders. Cancelled WOs are ignored.
+ * Derive { firstFieldCheck, firstDelivery, substantialCompletion }.
  *
- *  firstFieldCheck      = earliest planned start of a field-check WO
- *  firstDelivery        = earliest planned shipment of any WO
- *                         (fallback: earliest install WO planned start)
- *  substantialCompletion= latest planned critical date of an install WO
- *                         (fallback: latest critical date of any WO)
+ *  firstDelivery         = the project's own FirstDelivery date in Innergy
+ *                          (fallback: earliest planned shipment of any WO,
+ *                          then earliest Installation WO planned start)
+ *  substantialCompletion = the project's own SubstantialCompletion date
+ *                          (fallback: latest Installation WO critical date,
+ *                          then latest critical date of any WO)
+ *  firstFieldCheck       = earliest "Field Verified" step planned date on any
+ *                          WO (fallback: "Ready for Field Verification" step,
+ *                          then a WO whose type/name matches fieldCheckPatterns)
  *
- * Also returns `source` so the UI can show which rule produced each date.
+ * `workOrders` may be null (not read this sync): only the project-level
+ * dates are filled then, and the caller keeps the rest from last time.
+ * Cancelled WOs are ignored. `source` says which rule produced each date.
  */
-function deriveMilestones(workOrders, settings) {
+function deriveMilestones(workOrders, settings, project) {
   const s = settingsWithDefaults(settings);
+  const haveWOs = Array.isArray(workOrders);
   const live = (workOrders || []).filter(w => !woStatus(w).includes('cancel'));
+  const proj = project || {};
 
   const isFieldCheck = w => s.fieldCheckPatterns.some(p => woType(w).includes(p) || woName(w).includes(p));
   const isInstall    = w => s.installTypes.some(t => woType(w) === t || woType(w).includes(t));
-
   const fieldChecks = live.filter(isFieldCheck);
   const installs    = live.filter(isInstall);
 
-  const firstFieldCheck = minDate(fieldChecks.map(woStart));
+  let firstFieldCheck = null, ffcSource = haveWOs ? 'no field verification date on any work order' : 'work orders not read';
+  const fv = minDate(live.map(woFieldVerified));
+  const rfv = minDate(live.map(woReadyForFV));
+  const fcw = minDate(fieldChecks.map(woStart));
+  if (fv)       { firstFieldCheck = fv;  ffcSource = 'earliest Field Verified step (planned) on the work orders'; }
+  else if (rfv) { firstFieldCheck = rfv; ffcSource = 'earliest Ready for Field Verification step (planned)'; }
+  else if (fcw) { firstFieldCheck = fcw; ffcSource = `earliest field-check work order start (${fieldChecks.length})`; }
 
-  let firstDelivery = minDate(live.map(woShip));
-  let deliverySource = 'min PlannedShipmentDate (all WOs)';
-  if (!firstDelivery) {
-    firstDelivery = minDate(installs.map(woStart));
-    deliverySource = 'min PlannedStartDate (Installation WOs) — no shipment dates';
+  let firstDelivery = toISODate(proj.FirstDelivery), deliverySource = 'project First Delivery (Innergy)';
+  if (!firstDelivery && haveWOs) {
+    firstDelivery = minDate(live.map(woShip)); deliverySource = 'earliest planned shipment (work orders) — project First Delivery empty';
+    if (!firstDelivery) { firstDelivery = minDate(installs.map(woStart)); deliverySource = 'earliest Installation work order start — no shipment dates'; }
   }
 
-  let substantialCompletion = maxDate(installs.map(woCrit));
-  let completionSource = 'max PlannedCriticalDate (Installation WOs)';
-  if (!substantialCompletion) {
-    substantialCompletion = maxDate(live.map(woCrit));
-    completionSource = 'max PlannedCriticalDate (all WOs) — no Installation WOs';
+  let substantialCompletion = toISODate(proj.SubstantialCompletion), completionSource = 'project Substantial Completion (Innergy)';
+  if (!substantialCompletion && haveWOs) {
+    substantialCompletion = maxDate(installs.map(woCrit)); completionSource = 'latest Installation critical date — project Substantial Completion empty';
+    if (!substantialCompletion) { substantialCompletion = maxDate(live.map(woCrit)); completionSource = 'latest critical date (all work orders) — no Installation work orders'; }
   }
 
   return {
@@ -108,20 +140,27 @@ function deriveMilestones(workOrders, settings) {
     firstDelivery,
     substantialCompletion,
     source: {
-      firstFieldCheck: fieldChecks.length ? `min PlannedStartDate (${fieldChecks.length} field-check WO${fieldChecks.length === 1 ? '' : 's'})` : 'no field-check WO found',
-      firstDelivery: firstDelivery ? deliverySource : 'no dates',
-      substantialCompletion: substantialCompletion ? completionSource : 'no dates',
+      firstFieldCheck: ffcSource,
+      firstDelivery: firstDelivery ? deliverySource : (haveWOs ? 'no dates' : 'work orders not read'),
+      substantialCompletion: substantialCompletion ? completionSource : (haveWOs ? 'no dates' : 'work orders not read'),
     },
-    counts: { workOrders: live.length, installs: installs.length, fieldChecks: fieldChecks.length },
+    counts: haveWOs ? { workOrders: live.length, installs: installs.length, fieldChecks: fieldChecks.length } : null,
   };
 }
 
-/** Superintendent name from the Innergy project object, if any path resolves. */
-function deriveSuperintendent(project, settings) {
+/** Superintendent name(s) from Innergy: first settings path that yields one.
+ *  See DEFAULT_SETTINGS.superintendentPaths for the path syntax. */
+function deriveSuperintendent(project, settings, workOrders) {
   const s = settingsWithDefaults(settings);
-  for (const p of s.superintendentPaths) {
-    const v = pick(project, p);
-    if (typeof v === 'string' && v.trim()) return { name: v.trim(), path: p };
+  const installs = (workOrders || []).filter(w => !woStatus(w).includes('cancel') &&
+    s.installTypes.some(t => woType(w).includes(t)));
+  for (const raw of s.superintendentPaths) {
+    const p = String(raw).trim();
+    let v = '';
+    if (/^CustomFields:/i.test(p)) v = customField(project, p.slice(13));
+    else if (/^WO\./i.test(p)) v = personName(installs.map(w => pick(w, p.slice(3))));
+    else v = personName(pick(project, p));
+    if (v) return { name: v, path: p };
   }
   return { name: '', path: '' };
 }
@@ -177,6 +216,6 @@ function classifyVariance(current, baseline, settings) {
 
 module.exports = {
   DEFAULT_SETTINGS, settingsWithDefaults,
-  toISODate, daysBetween, pick,
+  toISODate, daysBetween, pick, personName,
   deriveMilestones, deriveSuperintendent, classifyVariance,
 };
