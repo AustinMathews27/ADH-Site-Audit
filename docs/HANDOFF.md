@@ -1,15 +1,21 @@
 # Handoff — read this first, update it before you stop
 
 ## Last session
-- **Device:** Claude Code web (cloud session)
+- **Device:** Windows desktop app (Claude Code)
 - **Branch:** `feature/company-profiles` (no PR yet)
-- **Date:** 2026-09-29
-- **Summary:** iOS launch screen (charcoal + logo + spinner, native idle
-  fallback). v8.62: Entra sign-in owns the person's name, Graph lookup for the
-  directory display name (awaiting admin), activity/audit logs record device
-  type + client (phone app vs iPad).
+- **Date:** 2026-11-08
+- **Summary:** PDF logo fix (`0bfdd60`): division logos were invisible on the
+  dark hero band (Flow/Photo covers) or the white page (ACM); logos are now
+  tone-classified and get a contrasting plate only where needed, each company
+  defaults to its own bundled logo when chosen, and logos are capped at 1000 px
+  (reports went from 15–39 MB to <150 KB). Verified in the local preview for
+  all six companies × Grid/Flow; not yet on staging or a real device.
 
 ## Pending
+- [ ] **Ship the PDF logo fix to main** — cherry-pick `0bfdd60` onto `main` with a
+      version bump above both branches (branch is at v8.62, `main` at v8.60).
+      Needs Austin's go-ahead; branch-only until then. Check one real report on
+      staging first (logo plate on the hero, file size).
 - [ ] **Graph names: needs the Entra admin** — code is in (`api/_shared/graph.js`,
       `/api/getProfile`, README "People's names"). Ask the admin for an App
       registration `ADH Audit API` with APPLICATION permission
@@ -66,6 +72,12 @@
 - [ ] **Stale PR #3 "task 1"** (`hardening/deps-offline`, July) — close or rebase.
 
 ## Done (recent)
+- `0bfdd60` PDF export: logos classified dark/light/dual (`_logoTone`), contrast
+  plate drawn by `drawLogo()` / `logoImg()` only when tone matches the background;
+  `COMPANY_DEFAULT_LOGO` loads each company's bundled file on selection (ACD →
+  `acd-light.png`, ACM → `acm-light.png`); picked file stored per company
+  (`logoFiles`); cleared logo = `null` (no re-default); `_shrinkLogo` caps stored
+  logos at 1000 px and migrates old ones; `addImage(..., 'FAST')`.
 - `77382f8` Phone SI editor: only the camera FAB at the bottom; Prev/Next/Duplicate/
   Delete in the ⋯ sheet, Delete in the row menu; banners below the top bar.
   Shipped to main as v8.60 (cda9ada). `e12f87e` merged main v8.59 into the branch.
