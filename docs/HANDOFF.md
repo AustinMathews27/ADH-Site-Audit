@@ -4,18 +4,19 @@
 - **Device:** Windows desktop app (Claude Code)
 - **Branch:** `feature/company-profiles` (no PR yet)
 - **Date:** 2026-11-08
-- **Summary:** PDF logo fix (`0bfdd60`): division logos were invisible on the
-  dark hero band (Flow/Photo covers) or the white page (ACM); logos are now
-  tone-classified and get a contrasting plate only where needed, each company
-  defaults to its own bundled logo when chosen, and logos are capped at 1000 px
-  (reports went from 15–39 MB to <150 KB). Verified in the local preview for
-  all six companies × Grid/Flow; not yet on staging or a real device.
+- **Summary:** PDF logo fix shipped to PRODUCTION as v8.65 (`c929e20` +
+  `1bc70c9` on main): division logos were invisible on the dark hero band
+  (Flow/Photo covers) or the white page (ACM); logos are now tone-classified and
+  get a contrasting plate only where needed, each company defaults to its own
+  bundled logo when chosen, logos are capped at 1000 px (reports went from
+  15–39 MB to <150 KB). Main (Project Book, AFQC, per-day SI history, v8.65)
+  merged back into the branch (`f1ca094`). Verified in the local preview only;
+  check one real report on a device after the deploy.
 
 ## Pending
-- [ ] **Ship the PDF logo fix to main** — cherry-pick `0bfdd60` onto `main` with a
-      version bump above both branches (branch is at v8.62, `main` at v8.60).
-      Needs Austin's go-ahead; branch-only until then. Check one real report on
-      staging first (logo plate on the hero, file size).
+- [ ] **Check v8.65 on a device** — export a Flow-style report for an ACD or ACS
+      project: logo should sit on a white plate in the hero; file should be well
+      under 1 MB (was 15–39 MB with a full-size logo).
 - [ ] **Graph names: needs the Entra admin** — code is in (`api/_shared/graph.js`,
       `/api/getProfile`, README "People's names"). Ask the admin for an App
       registration `ADH Audit API` with APPLICATION permission
@@ -72,6 +73,8 @@
 - [ ] **Stale PR #3 "task 1"** (`hardening/deps-offline`, July) — close or rebase.
 
 ## Done (recent)
+- `f1ca094` main merged into the branch (Project Book, AFQC report, per-day SI
+  history, v8.65). `0bfdd60` → main as `c929e20`, bump `1bc70c9` (v8.65).
 - `0bfdd60` PDF export: logos classified dark/light/dual (`_logoTone`), contrast
   plate drawn by `drawLogo()` / `logoImg()` only when tone matches the background;
   `COMPANY_DEFAULT_LOGO` loads each company's bundled file on selection (ACD →
@@ -98,6 +101,9 @@
 - `ff0f28c` Staging: configurable Cosmos DB name + seed script
 
 ## Decisions
+- 2026-11-08 — PDF division-logo fix shipped straight to production as v8.65
+  (cherry-pick + version bump, same as the phone-layout releases). Entra and
+  company profiles still stay on the branch.
 - 2026-09-29 — Person identity = Entra sign-in; display name from Microsoft Graph
   (option B), email prefix until configured. Device identity stays per install
   (id + optional label) and now records type/client automatically.
