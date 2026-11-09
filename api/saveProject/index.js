@@ -11,8 +11,8 @@
 // Concurrent edits to the SAME project are handled with:
 //   - ETag optimistic concurrency (up to 5 retries on 412)
 //   - Item-level merge: two supers editing different SI items both survive
-//   - Dirty-flag guard: items flagged _dirty on the server are not overwritten
-//     by stale incoming data (last-modified-wins per item)
+//   - Per-field timestamps (_fieldTs): a stamped field is only replaced by a
+//     push carrying a stamp at least as new (see mergeFields)
 
 const { requireUser } = require('../_shared/auth');
 const { CosmosClient } = require("@azure/cosmos");
@@ -70,8 +70,11 @@ function withLabel(doc) {
 }
 
 // ── Per-field timestamp merge ─────────────────────────────────────────────────
-// If both sides have a _fieldTs for a key, the newer timestamp wins.
-// Falls back to "incoming wins" when timestamps are absent.
+// A stamped field keeps the stored value unless the incoming copy carries a
+// stamp at least as new. An incoming copy with NO stamp for a field the stored
+// doc has stamped is a stale device that never saw that edit (stamp maps ride
+// along on every pull) — it used to win and wipe text typed on another device.
+// Fields stamped on neither side: incoming wins, as before.
 function mergeFields(current, incoming) {
   const cTs = current._fieldTs  || {};
   const iTs = incoming._fieldTs || {};
@@ -81,7 +84,7 @@ function mergeFields(current, incoming) {
     if (k === "_fieldTs") return;
     const cTime = cTs[k];
     const iTime = iTs[k];
-    if (cTime !== undefined && iTime !== undefined && cTime > iTime) {
+    if (cTime !== undefined && (iTime === undefined || cTime > iTime)) {
       // Current is newer on this field — keep it
       return;
     }
@@ -130,10 +133,19 @@ function mergeItems(currentItems, incomingItems) {
 
     // Always strip photos from what gets written to Cosmos —
     // photos live in IndexedDB on the client, Azure Blob for URLs.
+    // `day` files a photo under a site-visit day. A device still running an
+    // older app version strips it on push — keep the stored day for that URL
+    // rather than letting the stale push erase it.
+    const curDay = new Map(((cur && cur.photos) || []).filter(p => p.url && p.day).map(p => [p.url, p.day]));
     const incomingClean = Object.assign({}, incoming, {
       photos: (incoming.photos || [])
         .filter(p => p.url && !tombHit(tomb, p.url))
-        .map(p => ({ url: p.url, caption: p.caption || "", takenAt: p.takenAt || "" })),
+        .map(p => {
+          const out = { url: p.url, caption: p.caption || "", takenAt: p.takenAt || "" };
+          const day = p.day || curDay.get(p.url);
+          if (day) out.day = day;
+          return out;
+        }),
       attachments: (incoming.attachments || [])
         .map(a => ({
           id: a.id, name: a.name, type: a.type, ext: a.ext,
@@ -142,6 +154,9 @@ function mergeItems(currentItems, incomingItems) {
     });
     if (Object.keys(tomb).length) incomingClean.photoTombstones = tomb;
     else delete incomingClean.photoTombstones;
+    // Per-device dirty bookkeeping never belongs in the shared doc (older
+    // clients still send it) — see _buildProjectPayload in index.html.
+    delete incomingClean._dirty; delete incomingClean._lastModified;
 
     if (cur) {
       // Merge field by field — field timestamps resolve conflicts
@@ -152,6 +167,7 @@ function mergeItems(currentItems, incomingItems) {
       const incomingUrls = new Set((incomingClean.photos || []).map(p => p.url));
       const extraPhotos = currentUrlPhotos.filter(p => !incomingUrls.has(p.url));
       merged.photos = [...(incomingClean.photos || []), ...extraPhotos];
+      delete merged._dirty; delete merged._lastModified;
       if (Object.keys(tomb).length) merged.photoTombstones = tomb;
       else delete merged.photoTombstones;
       currentMap.set(id, merged);
@@ -173,6 +189,18 @@ function mergeItems(currentItems, incomingItems) {
   });
   currentMap.forEach((v, id) => { if (!emitted.has(id)) out.push(v); });
   return out;
+}
+
+// Per-day site-visit data ({ "YYYY-MM-DD": { note, finishedAt, ts, … } }):
+// merged day by day, newest `ts` wins, so devices editing different days'
+// notes never overwrite each other. Undefined when neither side has any.
+function mergeDays(cur, inc) {
+  const out = Object.assign({}, cur || {});
+  Object.entries(inc || {}).forEach(([k, v]) => {
+    if (!v || typeof v !== "object") return;
+    if (!out[k] || (v.ts || 0) >= (out[k].ts || 0)) out[k] = v;
+  });
+  return Object.keys(out).length ? out : undefined;
 }
 
 // Environmental screenshots are stored as base64 on the device only — never
@@ -312,6 +340,7 @@ module.exports = async function (context, req) {
           projectId: incoming.id,
           ownedBy:   ownedBy,  // Preserve original owner
           items:     mergeItems(current.items || [], incoming.items || []),
+          days:      mergeDays(current.days, incoming.days),
           // Preserve blob-URL covers (the client uploads then pushes the URL);
           // base64 never enters Cosmos, and a data: push keeps the stored URL.
           coverPhoto: (incoming.coverPhoto && !String(incoming.coverPhoto).startsWith('data:'))

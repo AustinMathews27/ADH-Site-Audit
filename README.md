@@ -45,7 +45,9 @@ AZURE_BLOB_CONTAINER = site-photos-dev
 Recommended setup: a second Static Web App (Free tier) connected to the feature branch, with those two settings — it gets a stable URL that installs on an iPad as its own PWA. `scripts/seed-staging.mjs` copies the production projects into it through the public API. The production workflow also builds a preview environment for any pull request against `main`; that preview **inherits production settings**, so open the PR only when the branch is ready and set the two variables on the preview environment (Portal → Static Web App → Environment variables → pick the environment) before anyone uses its URL.
 
 **Size limit.** Cosmos allows **2 MB per document** — measured against the live API (2026-09-12): ~1,024 typical scope items or ~488 photo-heavy ones per project (a scope item costs ~2–4 KB; each photo is a ~170-byte blob URL, the image bytes never enter Cosmos). The largest real project was 318 KB. `saveProject` refuses anything over the limit with `413 {error:"too_large", bytes}`, the app warns from 75% and shows a red toast when a project is blocked, and **Admin → System → Cloud document sizes** lists every project against the limit. Run `node scripts/cosmos-label-backfill.mjs --apply` once after deploying a label change to stamp existing documents.
-- **Innergy integration** — `/api/innergy/*` proxies `app.innergy.com` server-side; the `INNERGY_API_KEY` lives in Azure app settings, never in the browser.
+- **Innergy integration** — `/api/innergy/*` proxies `app.innergy.com` server-side; the `INNERGY_API_KEY` lives in Azure app settings, never in the browser. One Innergy job maps to one app project (`innergyId`); re-importing a linked job opens the existing project.
+- **Site-visit days** — photos carry `day` (`YYYY-MM-DD`); per-day notes / finished flags live in `project.days`, merged per day (newest `ts` wins) on both the client and `saveProject`. Reports filter to a day or date range on the client (`_reportDayView`). Each SI's status / field check / notes / tags / completion are frozen per day: live fields hold the latest state and `item.dayLog` stores, per day, only the values those fields had before that day's first edit (state as of day X = live rolled back through entries after X). History is capped at 60 days per SI and 500 KB per project (oldest trimmed first) so it can't push a project doc toward the 2 MB Cosmos limit.
+- **AFQC** — `POST /api/sendAfqc` emails a field issue to the AFQC inbox through Microsoft Graph (`Mail.Send`, application permission). The recipient is fixed server-side and the email is built server-side from plain fields. App settings: `AFQC_TENANT_ID`, `AFQC_CLIENT_ID`, `AFQC_CLIENT_SECRET`, `AFQC_SENDER` (mailbox it sends as), optional `AFQC_TO` (default `afqc@alleghenymillwork.com`). Without them the endpoint returns `503 not_configured` and the app falls back to the device's Mail app.
 - **Data hierarchy** — Folders (company brands) → Projects (jobs) → Sections → Scope Items (SIs).
 
 ## Repo layout
@@ -56,7 +58,7 @@ Recommended setup: a second Static Web App (Free tier) connected to the feature 
 | `sw.js` | Service worker — bump `CACHE_VERSION` to push an update to all devices |
 | `pdf-export.js` | Client-side audit report renderer (jsPDF) |
 | `manifest.json` | PWA manifest (install metadata, icons) |
-| `api/` | Azure Functions: save/get index & projects, blob SAS, change log, Innergy proxy |
+| `api/` | Azure Functions: save/get index & projects, blob SAS, change log, Innergy proxy, AFQC email |
 | `resources/` | Field library served in-app: forms, QC plans, safety programs, 52 toolbox talks |
 | `logos/` | Brand logos for folder icons and report branding |
 | `server.js` | Local dev server (static files + Innergy proxy); `node server.js`, port 5000 |
@@ -76,7 +78,7 @@ Pushes to `main` deploy via the GitHub Action (Azure Static Web Apps, `app_locat
 
 ## Versioning
 
-The app version is the service-worker cache string (`adh-audit-v8.xx`). Current: **v8.26**.
+The app version is the service-worker cache string (`adh-audit-v8.xx`). Current: **v8.65**.
 
 ## People's names (Microsoft Graph)
 
