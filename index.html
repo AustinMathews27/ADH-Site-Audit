@@ -11176,10 +11176,127 @@ const ADH_COMPANIES = [
 window._pdfBranding = {
   companyId:   'ami',      // active company
   logo:        null,       // base64 image or null
+  logoTone:    null,       // 'dark' | 'light' | 'dual' — which backgrounds the active logo needs a plate on
   auditorSig:  null,       // base64 image or null
-  // Per-company logos stored separately
-  logos: {},               // { companyId: base64 }
+  // Per-company logos stored separately. A company whose key is missing has
+  // never been set and gets its bundled default; null means "cleared on purpose".
+  logos: {},               // { companyId: base64 | null }
+  logoFiles: {},           // { companyId: 'logos/x.png' } — which bundled file was picked
   auditorSigs: {},         // { companyId: base64 }
+};
+
+// Bundled logo each company starts with (shown as soon as the company is chosen).
+// acd.png is only the red "COMMERCIAL DOORS" bar and acm.png is the white-text
+// variant, so ACD/ACM default to their full light-background files.
+const COMPANY_DEFAULT_LOGO = {
+  ami:'logos/ami.png', acd:'logos/acd-light.png', acs:'logos/acs.png',
+  asst:'logos/asst.png', acm:'logos/acm-light.png', adh:'logos/adh.png',
+};
+
+// Logos go into the PDF as raw RGBA, so a 5000 px source adds 30+ MB to every
+// report. Cap the stored copy at LOGO_MAX_W (plenty for a 16 mm cover mark);
+// transparency is kept. Returns the input untouched when it is already small.
+const LOGO_MAX_W = 1000;
+function _shrinkLogo(dataURL) {
+  return new Promise(res => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        if (img.width <= LOGO_MAX_W) return res(dataURL);
+        const s = LOGO_MAX_W / img.width;
+        const cv = document.createElement('canvas');
+        cv.width = LOGO_MAX_W; cv.height = Math.max(1, Math.round(img.height * s));
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        res(cv.toDataURL('image/png'));
+      } catch (e) { res(dataURL); }
+    };
+    img.onerror = () => res(dataURL);
+    img.src = dataURL;
+  });
+}
+
+// Fetch a bundled logo file and return it as a (downscaled) data URL — jsPDF
+// cannot read paths.
+async function _loadLogoFile(path) {
+  const resp = await fetch(path);
+  if (!resp.ok) throw new Error('logo ' + resp.status);
+  const blob = await resp.blob();
+  const raw = await new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = e => res(e.target.result);
+    fr.onerror = () => rej(fr.error);
+    fr.readAsDataURL(blob);
+  });
+  return _shrinkLogo(raw);
+}
+
+// Which backgrounds does this logo survive on? Share of its opaque pixels that
+// are light (white/pale):
+//   'light' (≥60% light)  — white-text marks such as acm-dark.png: invisible on
+//                           the white cover page, needs a dark plate there.
+//   'dark'  (<25% light)  — navy/black marks (ACD, ACS, ASST, ADH): invisible
+//                           on the dark hero band, needs a white plate there.
+//   'dual'  (in between)  — e.g. AMI's red + silver mark; reads on both, no plate.
+const _logoToneCache = new Map();
+function _logoTone(dataURL) {
+  if (_logoToneCache.has(dataURL)) return Promise.resolve(_logoToneCache.get(dataURL));
+  return new Promise(res => {
+    const img = new Image();
+    const done = tone => { if (_logoToneCache.size > 24) _logoToneCache.clear(); _logoToneCache.set(dataURL, tone); res(tone); };
+    img.onload = () => {
+      try {
+        const s = Math.min(1, 300 / Math.max(1, img.width));
+        const cv = document.createElement('canvas');
+        cv.width = Math.max(1, Math.round(img.width * s)); cv.height = Math.max(1, Math.round(img.height * s));
+        const ctx = cv.getContext('2d'); ctx.drawImage(img, 0, 0, cv.width, cv.height);
+        const d = ctx.getImageData(0, 0, cv.width, cv.height).data;
+        let n = 0, light = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          if (d[i + 3] < 40) continue;
+          n++;
+          if (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2] > 200) light++;
+        }
+        const pct = n ? light / n : 0;
+        done(pct >= 0.6 ? 'light' : pct < 0.25 ? 'dark' : 'dual');
+      } catch (e) { done('dual'); }
+    };
+    img.onerror = () => done('dual');
+    img.src = dataURL;
+  });
+}
+
+// Recompute logoTone for the active logo; refresh the report generator if open.
+window._refreshLogoTone = async function() {
+  const data = window._pdfBranding.logo;
+  if (!data) { window._pdfBranding.logoTone = null; return null; }
+  const tone = await _logoTone(data);
+  if (window._pdfBranding.logo !== data) return window._pdfBranding.logoTone;
+  if (window._pdfBranding.logoTone !== tone) {
+    window._pdfBranding.logoTone = tone;
+    if (document.getElementById('rg-overlay')) window._rgRebuildAll?.();
+  }
+  return tone;
+};
+
+// Make sure the active company has a logo: companies never touched get their
+// bundled default (an explicit ✕ clear stores null and is respected).
+window._ensureCompanyLogo = async function() {
+  const b = window._pdfBranding;
+  const cid = b.companyId || 'ami';
+  if (!b.logos) b.logos = {};
+  if (cid in b.logos) return;                 // set, or cleared on purpose
+  const path = COMPANY_DEFAULT_LOGO[cid];
+  if (!path) return;
+  try {
+    const data = await _loadLogoFile(path);
+    if ((b.companyId || 'ami') !== cid || cid in b.logos) return;   // user moved on meanwhile
+    b.logos[cid] = data; b.logo = data;
+    if (!b.logoFiles) b.logoFiles = {};
+    b.logoFiles[cid] = path;
+    _saveBranding();
+    await window._refreshLogoTone();
+    if (document.getElementById('rg-overlay')) window._rgRebuildAll?.();
+  } catch (e) { /* offline or missing file — stays "No logo" */ }
 };
 
 // Load saved branding from IndexedDB
@@ -11192,8 +11309,26 @@ window._pdfBranding = {
       const cid = window._pdfBranding.companyId || 'ami';
       window._pdfBranding.logo       = window._pdfBranding.logos?.[cid] || null;
       window._pdfBranding.auditorSig = window._pdfBranding.auditorSigs?.[cid] || null;
+      // Older builds kept one global logoFile; fold it into the per-company map.
+      if (!window._pdfBranding.logoFiles) window._pdfBranding.logoFiles = {};
+      if (saved.logoFile && !window._pdfBranding.logoFiles[cid] && window._pdfBranding.logo) {
+        window._pdfBranding.logoFiles[cid] = saved.logoFile;
+      }
+      delete window._pdfBranding.logoFile;
+      // Logos saved by older builds are full-resolution; shrink them once.
+      let shrunk = false;
+      for (const [k, v] of Object.entries(window._pdfBranding.logos || {})) {
+        if (typeof v !== 'string') continue;   // null = cleared on purpose
+        const small = await _shrinkLogo(v);     // no-op when already <= LOGO_MAX_W
+        if (small !== v) { window._pdfBranding.logos[k] = small; shrunk = true; }
+      }
+      if (shrunk) {
+        window._pdfBranding.logo = window._pdfBranding.logos[cid] || null;
+        _saveBranding();
+      }
     }
   } catch(e) { /* use defaults */ }
+  window._refreshLogoTone();
 })();
 
 async function _saveBranding() {
@@ -11201,8 +11336,8 @@ async function _saveBranding() {
     await _idbSet('adh_branding', {
       companyId:   window._pdfBranding.companyId,
       logos:       window._pdfBranding.logos,
+      logoFiles:   window._pdfBranding.logoFiles,
       auditorSigs: window._pdfBranding.auditorSigs,
-      logoFile:    window._pdfBranding.logoFile,
     });
   } catch(e) {}
 }
@@ -11212,6 +11347,8 @@ window.setActiveCompany = function(cid) {
   window._pdfBranding.logo       = window._pdfBranding.logos?.[cid]       || null;
   window._pdfBranding.auditorSig = window._pdfBranding.auditorSigs?.[cid] || null;
   _saveBranding();
+  window._refreshLogoTone();
+  window._ensureCompanyLogo();
 };
 
 window.getActiveCompany = function() {
@@ -11222,13 +11359,16 @@ window.handleBrandingUpload = function(e, type) {
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = ev => {
-    const data = ev.target.result;
+  reader.onload = async ev => {
+    let data = ev.target.result;
     const cid  = window._pdfBranding.companyId || 'ami';
     if (type === 'logo') {
+      data = await _shrinkLogo(data);
       if (!window._pdfBranding.logos) window._pdfBranding.logos = {};
       window._pdfBranding.logos[cid] = data;
       window._pdfBranding.logo       = data;
+      if (window._pdfBranding.logoFiles) delete window._pdfBranding.logoFiles[cid];
+      window._refreshLogoTone();
     } else if (type === 'auditorSig') {
       if (!window._pdfBranding.auditorSigs) window._pdfBranding.auditorSigs = {};
       window._pdfBranding.auditorSigs[cid] = data;
@@ -13061,7 +13201,7 @@ function showShareModal() {
               Company Logo <span style="color:var(--accent)">(${co.abbr})</span>
             </div>
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-              ${logo ? `<img src="${logo}" style="height:36px;max-width:90px;object-fit:contain;border-radius:4px;border:1px solid var(--border)">` :
+              ${logo ? `<img src="${logo}" style="height:36px;max-width:90px;object-fit:contain;border-radius:4px;border:1px solid var(--border);padding:2px 4px;background:${window._pdfBranding.logoTone==='light'?'#0f172a':'#ffffff'}">` :
                 `<div style="height:36px;width:60px;background:var(--surface3);border:1px dashed var(--border);
                   border-radius:4px;display:flex;align-items:center;justify-content:center;
                   font-size:10px;color:var(--text3)">No logo</div>`}
@@ -13074,7 +13214,7 @@ function showShareModal() {
                 border-radius:7px;padding:6px 9px;font-size:11px;color:var(--text);outline:none;cursor:pointer;">
               <option value="">-- pick logo --</option>
               ${['acd-dark.png','acd-light.png','acd.png','acm-dark.png','acm-light.png','acm.png','acs.png','adh.png','ami.png','asst.png']
-                .map(f=>`<option value="logos/${f}"${window._pdfBranding.logoFile==='logos/'+f?' selected':''} >${f}</option>`).join('')}
+                .map(f=>`<option value="logos/${f}"${window._pdfBranding.logoFiles?.[co.id]==='logos/'+f?' selected':''} >${f}</option>`).join('')}
             </select>
           </div>
 
@@ -13264,8 +13404,11 @@ function showShareModal() {
 
   window._rgClearLogo = () => {
     const cid = window._pdfBranding.companyId || 'ami';
-    if (window._pdfBranding.logos) delete window._pdfBranding.logos[cid];
+    if (!window._pdfBranding.logos) window._pdfBranding.logos = {};
+    window._pdfBranding.logos[cid] = null;        // null = cleared on purpose, no default
+    if (window._pdfBranding.logoFiles) delete window._pdfBranding.logoFiles[cid];
     window._pdfBranding.logo = null;
+    window._pdfBranding.logoTone = null;
     _saveBranding();
     _rebuildSidebar(); _rebuildPreview();
   };
@@ -13282,21 +13425,17 @@ function showShareModal() {
   window._rgSelectLogo = async function(path) {
     if (!path) return;
     try {
-      const resp = await fetch(path);
-      const blob = await resp.blob();
-      const reader = new FileReader();
-      reader.onload = ev => {
-        const data = ev.target.result;
-        const cid = window._pdfBranding.companyId || 'ami';
-        if (!window._pdfBranding.logos) window._pdfBranding.logos = {};
-        window._pdfBranding.logos[cid] = data;
-        window._pdfBranding.logo = data;
-        window._pdfBranding.logoFile = path;
-        _saveBranding();
-        showToast('✓ Logo saved', 'green');
-        _rebuildSidebar(); _rebuildPreview();
-      };
-      reader.readAsDataURL(blob);
+      const data = await _loadLogoFile(path);
+      const cid = window._pdfBranding.companyId || 'ami';
+      if (!window._pdfBranding.logos) window._pdfBranding.logos = {};
+      if (!window._pdfBranding.logoFiles) window._pdfBranding.logoFiles = {};
+      window._pdfBranding.logos[cid] = data;
+      window._pdfBranding.logoFiles[cid] = path;
+      window._pdfBranding.logo = data;
+      _saveBranding();
+      await window._refreshLogoTone();   // know the tone before the preview draws
+      showToast('✓ Logo saved', 'green');
+      _rebuildSidebar(); _rebuildPreview();
     } catch(e) { showToast('Failed to load logo', 'red'); }
   };
 
@@ -13410,10 +13549,12 @@ function showShareModal() {
   document.body.appendChild(ov);
   _rebuildSidebar();
   _rebuildPreview();
-  // Open branding section by default if no logo set yet
+  // Open branding section by default if no logo set yet; a company that was
+  // never given a logo picks up its bundled default (async, rebuilds when ready).
   if (!window._pdfBranding?.logo) {
     _sec.branding = true;
     _rebuildSidebar();
+    window._ensureCompanyLogo?.();
   }
   ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
 }

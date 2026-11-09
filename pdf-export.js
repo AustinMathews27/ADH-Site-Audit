@@ -121,9 +121,16 @@
     const pending   = items.filter(i => i.status === 'pending').length;
     const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
-    const logoImg = (h) => (!whiteLabel && branding.logo)
-      ? `<img src="${branding.logo}" style="height:${h}px;max-width:170px;object-fit:contain;display:block">`
-      : '';
+    // onDark: the logo sits on the dark hero band (flow/photo covers). A dark
+    // logo there, or a light/white logo on the white cover page, is invisible —
+    // give it a contrasting plate. Tone comes from index.html (_refreshLogoTone).
+    const logoImg = (h, onDark) => {
+      if (whiteLabel || !branding.logo) return '';
+      const tone  = branding.logoTone || 'dual';
+      const plate = (onDark && tone === 'dark') ? '#ffffff' : (!onDark && tone === 'light') ? P.ink : '';
+      const wrap  = plate ? `background:${plate};padding:${Math.round(h*0.2)}px ${Math.round(h*0.32)}px;border-radius:5px;` : '';
+      return `<div style="display:inline-block;${wrap}"><img src="${branding.logo}" style="height:${h}px;max-width:170px;object-fit:contain;display:block"></div>`;
+    };
 
     // ── Stats strip (shared) ──────────────────────────────────────────────────
     const statCells = [
@@ -161,7 +168,7 @@
           <div class="page-num">1</div>
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
             <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;color:${P.sub};text-transform:uppercase;margin-top:4px">${esc(reportTitle)}</div>
-            ${logoImg(38)}
+            ${logoImg(38, false)}
           </div>
           <div style="display:flex;gap:20px;margin-top:18px">
             <div style="flex:1;min-width:0">
@@ -191,7 +198,7 @@
               <div style="font-size:9px;font-weight:600;letter-spacing:1.5px;color:#cbd5e1;text-transform:uppercase;margin-top:7px">${esc(reportTitle)}</div>
             </div>
             <div style="position:absolute;left:0;right:0;bottom:0;padding:22px 37px;display:flex;justify-content:space-between;align-items:flex-end;gap:12px">
-              <div>${logoImg(30)}</div>
+              <div>${logoImg(30, true)}</div>
               <div style="color:#e2e8f0;font-weight:700;font-size:12px">${esc(proj.date||today)}</div>
             </div>
           </div>
@@ -875,14 +882,31 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       setFill(P.border); doc.rect(MX,py,CW,2.5,'F'); setFill(P.accent); doc.rect(MX,py,CW*frac,2.5,'F');
     }
 
+    // ── Company logo with a contrast plate ──────────────────────────────────
+    // A dark logo on the dark hero band, or a light/white logo on the white
+    // cover page, is invisible (ACD/ACS/ASST marks are navy; acm-dark is white).
+    // The plate is only drawn when the logo's tone matches its background;
+    // dual-tone marks such as AMI's red + silver never get one.
+    // Returns true when a logo was drawn. `align` is 'left' or 'right' of x.
+    function drawLogo(x, y, lh, align, onDark) {
+      const logo = window._pdfBranding?.logo;
+      if (!logo || whiteLabel) return false;
+      try {
+        const pr = doc.getImageProperties(logo);
+        const lw = Math.min(pr.width*lh/pr.height, 70);
+        const lx = align === 'right' ? x - lw : x;
+        const tone  = window._pdfBranding.logoTone || 'dual';
+        const plate = (onDark && tone === 'dark') ? '#ffffff' : (!onDark && tone === 'light') ? P.ink : null;
+        if (plate) { const px = lh*0.32, py = lh*0.2; setFill(plate); doc.roundedRect(lx-px, y-py, lw+2*px, lh+2*py, 1.5, 1.5, 'F'); }
+        doc.addImage(logo,'PNG',lx,y,lw,lh,undefined,'FAST');   // FAST = deflate the pixel data
+        return true;
+      } catch(e) { console.warn('[PDF] Logo could not be drawn:', e.message); return false; }
+    }
+
     // ── COVER: Branded Grid ───────────────────────────────────────────────────
     function coverGrid() {
       newPage();
-      if (window._pdfBranding?.logo && !whiteLabel) {
-        try { const pr = doc.getImageProperties(window._pdfBranding.logo);
-          const lh = 16, lw = pr.width*lh/pr.height;
-          doc.addImage(window._pdfBranding.logo,'PNG',PW-MX-lw,12,lw,lh); } catch(e){}
-      }
+      drawLogo(PW-MX, 12, 16, 'right', false);
       doc.setFont(P.font,'bold'); doc.setFontSize(9); setText(P.sub);
       doc.text((reportTitle||'').toUpperCase(), MX, 24, { charSpace: 0.6 });
       doc.setFont(P.font,'bold'); doc.setFontSize(26); setText(P.ink);
@@ -926,11 +950,7 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       doc.text((reportTitle||'').toUpperCase(), MX, 24 + tl.length*9, { charSpace: 0.6 });
       // logo + date inside bottom of hero
       let by = heroH - 16;
-      if (window._pdfBranding?.logo && !whiteLabel) {
-        try { const pr = doc.getImageProperties(window._pdfBranding.logo);
-          const lh = 12, lw = pr.width*lh/pr.height;
-          doc.addImage(window._pdfBranding.logo,'PNG',MX,heroH-lh-10,lw,lh); by = heroH-10; } catch(e){}
-      }
+      if (drawLogo(MX, heroH-12-10, 12, 'left', true)) by = heroH-10;
       setText('#e2e8f0'); doc.setFont(P.font,'bold'); doc.setFontSize(10);
       doc.text(proj.date || new Date().toLocaleDateString(), PW-MX, heroH-10, { align:'right' });
       // white area: meta + stats
@@ -1511,6 +1531,9 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
     if (coverImg && inclCover) {
       const aspect = (styleKey === 'flow' || styleKey === 'photo') ? PW / HERO_H : 70 / 92;
       coverImg = await coverCropImage(coverImg, aspect, 0.9);
+    }
+    if (inclCover && window._pdfBranding?.logo && typeof window._refreshLogoTone === 'function') {
+      try { await window._refreshLogoTone(); } catch (e) {}
     }
     if (inclCover) { (styleKey === 'flow' || styleKey === 'photo') ? coverFlow() : coverGrid(); }
 
