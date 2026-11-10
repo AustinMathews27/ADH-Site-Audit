@@ -4,20 +4,16 @@
 - **Device:** Windows desktop app (Claude Code)
 - **Branch:** `feature/company-profiles` (no PR yet)
 - **Date:** 2026-11-10
-- **Summary:** In-app PDF viewer for Resources + Toolbox Talks shipped to
-  PRODUCTION as v8.66 (`679058b` + bump `a3273f0` on main); main merged back
-  into the branch (`5a28750`). Viewer replaces `window.open` (no way back in the
-  installed app): Close / Esc / phone Back, zoom + pinch, fillable fields,
-  device-local drafts, Save / Share a filled copy. Austin then found signature
-  boxes did nothing: fixed on the branch in `7517304` (sign pad, stamped into the
-  PDF) — NOT on main yet. Toolbox ✍ Sign re-checked: works.
+- **Summary:** In-app PDF viewer for Resources + Toolbox Talks shipped as
+  v8.66 (`679058b` + `a3273f0`); signature boxes (were inert) fixed and shipped
+  as v8.67 (`6aa2773` + `e613d2f` on main). Main merged back into the branch
+  (`475ec61`). Verified in the local preview only; check on an iPhone.
 
 ## Pending
-- [ ] **Ship signature fix `7517304` to main as v8.67** — waiting on Austin's OK
-      (cherry-pick + bump, same as v8.66).
-- [ ] **Check v8.66 on an iPhone** — Resources → open a fillable form
-      (e.g. Pre-Task Plan v2): ✕ Close works, tapping a box zooms in, draft
-      survives closing, Save / Share sends a filled PDF.
+- [ ] **Check v8.67 on an iPhone** — Resources → open a fillable form
+      (e.g. QA QC Appendix D): ✕ Close works, tapping a box zooms in, ✍ Sign
+      box opens the pad, draft survives closing, Save / Share sends a filled
+      PDF with the signature in its box.
 - [ ] **PDF viewer follow-ups (only if asked)** — no freehand markup on
       non-fillable PDFs yet; drafts are device-local only (never synced).
 - [ ] **Check v8.65 on a device** — export a Flow-style report for an ACD or ACS
@@ -80,7 +76,7 @@
 
 ## Done (recent)
 - `7517304` PDF viewer: /Sig fields get a signature pad; image stamped into the
-  field's boxes on Save / Share (branch only).
+  field's boxes on Save / Share. Shipped as v8.67 (`6aa2773` + `e613d2f`).
 - `679058b` + `a3273f0` → main: PDF viewer shipped as v8.66; `5a28750` main merged
   back into the branch.
 - `2bf96ef` In-app PDF viewer for Resources + Toolbox Talks (fillable forms,
@@ -114,6 +110,7 @@
 - `ff0f28c` Staging: configurable Cosmos DB name + seed script
 
 ## Decisions
+- 2026-11-10 — PDF signature-field fix shipped straight to production as v8.67.
 - 2026-11-10 — In-app PDF viewer shipped straight to production as v8.66
   (cherry-pick + version bump).
 - 2026-11-10 — Resource form drafts stay on the device (not synced); the
