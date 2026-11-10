@@ -7253,6 +7253,11 @@ function _ensureDvStyles() {
   .dv-cb.on::after{content:'✓'}
   .dv-cb.radio{border-radius:50%}
   .dv-cb.radio.on::after{content:'●';font-size:0.8em}
+  .dv-sig{display:flex;align-items:center;justify-content:center;cursor:pointer;background:rgba(22,163,74,0.12);overflow:hidden;padding:0}
+  .dv-sig span{font-size:max(9px, calc(var(--ch) * var(--dvs) * 0.45px));font-weight:700;color:var(--green);white-space:nowrap;pointer-events:none}
+  .dv-sig.on{background:transparent}
+  .dv-sig img{max-width:100%;max-height:100%;object-fit:contain;pointer-events:none}
+  .dv-pad{z-index:740}
   .dv-foot{flex:0 0 auto;display:flex;gap:8px;align-items:center;padding:9px 12px calc(env(safe-area-inset-bottom, 0px) + 9px);border-top:1px solid var(--border);background:var(--surface)}
   .dv-note{flex:1;min-width:0;font-size:11.5px;color:var(--text3);line-height:1.35}
   .dv-btn{flex:0 0 auto;padding:11px 14px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);font:inherit;font-size:13px;font-weight:700;cursor:pointer}
@@ -7287,7 +7292,7 @@ async function docViewOpen(file) {
     <div class="dv-foot" id="dv-foot" style="display:none"></div>`;
   document.body.appendChild(ov);
   const st = _dv = { file, title, ov, doc: null, bytes: null, pages: [], fields: {}, values: {}, zoom: 1, fit: 1, dirty: false, saveT: 0, busy: false };
-  ov._esc = e => { if (e.key === 'Escape' && !document.getElementById('tbsend-ov')) docViewClose(); };
+  ov._esc = e => { if (e.key !== 'Escape' || document.getElementById('tbsend-ov')) return; const pad = document.getElementById('dvpad-ov'); if (pad) pad.remove(); else docViewClose(); };
   document.addEventListener('keydown', ov._esc);
   // Phone / browser Back closes the viewer instead of leaving the app
   try { history.pushState({ dv: 1 }, ''); st.pushed = true; } catch (e) {}
@@ -7328,6 +7333,7 @@ function docViewClose(fromPop) {
   window.removeEventListener('popstate', st.ov._pop);
   st.ov.remove();
   if (st.ro) st.ro.disconnect();
+  const pad = document.getElementById('dvpad-ov'); if (pad) pad.remove();
   st.pages.forEach(p => { if (p.task) try { p.task.cancel(); } catch (e) {} });
   if (st.doc) try { st.doc.destroy(); } catch (e) {}
   if (st.pushed && !fromPop) { st.pushed = false; try { history.back(); } catch (e) {} }
@@ -7348,7 +7354,7 @@ async function _dvBuild(st, draftValues) {
     try { annots = await page.getAnnotations({ intent: 'display' }); } catch (e) {}
     const p = { n: i, page, w: vp.width, h: vp.height, rendered: 0, task: null };
     st.pages.push(p);
-    html += `<div class="dv-page" data-n="${i}"><canvas></canvas>${_dvFieldsHtml(st, vp, annots)}<span class="dv-pnum">${i} / ${doc.numPages}</span></div>`;
+    html += `<div class="dv-page" data-n="${i}"><canvas></canvas>${_dvFieldsHtml(st, vp, annots, i)}<span class="dv-pnum">${i} / ${doc.numPages}</span></div>`;
   }
   wrap.innerHTML = html;
   body.innerHTML = '';
@@ -7378,6 +7384,8 @@ async function _dvBuild(st, draftValues) {
     setTimeout(() => { try { el.scrollIntoView({ block: 'center', inline: 'nearest' }); } catch (x) {} }, 60);
   });
   wrap.addEventListener('click', e => {
+    const sg = e.target.closest('.dv-sig');
+    if (sg) { _dvSignPad(st, sg.dataset.name); return; }
     const b = e.target.closest('.dv-cb'); if (!b) return;
     const f = st.fields[b.dataset.name]; if (!f || f.ro) return;
     if (f.kind === 'cb') st.values[f.name] = !_dvCur(st, f.name);
@@ -7402,13 +7410,14 @@ async function _dvBuild(st, draftValues) {
 }
 
 /** Absolute-positioned inputs for each AcroForm widget, placed in % of the page. */
-function _dvFieldsHtml(st, vp, annots) {
+function _dvFieldsHtml(st, vp, annots, pageNo) {
   let out = '';
   annots.forEach(a => {
     if (a.subtype !== 'Widget' || !a.fieldName || a.hidden) return;
     const kind = a.fieldType === 'Tx' ? 'tx'
       : a.fieldType === 'Btn' ? (a.checkBox ? 'cb' : a.radioButton ? 'rb' : null)
-      : a.fieldType === 'Ch' ? 'ch' : null;
+      : a.fieldType === 'Ch' ? 'ch'
+      : a.fieldType === 'Sig' ? 'sig' : null;
     if (!kind) return;
     const r = vp.convertToViewportRectangle(a.rect);
     const x = Math.min(r[0], r[2]), y = Math.min(r[1], r[3]);
@@ -7424,6 +7433,7 @@ function _dvFieldsHtml(st, vp, annots) {
       else if (kind === 'cb') f.init = !!a.fieldValue && a.fieldValue !== 'Off';
       else f.init = '';
     }
+    if (kind === 'sig') { f.ro = false; (f.widgets = f.widgets || []).push({ page: pageNo, rect: a.rect }); }
     if (kind === 'cb') { (f.ons = f.ons || new Set()).add(a.exportValue || 'Yes'); f.raw = a.fieldValue; }
     if (kind === 'rb' && a.fieldValue && a.fieldValue === a.buttonValue) f.init = a.buttonValue;
     const da = a.defaultAppearanceData || {};
@@ -7436,6 +7446,8 @@ function _dvFieldsHtml(st, vp, annots) {
       out += a.multiLine
         ? `<textarea class="dv-f" data-name="${n}" style="${pos};text-align:${align}"${ml}${ro} spellcheck="false"></textarea>`
         : `<input class="dv-f" data-name="${n}" style="${pos};text-align:${align}"${ml}${ro} autocomplete="off" spellcheck="false">`;
+    } else if (kind === 'sig') {
+      out += `<div class="dv-f dv-sig" data-name="${n}" style="${pos}" role="button" title="Tap to sign"></div>`;
     } else if (kind === 'ch') {
       out += `<select class="dv-f" data-name="${n}" style="${pos}"${f.ro ? ' disabled' : ''}><option value=""></option>${
         f.opts.map(o => `<option value="${_esc(o.exportValue)}">${_esc(o.displayValue)}</option>`).join('')}</select>`;
@@ -7456,7 +7468,10 @@ function _dvShowValue(st, name, except) {
   const f = st.fields[name], v = _dvCur(st, name);
   _dvEls(st, name).forEach(el => {
     if (el === except) return;
-    if (f.kind === 'cb') el.classList.toggle('on', !!v);
+    if (f.kind === 'sig') {
+      el.classList.toggle('on', !!v);
+      el.innerHTML = v ? `<img src="${v}" alt="Signature">` : '<span>✍ Sign</span>';
+    } else if (f.kind === 'cb') el.classList.toggle('on', !!v);
     else if (f.kind === 'rb') el.classList.toggle('on', !!v && el.dataset.on === v);
     else el.value = v == null ? '' : v;
   });
@@ -7606,6 +7621,56 @@ function _dvWireGestures(st) {
   }, { passive: false });
 }
 
+// ── Signature pad for /Sig fields (stored as a trimmed, transparent PNG) ──
+function _dvSignPad(st, name) {
+  if (document.getElementById('dvpad-ov')) return;
+  _ensureDocStyles();
+  const had = !!_dvCur(st, name);
+  const ov = document.createElement('div');
+  ov.id = 'dvpad-ov'; ov.className = 'tbpad-ov dv-pad';
+  ov.innerHTML = `<div class="tbpad">
+    <div class="tbpad-ttl">✍ ${_esc(String(name).trim() || 'Signature')}</div>
+    <canvas class="tbpad-cv"></canvas>
+    <div class="tbpad-hint">Sign above with your finger or stylus.</div>
+    <div class="tbpad-btns">
+      <button class="tbpad-cancel" data-a="cancel">Cancel</button>
+      <button class="tbpad-clear" data-a="${had ? 'remove' : 'clear'}">${had ? 'Remove' : 'Clear'}</button>
+      <button class="tbpad-save" data-a="save">Save</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  const cv = ov.querySelector('canvas');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  cv.width = Math.round((cv.clientWidth || 500) * dpr); cv.height = Math.round((cv.clientHeight || 170) * dpr);
+  const cx = cv.getContext('2d');
+  cx.strokeStyle = '#0b2a6f'; cx.lineWidth = 2.6 * dpr; cx.lineCap = 'round'; cx.lineJoin = 'round';
+  let down = null, box = null;
+  const pos = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height]; };
+  const grow = (x, y) => { box = box ? [Math.min(box[0], x), Math.min(box[1], y), Math.max(box[2], x), Math.max(box[3], y)] : [x, y, x, y]; };
+  cv.onpointerdown = e => {
+    if (down != null) return; e.preventDefault();
+    try { cv.setPointerCapture(e.pointerId); } catch (x) {}
+    down = e.pointerId; const [x, y] = pos(e);
+    cx.beginPath(); cx.moveTo(x, y); cx.lineTo(x + 0.01, y + 0.01); cx.stroke(); grow(x, y);
+  };
+  cv.onpointermove = e => { if (e.pointerId !== down) return; e.preventDefault(); const [x, y] = pos(e); cx.lineTo(x, y); cx.stroke(); grow(x, y); };
+  cv.onpointerup = cv.onpointercancel = e => { if (e.pointerId === down) down = null; };
+  const close = () => ov.remove();
+  ov.addEventListener('click', e => {
+    const a = e.target.dataset && e.target.dataset.a; if (!a) return;
+    if (a === 'cancel') return close();
+    if (a === 'clear') { cx.clearRect(0, 0, cv.width, cv.height); box = null; return; }
+    if (a === 'remove') { st.values[name] = ''; _dvShowValue(st, name); _dvChanged(st); return close(); }
+    if (!box) return showToast('Sign in the box first');
+    const pad = 6 * dpr;
+    const x = Math.max(0, Math.floor(box[0] - pad)), y = Math.max(0, Math.floor(box[1] - pad));
+    const w = Math.min(cv.width, Math.ceil(box[2] + pad)) - x, h = Math.min(cv.height, Math.ceil(box[3] + pad)) - y;
+    const out = document.createElement('canvas'); out.width = w; out.height = h;
+    out.getContext('2d').drawImage(cv, x, y, w, h, 0, 0, w, h);
+    st.values[name] = out.toDataURL('image/png');
+    _dvShowValue(st, name); _dvChanged(st); close();
+  });
+}
+
 // ── Save / Share: values written into a copy of the original (pdf-lib) ──
 async function _dvSave() {
   const st = _dv; if (!st || st.busy) return;
@@ -7621,10 +7686,26 @@ async function _dvSave() {
     const blank = x => x == null || x === '' || x === false;
     Object.keys(st.fields).forEach(name => {
       const v = _dvCur(st, name), f0 = st.fields[name];
-      if (f0.ro || v === f0.init || (blank(v) && blank(f0.init))) return;   // untouched: leave as-is
+      if (f0.kind === 'sig' || f0.ro || v === f0.init || (blank(v) && blank(f0.init))) return;   // untouched: leave as-is
       try { _dvWriteField(form, name, v, st.fields[name]); } catch (e) { failed++; console.warn('[DocViewer] field', name, e && e.message); }
     });
     try { form.updateFieldAppearances(await pdf.embedFont(PDFLib.StandardFonts.Helvetica)); } catch (e) { console.warn('[DocViewer] appearances', e && e.message); }
+    // Signatures: pdf-lib can't fill a /Sig field, so the drawn signature is
+    // stamped onto the page inside each of the field's boxes.
+    for (const f of Object.values(st.fields)) {
+      const v = f.kind === 'sig' && _dvCur(st, f.name); if (!v) continue;
+      try {
+        const img = await pdf.embedPng(v);
+        f.widgets.forEach(w => {
+          const pg = pdf.getPage(w.page - 1);
+          const x1 = Math.min(w.rect[0], w.rect[2]), y1 = Math.min(w.rect[1], w.rect[3]);
+          const bw = Math.abs(w.rect[2] - w.rect[0]), bh = Math.abs(w.rect[3] - w.rect[1]);
+          const k = Math.min(bw / img.width, bh / img.height);
+          const iw = img.width * k, ih = img.height * k;
+          pg.drawImage(img, { x: x1 + (bw - iw) / 2, y: y1 + (bh - ih) / 2, width: iw, height: ih });
+        });
+      } catch (e) { failed++; console.warn('[DocViewer] signature', f.name, e && e.message); }
+    }
     const bytes = await pdf.save({ updateFieldAppearances: false });
     const base = String(st.file).split('/').pop().replace(/\.pdf$/i, '').replace(/[^\w\-]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
     const filename = base + '_' + _todayISO() + '.pdf';
