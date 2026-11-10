@@ -4,16 +4,17 @@
 - **Device:** Windows desktop app (Claude Code)
 - **Branch:** `feature/company-profiles` (no PR yet)
 - **Date:** 2026-11-10
-- **Summary:** Resources PDFs no longer open with `window.open` (installed app
-  had no way back). New in-app viewer `docViewOpen()` (`2bf96ef`): Close / Esc /
-  phone Back, zoom + pinch, fillable fields as inputs, device-local drafts,
-  Save / Share a filled copy via pdf-lib. Also used for Toolbox Talks. Verified
-  in the local preview (desktop + phone size); not yet on a real device or main.
+- **Summary:** In-app PDF viewer for Resources + Toolbox Talks shipped to
+  PRODUCTION as v8.66 (`679058b` + bump `a3273f0` on main); main merged back
+  into the branch (`5a28750`). Viewer replaces `window.open` (no way back in the
+  installed app): Close / Esc / phone Back, zoom + pinch, fillable fields,
+  device-local drafts, Save / Share a filled copy. Verified in the local preview
+  only; try it on an iPhone after the deploy.
 
 ## Pending
-- [ ] **Ship the PDF viewer to main** — cherry-pick `2bf96ef` + bump to v8.66
-      (`index.html` APP_VERSION + `sw.js` cache) if Austin wants it in production
-      now, then try a form on an iPhone: Close, Back, fill, Save / Share.
+- [ ] **Check v8.66 on an iPhone** — Resources → open a fillable form
+      (e.g. Pre-Task Plan v2): ✕ Close works, tapping a box zooms in, draft
+      survives closing, Save / Share sends a filled PDF.
 - [ ] **PDF viewer follow-ups (only if asked)** — no freehand markup/signature
       on non-fillable PDFs yet; drafts are device-local only (never synced).
 - [ ] **Check v8.65 on a device** — export a Flow-style report for an ACD or ACS
@@ -75,6 +76,8 @@
 - [ ] **Stale PR #3 "task 1"** (`hardening/deps-offline`, July) — close or rebase.
 
 ## Done (recent)
+- `679058b` + `a3273f0` → main: PDF viewer shipped as v8.66; `5a28750` main merged
+  back into the branch.
 - `2bf96ef` In-app PDF viewer for Resources + Toolbox Talks (fillable forms,
   drafts in IndexedDB `docfill_<file>`, Save / Share via pdf-lib); `server.js`
   decodes `%20` so local preview serves resource files.
@@ -106,6 +109,8 @@
 - `ff0f28c` Staging: configurable Cosmos DB name + seed script
 
 ## Decisions
+- 2026-11-10 — In-app PDF viewer shipped straight to production as v8.66
+  (cherry-pick + version bump).
 - 2026-11-10 — Resource form drafts stay on the device (not synced); the
   shared/sent PDF is the record, same as toolbox signatures. (Claude default — not yet confirmed by Austin.)
 - 2026-11-08 — PDF division-logo fix shipped straight to production as v8.65
