@@ -107,7 +107,7 @@
 
 ## Decisions
 - 2026-11-10 — Resource form drafts stay on the device (not synced); the
-  shared/sent PDF is the record, same as toolbox signatures.
+  shared/sent PDF is the record, same as toolbox signatures. (Claude default — not yet confirmed by Austin.)
 - 2026-11-08 — PDF division-logo fix shipped straight to production as v8.65
   (cherry-pick + version bump, same as the phone-layout releases). Entra and
   company profiles still stay on the branch.
