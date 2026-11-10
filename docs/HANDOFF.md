@@ -3,17 +3,19 @@
 ## Last session
 - **Device:** Windows desktop app (Claude Code)
 - **Branch:** `feature/company-profiles` (no PR yet)
-- **Date:** 2026-11-08
-- **Summary:** PDF logo fix shipped to PRODUCTION as v8.65 (`c929e20` +
-  `1bc70c9` on main): division logos were invisible on the dark hero band
-  (Flow/Photo covers) or the white page (ACM); logos are now tone-classified and
-  get a contrasting plate only where needed, each company defaults to its own
-  bundled logo when chosen, logos are capped at 1000 px (reports went from
-  15–39 MB to <150 KB). Main (Project Book, AFQC, per-day SI history, v8.65)
-  merged back into the branch (`f1ca094`). Verified in the local preview only;
-  check one real report on a device after the deploy.
+- **Date:** 2026-11-10
+- **Summary:** Resources PDFs no longer open with `window.open` (installed app
+  had no way back). New in-app viewer `docViewOpen()` (`2bf96ef`): Close / Esc /
+  phone Back, zoom + pinch, fillable fields as inputs, device-local drafts,
+  Save / Share a filled copy via pdf-lib. Also used for Toolbox Talks. Verified
+  in the local preview (desktop + phone size); not yet on a real device or main.
 
 ## Pending
+- [ ] **Ship the PDF viewer to main** — cherry-pick `2bf96ef` + bump to v8.66
+      (`index.html` APP_VERSION + `sw.js` cache) if Austin wants it in production
+      now, then try a form on an iPhone: Close, Back, fill, Save / Share.
+- [ ] **PDF viewer follow-ups (only if asked)** — no freehand markup/signature
+      on non-fillable PDFs yet; drafts are device-local only (never synced).
 - [ ] **Check v8.65 on a device** — export a Flow-style report for an ACD or ACS
       project: logo should sit on a white plate in the hero; file should be well
       under 1 MB (was 15–39 MB with a full-size logo).
@@ -73,6 +75,9 @@
 - [ ] **Stale PR #3 "task 1"** (`hardening/deps-offline`, July) — close or rebase.
 
 ## Done (recent)
+- `2bf96ef` In-app PDF viewer for Resources + Toolbox Talks (fillable forms,
+  drafts in IndexedDB `docfill_<file>`, Save / Share via pdf-lib); `server.js`
+  decodes `%20` so local preview serves resource files.
 - `f1ca094` main merged into the branch (Project Book, AFQC report, per-day SI
   history, v8.65). `0bfdd60` → main as `c929e20`, bump `1bc70c9` (v8.65).
 - `0bfdd60` PDF export: logos classified dark/light/dual (`_logoTone`), contrast
@@ -101,6 +106,8 @@
 - `ff0f28c` Staging: configurable Cosmos DB name + seed script
 
 ## Decisions
+- 2026-11-10 — Resource form drafts stay on the device (not synced); the
+  shared/sent PDF is the record, same as toolbox signatures.
 - 2026-11-08 — PDF division-logo fix shipped straight to production as v8.65
   (cherry-pick + version bump, same as the phone-layout releases). Entra and
   company profiles still stay on the branch.
