@@ -7130,7 +7130,7 @@ function _tbRows(talks, q) {
   const f = talks.filter(t => !q || t.title.toLowerCase().includes(q) || ('week ' + t.week).includes(q) || String(t.week) === q);
   return f.map(t => {
     const n = _tbSigCount('', t.week);
-    return `<div class="doc-row" onclick="window.open('${_docHref(t.file)}','_blank','noopener')">
+    return `<div class="doc-row" onclick="docViewOpen(${_dvArg(t.file)})">
     <span class="tb-wk">WK ${String(t.week).padStart(2,'0')}</span>
     <span class="tb-ttl">${_esc(t.title)}</span>
     <button class="tb-sign" onclick="event.stopPropagation();tbSignOpen(${t.week},'')" title="Collect crew signatures on this device">✍ ${n ? n + ' signed' : 'Sign'}</button>
@@ -7152,11 +7152,11 @@ function buildResourcesView() {
   _ensureDocStyles();
   const el = document.getElementById('v-resources'); if (!el) return;
   el.innerHTML = `<div class="grid-wrap doc-wrap"><div class="env-header-title">📂 Resources</div><div class="doc-sub">Loading…</div></div>`;
-  loadDocManifest().then(m => {
+  Promise.all([loadDocManifest(), _dvLoadDrafts(), _ensureDvStyles()]).then(([m]) => {
     if (route().view !== 'resources') return;
     el.innerHTML = `<div class="grid-wrap doc-wrap">
       <div class="env-header-title">📂 Resources</div>
-      <div class="doc-sub">Field forms, quality-control plans, and site-safety programs. Tap any document to open or download.</div>
+      <div class="doc-sub">Field forms, quality-control plans, and site-safety programs. Tap a document to open it — fillable forms can be filled in and shared as a PDF.</div>
       <input class="doc-search" placeholder="Search all documents…" oninput="_resFilter(this.value)" value="${_esc(_resSearch)}">
       <div id="res-list">${_resBody(m.categories || [], _resSearch)}</div>
     </div>`;
@@ -7172,9 +7172,10 @@ function _resBody(cats, q) {
       const items = (g.items || []).filter(it => !q ||
         it.title.toLowerCase().includes(q) || (g.name || '').toLowerCase().includes(q) || label.toLowerCase().includes(q));
       if (!items.length) return; any = true;
-      const rows = items.map(it => `<div class="doc-item" onclick="window.open('${_docHref(it.file)}','_blank','noopener')">
+      const rows = items.map(it => `<div class="doc-item" onclick="docViewOpen(${_dvArg(it.file)})">
         <span class="doc-ic ${it.type === 'docx' ? 'docx' : ''}">${(it.type || 'pdf').toUpperCase()}</span>
         <span class="doc-itt">${_esc(it.title)}</span>
+        ${_dvDrafts && _dvDrafts.has(it.file) ? '<span class="doc-draft" title="You have filled-in values saved on this device">✎ Draft</span>' : ''}
         ${_docDlBtn(it.file)}</div>`).join('');
       if (!g.name) {
         cathtml += `<div class="doc-grp open">${rows}</div>`;
@@ -7199,6 +7200,468 @@ function _resToggle(key) {
   _resOpen[key] = !_resOpen[key];
   const c = document.getElementById('res-list');
   if (c) c.innerHTML = _resBody((_docManifest && _docManifest.categories) || [], _resSearch);
+}
+
+// ── IN-APP DOCUMENT VIEWER (Resources + Toolbox Talks) ──
+// window.open() on a PDF left the installed app (iOS PWA / native shell) on a
+// bare PDF page with no way back. PDFs now open in this full-screen overlay:
+// ✕ / Esc / the phone's Back button close it. Pages render through PDF.js
+// (vendor, precached); fillable AcroForm fields become real inputs laid over
+// the page. What you type is kept as a DEVICE-LOCAL draft (IndexedDB
+// `docfill_<file>`, never synced) and "Save / Share" writes the values into a
+// copy of the original with pdf-lib — the original file is never changed.
+let _dv = null;              // open viewer state
+let _dvDrafts = null;        // Set of files that have a saved draft
+const _DV_IDX = 'docfill_index';
+function _dvArg(file) { return _esc(JSON.stringify(String(file))); }
+function _dvLoadDrafts() {
+  if (_dvDrafts) return Promise.resolve(_dvDrafts);
+  return _idbGet(_DV_IDX).then(v => (_dvDrafts = new Set(Array.isArray(v) ? v : [])))
+    .catch(() => (_dvDrafts = new Set()));
+}
+function _dvTitleFor(file) {
+  const m = _docManifest || {};
+  const t = (m.toolboxTalks || []).find(x => x.file === file);
+  if (t) return 'Week ' + t.week + ' — ' + t.title;
+  for (const c of (m.categories || [])) for (const g of (c.groups || []))
+    for (const it of (g.items || [])) if (it.file === file) return it.title;
+  return String(file).split('/').pop().replace(/\.pdf$/i, '');
+}
+function _ensureDvStyles() {
+  if (document.getElementById('dv-styles')) return;
+  const st = document.createElement('style');
+  st.id = 'dv-styles';
+  st.textContent = `
+  .dv-ov{position:fixed;inset:0;z-index:720;background:var(--bg);display:flex;flex-direction:column}
+  .dv-head{display:flex;align-items:center;gap:8px;padding:calc(env(safe-area-inset-top, 0px) + 8px) 10px 8px;border-bottom:1px solid var(--border);background:var(--surface);flex:0 0 auto}
+  .dv-x{display:flex;align-items:center;gap:6px;height:38px;padding:0 13px 0 10px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font:inherit;font-size:13.5px;font-weight:700;cursor:pointer;flex:0 0 auto}
+  .dv-x:active{transform:scale(0.96)}
+  .dv-ttl{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dv-ttl small{display:block;font-size:11px;font-weight:400;color:var(--text3);overflow:hidden;text-overflow:ellipsis}
+  .dv-ib{width:38px;height:38px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);display:grid;place-items:center;cursor:pointer;flex:0 0 auto;font:inherit;font-size:16px;font-weight:700;text-decoration:none}
+  .dv-main{flex:1;min-height:0;position:relative;display:flex;flex-direction:column}
+  .dv-body{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;background:var(--surface2);touch-action:pan-x pan-y;position:relative}
+  .dv-pages{padding:12px 8px 28px;transform-origin:0 0;width:max-content;min-width:100%;box-sizing:border-box}
+  .dv-page{position:relative;margin:0 auto 12px;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,0.25)}
+  .dv-page canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+  .dv-pnum{position:absolute;right:6px;bottom:-1px;transform:translateY(100%);font-size:10px;color:var(--text3);font-family:var(--mono);padding-top:1px}
+  .dv-f{position:absolute;box-sizing:border-box;margin:0;border:0;border-radius:0;background:rgba(37,99,235,0.10);color:#111;font-family:Helvetica,Arial,sans-serif;font-size:calc(var(--fs) * var(--dvs) * 1px);line-height:1.15;padding:0 calc(2px * var(--dvs));outline:none;-webkit-appearance:none;appearance:none}
+  .dv-f:focus{background:rgba(37,99,235,0.18);box-shadow:0 0 0 1.5px var(--accent)}
+  textarea.dv-f{resize:none;padding-top:calc(1px * var(--dvs));overflow:hidden}
+  .dv-f[readonly]{background:transparent}
+  .dv-cb{display:grid;place-items:center;cursor:pointer;padding:0;font-size:calc(var(--ch) * var(--dvs) * 0.85px);font-weight:700;line-height:1;user-select:none;-webkit-user-select:none}
+  .dv-cb.on::after{content:'✓'}
+  .dv-cb.radio{border-radius:50%}
+  .dv-cb.radio.on::after{content:'●';font-size:0.8em}
+  .dv-foot{flex:0 0 auto;display:flex;gap:8px;align-items:center;padding:9px 12px calc(env(safe-area-inset-bottom, 0px) + 9px);border-top:1px solid var(--border);background:var(--surface)}
+  .dv-note{flex:1;min-width:0;font-size:11.5px;color:var(--text3);line-height:1.35}
+  .dv-btn{flex:0 0 auto;padding:11px 14px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+  .dv-btn.pri{background:var(--green);border-color:var(--green);color:#fff}
+  .dv-btn:disabled{opacity:0.45;cursor:default}
+  .dv-msg{padding:60px 24px;text-align:center;color:var(--text2);font-size:13px;line-height:1.6}
+  .dv-zoom{position:absolute;right:12px;bottom:12px;display:flex;flex-direction:column;gap:6px;z-index:2}
+  .dv-zoom button{width:40px;height:40px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font:inherit;font-size:18px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2)}
+  .doc-draft{font-size:10px;font-weight:700;color:var(--orange,#f59e0b);background:rgba(245,158,11,0.12);padding:2px 7px;border-radius:20px;flex:0 0 auto;white-space:nowrap}`;
+  document.head.appendChild(st);
+}
+
+async function docViewOpen(file) {
+  if (!/\.pdf$/i.test(file)) {   // .docx etc. — the browser can't render it; hand the file over
+    const a = document.createElement('a');
+    a.href = _docHref(file); a.download = String(file).split('/').pop();
+    document.body.appendChild(a); a.click(); a.remove();
+    return;
+  }
+  if (_dv) docViewClose(true);
+  _ensureDvStyles();
+  const title = _dvTitleFor(file);
+  const ov = document.createElement('div');
+  ov.className = 'dv-ov'; ov.id = 'dv-ov';
+  ov.innerHTML = `
+    <div class="dv-head">
+      <button class="dv-x" onclick="docViewClose()" title="Close (Esc)"><span style="font-size:15px">✕</span> Close</button>
+      <div class="dv-ttl">${_esc(title)}<small id="dv-sub">Loading…</small></div>
+      <a class="dv-ib" href="${_docHref(file)}" download="${_esc(String(file).split('/').pop())}" title="Download the blank original">${_DL_ICON}</a>
+    </div>
+    <div class="dv-main"><div class="dv-body" id="dv-body"><div class="dv-msg">Loading document…</div></div></div>
+    <div class="dv-foot" id="dv-foot" style="display:none"></div>`;
+  document.body.appendChild(ov);
+  const st = _dv = { file, title, ov, doc: null, bytes: null, pages: [], fields: {}, values: {}, zoom: 1, fit: 1, dirty: false, saveT: 0, busy: false };
+  ov._esc = e => { if (e.key === 'Escape' && !document.getElementById('tbsend-ov')) docViewClose(); };
+  document.addEventListener('keydown', ov._esc);
+  // Phone / browser Back closes the viewer instead of leaving the app
+  try { history.pushState({ dv: 1 }, ''); st.pushed = true; } catch (e) {}
+  ov._pop = () => { if (_dv === st) { st.pushed = false; docViewClose(true); } };
+  window.addEventListener('popstate', ov._pop);
+
+  try {
+    const [L, buf, draft] = await Promise.all([
+      _loadPdfjs(),
+      fetch(_docHref(file)).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); }),
+      _idbGet('docfill_' + file).catch(() => null),
+      _dvLoadDrafts()
+    ]);
+    if (_dv !== st) return;
+    st.bytes = new Uint8Array(buf);
+    // An offline/SPA fallback can answer 200 with HTML — check the %PDF magic
+    if (String.fromCharCode(...st.bytes.subarray(0, 1024)).indexOf('%PDF') < 0) throw new Error('not a PDF');
+    // PDF.js may transfer the buffer it is given to its worker — hand it a copy
+    st.doc = await L.getDocument({ data: st.bytes.slice() }).promise;
+    if (_dv !== st) return;
+    await _dvBuild(st, draft && draft.values);
+  } catch (e) {
+    console.warn('[DocViewer]', e && e.message);
+    if (_dv !== st) return;
+    document.getElementById('dv-sub').textContent = navigator.onLine ? 'Could not open' : 'Offline';
+    document.getElementById('dv-body').innerHTML = `<div class="dv-msg">${navigator.onLine
+      ? 'This document could not be displayed here.'
+      : 'You are offline and this document has not been opened on this device before.<br>Open it once while online and it will be available offline.'}
+      <br><br><button class="dv-btn" onclick="docViewClose()">Close</button></div>`;
+  }
+}
+
+function docViewClose(fromPop) {
+  const st = _dv; if (!st) return;
+  if (st.saveT) { clearTimeout(st.saveT); _dvPersist(st); }
+  _dv = null;
+  document.removeEventListener('keydown', st.ov._esc);
+  window.removeEventListener('popstate', st.ov._pop);
+  st.ov.remove();
+  if (st.ro) st.ro.disconnect();
+  st.pages.forEach(p => { if (p.task) try { p.task.cancel(); } catch (e) {} });
+  if (st.doc) try { st.doc.destroy(); } catch (e) {}
+  if (st.pushed && !fromPop) { st.pushed = false; try { history.back(); } catch (e) {} }
+  if (route().view === 'resources') _resFilter(_resSearch);   // refresh draft badges
+}
+
+async function _dvBuild(st, draftValues) {
+  const doc = st.doc;
+  const body = document.getElementById('dv-body');
+  const wrap = document.createElement('div');
+  wrap.className = 'dv-pages';
+  let html = '';
+  for (let i = 1; i <= doc.numPages; i++) {
+    const page = await doc.getPage(i);
+    if (_dv !== st) return;
+    const vp = page.getViewport({ scale: 1 });
+    let annots = [];
+    try { annots = await page.getAnnotations({ intent: 'display' }); } catch (e) {}
+    const p = { n: i, page, w: vp.width, h: vp.height, rendered: 0, task: null };
+    st.pages.push(p);
+    html += `<div class="dv-page" data-n="${i}"><canvas></canvas>${_dvFieldsHtml(st, vp, annots)}<span class="dv-pnum">${i} / ${doc.numPages}</span></div>`;
+  }
+  wrap.innerHTML = html;
+  body.innerHTML = '';
+  body.appendChild(wrap);
+  body.parentNode.insertAdjacentHTML('beforeend', `<div class="dv-zoom"><button onclick="_dvZoomBy(1.25)" title="Zoom in">+</button><button onclick="_dvZoomBy(0.8)" title="Zoom out">−</button><button onclick="_dvSetZoom(1)" title="Fit width" style="font-size:11px">Fit</button></div>`);
+  st.wrap = wrap; st.body = body;
+  st.pages.forEach((p, i) => { p.el = wrap.children[i]; p.cv = p.el.querySelector('canvas'); });
+
+  // Checkboxes sharing a name but with different on-values act as one choice
+  Object.values(st.fields).forEach(f => {
+    if (f.kind === 'cb' && f.ons && f.ons.size > 1) { f.kind = 'rb'; f.init = f.raw && f.ons.has(f.raw) ? f.raw : ''; }
+  });
+  // Initial values: the PDF's own, then this device's draft on top
+  const nf = Object.keys(st.fields).length;
+  Object.entries(draftValues || {}).forEach(([k, v]) => { if (st.fields[k]) st.values[k] = v; });
+  Object.keys(st.fields).forEach(k => _dvShowValue(st, k));
+  wrap.addEventListener('input', e => _dvOnInput(st, e));
+  wrap.addEventListener('change', e => _dvOnInput(st, e));
+  // On a phone the fitted page makes field text ~5px — tapping a box zooms
+  // in until its text is readable, centred on that box.
+  wrap.addEventListener('focusin', e => {
+    const el = e.target; if (!el.matches('input.dv-f,textarea.dv-f,select.dv-f') || el.readOnly) return;
+    const fs = parseFloat(getComputedStyle(el).fontSize) || 12;
+    if (fs >= 11) return;
+    const r = el.getBoundingClientRect(), br = st.body.getBoundingClientRect();
+    _dvSetZoom(st.zoom * 14 / fs, r.left + r.width / 2 - br.left, r.top + r.height / 2 - br.top);
+    setTimeout(() => { try { el.scrollIntoView({ block: 'center', inline: 'nearest' }); } catch (x) {} }, 60);
+  });
+  wrap.addEventListener('click', e => {
+    const b = e.target.closest('.dv-cb'); if (!b) return;
+    const f = st.fields[b.dataset.name]; if (!f || f.ro) return;
+    if (f.kind === 'cb') st.values[f.name] = !_dvCur(st, f.name);
+    else st.values[f.name] = _dvCur(st, f.name) === b.dataset.on ? '' : b.dataset.on;
+    _dvShowValue(st, f.name); _dvChanged(st);
+  });
+
+  document.getElementById('dv-sub').textContent = doc.numPages + ' page' + (doc.numPages > 1 ? 's' : '') + (nf ? ' · fillable form' : '');
+  const foot = document.getElementById('dv-foot');
+  if (nf) {
+    foot.style.display = 'flex';
+    foot.innerHTML = `<div class="dv-note" id="dv-note"></div>
+      <button class="dv-btn" id="dv-clear" onclick="_dvClear()">Clear</button>
+      <button class="dv-btn pri" id="dv-save" onclick="_dvSave()">Save / Share</button>`;
+    _dvNote(st);
+  }
+  _dvLayout(st);
+  _dvWireGestures(st);
+  body.addEventListener('scroll', () => _dvSchedule(st), { passive: true });
+  st.ro = new ResizeObserver(() => { if (_dv === st) _dvLayout(st, true); });
+  st.ro.observe(body);
+}
+
+/** Absolute-positioned inputs for each AcroForm widget, placed in % of the page. */
+function _dvFieldsHtml(st, vp, annots) {
+  let out = '';
+  annots.forEach(a => {
+    if (a.subtype !== 'Widget' || !a.fieldName || a.hidden) return;
+    const kind = a.fieldType === 'Tx' ? 'tx'
+      : a.fieldType === 'Btn' ? (a.checkBox ? 'cb' : a.radioButton ? 'rb' : null)
+      : a.fieldType === 'Ch' ? 'ch' : null;
+    if (!kind) return;
+    const r = vp.convertToViewportRectangle(a.rect);
+    const x = Math.min(r[0], r[2]), y = Math.min(r[1], r[3]);
+    const w = Math.abs(r[2] - r[0]), h = Math.abs(r[3] - r[1]);
+    if (w < 2 || h < 2) return;
+    const name = a.fieldName;
+    let f = st.fields[name];
+    if (!f) {
+      f = st.fields[name] = { name, kind, ro: !!a.readOnly, opts: a.options || [] };
+      // The PDF's own current value
+      if (kind === 'tx') f.init = a.fieldValue == null ? '' : String(a.fieldValue);
+      else if (kind === 'ch') f.init = Array.isArray(a.fieldValue) ? (a.fieldValue[0] || '') : (a.fieldValue || '');
+      else if (kind === 'cb') f.init = !!a.fieldValue && a.fieldValue !== 'Off';
+      else f.init = '';
+    }
+    if (kind === 'cb') { (f.ons = f.ons || new Set()).add(a.exportValue || 'Yes'); f.raw = a.fieldValue; }
+    if (kind === 'rb' && a.fieldValue && a.fieldValue === a.buttonValue) f.init = a.buttonValue;
+    const da = a.defaultAppearanceData || {};
+    const fs = da.fontSize > 0 ? Math.min(da.fontSize, h * 0.85) : Math.max(5, Math.min(a.multiLine ? 10 : h * 0.62, 11));
+    const pos = `left:${(x / vp.width * 100).toFixed(4)}%;top:${(y / vp.height * 100).toFixed(4)}%;width:${(w / vp.width * 100).toFixed(4)}%;height:${(h / vp.height * 100).toFixed(4)}%;--fs:${fs.toFixed(2)};--ch:${Math.min(w, h).toFixed(2)}`;
+    const align = ['left', 'center', 'right'][a.textAlignment] || 'left';
+    const n = _esc(name), ro = f.ro ? ' readonly' : '';
+    if (kind === 'tx') {
+      const ml = a.maxLen > 0 ? ` maxlength="${a.maxLen}"` : '';
+      out += a.multiLine
+        ? `<textarea class="dv-f" data-name="${n}" style="${pos};text-align:${align}"${ml}${ro} spellcheck="false"></textarea>`
+        : `<input class="dv-f" data-name="${n}" style="${pos};text-align:${align}"${ml}${ro} autocomplete="off" spellcheck="false">`;
+    } else if (kind === 'ch') {
+      out += `<select class="dv-f" data-name="${n}" style="${pos}"${f.ro ? ' disabled' : ''}><option value=""></option>${
+        f.opts.map(o => `<option value="${_esc(o.exportValue)}">${_esc(o.displayValue)}</option>`).join('')}</select>`;
+    } else {
+      const on = kind === 'rb' ? a.buttonValue : (a.exportValue || 'Yes');
+      out += `<div class="dv-f dv-cb${kind === 'rb' ? ' radio' : ''}" data-name="${n}" data-on="${_esc(on)}" style="${pos}" role="${kind === 'rb' ? 'radio' : 'checkbox'}"></div>`;
+    }
+  });
+  return out;
+}
+function _dvCur(st, name) {
+  return Object.prototype.hasOwnProperty.call(st.values, name) ? st.values[name] : st.fields[name].init;
+}
+function _dvEls(st, name) {
+  return [...st.wrap.querySelectorAll('[data-name]')].filter(el => el.dataset.name === name);
+}
+function _dvShowValue(st, name, except) {
+  const f = st.fields[name], v = _dvCur(st, name);
+  _dvEls(st, name).forEach(el => {
+    if (el === except) return;
+    if (f.kind === 'cb') el.classList.toggle('on', !!v);
+    else if (f.kind === 'rb') el.classList.toggle('on', !!v && el.dataset.on === v);
+    else el.value = v == null ? '' : v;
+  });
+}
+function _dvOnInput(st, e) {
+  const el = e.target; const name = el.dataset && el.dataset.name;
+  const f = name && st.fields[name]; if (!f || f.kind === 'cb' || f.kind === 'rb') return;
+  st.values[name] = el.value;
+  _dvShowValue(st, name, el);   // same field shown in two places stays in step
+  _dvChanged(st);
+}
+function _dvChanged(st) {
+  st.dirty = true;
+  clearTimeout(st.saveT);
+  st.saveT = setTimeout(() => _dvPersist(st), 600);
+  _dvNote(st, 'Saving draft…');
+}
+function _dvHasValues(st) {
+  return Object.keys(st.values).some(k => { const v = st.values[k]; return v !== st.fields[k].init && !(v === '' && !st.fields[k].init); });
+}
+function _dvPersist(st) {
+  st.saveT = 0;
+  const has = _dvHasValues(st);
+  const key = 'docfill_' + st.file;
+  const p = has ? _idbSet(key, { values: st.values, updatedAt: Date.now() }) : _idbSet(key, null);
+  return p.then(() => _dvLoadDrafts()).then(set => {
+    if (has) set.add(st.file); else set.delete(st.file);
+    return _idbSet(_DV_IDX, [...set]);
+  }).then(() => { if (_dv === st) _dvNote(st); })
+    .catch(e => { console.warn('[DocViewer] draft save failed', e); if (_dv === st) _dvNote(st, 'Could not save the draft on this device'); });
+}
+function _dvNote(st, msg) {
+  const n = document.getElementById('dv-note'); if (!n) return;
+  n.textContent = msg || (_dvHasValues(st)
+    ? '✓ Draft saved on this device. Save / Share makes a filled PDF.'
+    : 'Tap a highlighted box to fill it in.');
+}
+function _dvClear() {
+  const st = _dv; if (!st || !_dvHasValues(st)) return;
+  if (!confirm('Clear everything you filled in on this form?')) return;
+  st.values = {};
+  Object.keys(st.fields).forEach(k => _dvShowValue(st, k));
+  clearTimeout(st.saveT);
+  _dvPersist(st);
+}
+
+// ── Layout / zoom / lazy rendering ──
+function _dvLayout(st, keepZoom) {
+  const body = st.body; if (!body || !st.pages.length) return;
+  const maxW = Math.max(...st.pages.map(p => p.w));
+  const avail = Math.max(200, body.clientWidth - 16);
+  st.fit = Math.min(avail, 1100) / maxW;
+  _dvApplyScale(st);
+  if (!keepZoom) body.scrollTop = 0;
+}
+function _dvApplyScale(st) {
+  const s = st.fit * st.zoom;
+  st.wrap.style.setProperty('--dvs', String(s));
+  st.pages.forEach(p => { p.el.style.width = (p.w * s) + 'px'; p.el.style.height = (p.h * s) + 'px'; });
+  _dvSchedule(st);
+}
+function _dvSetZoom(z, cx, cy) {
+  const st = _dv; if (!st || !st.body) return;
+  const body = st.body, old = st.zoom;
+  z = Math.min(Math.max(z, 0.5), 5);
+  if (cx == null) { cx = body.clientWidth / 2; cy = body.clientHeight / 2; }
+  const px = body.scrollLeft + cx, py = body.scrollTop + cy, k = z / old;
+  st.zoom = z;
+  _dvApplyScale(st);
+  body.scrollLeft = px * k - cx; body.scrollTop = py * k - cy;
+}
+function _dvZoomBy(k) { if (_dv) _dvSetZoom(_dv.zoom * k); }
+function _dvSchedule(st) {
+  if (st.raf) return;
+  st.raf = requestAnimationFrame(() => { st.raf = 0; if (_dv === st) _dvRenderVisible(st); });
+}
+function _dvRenderVisible(st) {
+  const br = st.body.getBoundingClientRect();
+  const s = st.fit * st.zoom;
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  st.pages.forEach(p => {
+    const r = p.el.getBoundingClientRect();
+    const near = r.bottom > br.top - 900 && r.top < br.bottom + 900;
+    const far = r.bottom < br.top - 3500 || r.top > br.bottom + 3500;
+    if (far && p.rendered) {          // free canvas memory (iOS caps it per tab)
+      if (p.task) try { p.task.cancel(); } catch (e) {}
+      p.cv.width = p.cv.height = 0; p.rendered = 0;
+      return;
+    }
+    if (!near) return;
+    // Pixel scale: sharp at this zoom, inside iOS canvas limits
+    let ps = s * dpr;
+    ps = Math.min(ps, 4096 / Math.max(p.w, p.h), Math.sqrt(16e6 / (p.w * p.h)));
+    if (p.rendered && Math.abs(p.rendered - ps) / ps < 0.15) return;
+    _dvRenderPage(st, p, ps);
+  });
+}
+function _dvRenderPage(st, p, ps) {
+  if (p.task) try { p.task.cancel(); } catch (e) {}
+  const vp = p.page.getViewport({ scale: ps });
+  const cv = document.createElement('canvas');   // draw off-screen, then swap: no blank flash
+  cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+  const L = window.pdfjsLib;
+  const task = p.task = p.page.render({
+    canvasContext: cv.getContext('2d'), viewport: vp,
+    // Form widgets are drawn as our own inputs, not into the canvas
+    annotationMode: L && L.AnnotationMode ? L.AnnotationMode.ENABLE_FORMS : undefined
+  });
+  p.rendered = ps;
+  task.promise.then(() => {
+    if (p.task !== task || _dv !== st) return;
+    p.task = null;
+    p.cv.replaceWith(cv); p.cv = cv;
+  }).catch(() => { if (p.task === task) { p.task = null; p.rendered = 0; } });
+}
+/** Pinch (touch) and ctrl/⌘+wheel zoom; one-finger scrolling stays native. */
+function _dvWireGestures(st) {
+  const body = st.body; let pin = null;
+  const mid = t => { const r = body.getBoundingClientRect(); return { x: (t[0].clientX + t[1].clientX) / 2 - r.left, y: (t[0].clientY + t[1].clientY) / 2 - r.top }; };
+  const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY) || 1;
+  body.addEventListener('touchstart', e => {
+    if (e.touches.length !== 2) return;
+    const m = mid(e.touches);
+    pin = { d: dist(e.touches), z: st.zoom, m, k: 1, ox: body.scrollLeft + m.x, oy: body.scrollTop + m.y };
+    st.wrap.style.transformOrigin = `${pin.ox}px ${pin.oy}px`;
+  }, { passive: true });
+  body.addEventListener('touchmove', e => {
+    if (!pin || e.touches.length !== 2) return;
+    e.preventDefault();
+    pin.k = Math.min(Math.max(dist(e.touches) / pin.d, 0.5 / pin.z), 5 / pin.z);
+    st.wrap.style.transform = `scale(${pin.k})`;   // cheap preview; re-render on release
+  }, { passive: false });
+  const end = e => {
+    if (!pin || e.touches.length >= 2) return;
+    const p = pin; pin = null;
+    st.wrap.style.transform = ''; st.wrap.style.transformOrigin = '';
+    if (Math.abs(p.k - 1) > 0.02) _dvSetZoom(p.z * p.k, p.m.x, p.m.y);
+  };
+  body.addEventListener('touchend', end);
+  body.addEventListener('touchcancel', end);
+  st.ov.addEventListener('gesturestart', e => e.preventDefault());   // iOS page zoom
+  body.addEventListener('wheel', e => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    const r = body.getBoundingClientRect();
+    _dvSetZoom(st.zoom * Math.exp(-e.deltaY * 0.01), e.clientX - r.left, e.clientY - r.top);
+  }, { passive: false });
+}
+
+// ── Save / Share: values written into a copy of the original (pdf-lib) ──
+async function _dvSave() {
+  const st = _dv; if (!st || st.busy) return;
+  const btn = document.getElementById('dv-save');
+  st.busy = true; if (btn) { btn.disabled = true; btn.textContent = 'Building…'; }
+  try {
+    let tries = 0;
+    while (typeof PDFLib === 'undefined' && tries < 20) { await new Promise(r => setTimeout(r, 150)); tries++; }
+    if (typeof PDFLib === 'undefined') throw new Error('PDF library not loaded yet — try again');
+    const pdf = await PDFLib.PDFDocument.load(st.bytes, { ignoreEncryption: true });
+    const form = pdf.getForm();
+    let failed = 0;
+    const blank = x => x == null || x === '' || x === false;
+    Object.keys(st.fields).forEach(name => {
+      const v = _dvCur(st, name), f0 = st.fields[name];
+      if (f0.ro || v === f0.init || (blank(v) && blank(f0.init))) return;   // untouched: leave as-is
+      try { _dvWriteField(form, name, v, st.fields[name]); } catch (e) { failed++; console.warn('[DocViewer] field', name, e && e.message); }
+    });
+    try { form.updateFieldAppearances(await pdf.embedFont(PDFLib.StandardFonts.Helvetica)); } catch (e) { console.warn('[DocViewer] appearances', e && e.message); }
+    const bytes = await pdf.save({ updateFieldAppearances: false });
+    const base = String(st.file).split('/').pop().replace(/\.pdf$/i, '').replace(/[^\w\-]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+    const filename = base + '_' + _todayISO() + '.pdf';
+    if (failed) showToast(failed + ' field' + (failed > 1 ? 's' : '') + ' could not be written', 'red');
+    _tbSignDeliver(new Blob([bytes], { type: 'application/pdf' }), filename, () => {},
+      { icon: '📄', title: 'Filled PDF ready', noun: 'PDF' });
+  } catch (e) {
+    showToast(e.message || 'Could not build the PDF', 'red');
+  } finally {
+    st.busy = false; if (btn) { btn.disabled = false; btn.textContent = 'Save / Share'; }
+  }
+}
+function _dvWriteField(form, name, v, f) {
+  const fld = form.getField(name);
+  if (fld instanceof PDFLib.PDFTextField) {
+    v = v == null ? '' : String(v);
+    const max = fld.getMaxLength();
+    fld.setText(max ? v.slice(0, max) : v);
+  } else if (fld instanceof PDFLib.PDFCheckBox) {
+    if (!v) fld.uncheck();
+    else if (typeof v === 'string') fld.acroField.setValue(PDFLib.PDFName.of(v));   // multi-state checkbox
+    else fld.check();
+  } else if (fld instanceof PDFLib.PDFRadioGroup) {
+    if (!v) { fld.clear(); return; }
+    try { fld.select(v); }
+    catch (e) {   // /Opt arrays: options differ from the widgets' on-state names
+      const ons = fld.acroField.getOnValues().map(n => n.decodeText ? n.decodeText() : String(n).replace(/^\//, ''));
+      const i = ons.indexOf(v), opts = fld.getOptions();
+      if (i < 0 || !opts[i]) throw e;
+      fld.select(opts[i]);
+    }
+  } else if (fld instanceof PDFLib.PDFDropdown || fld instanceof PDFLib.PDFOptionList) {
+    if (!v) { fld.clear(); return; }
+    const o = (f.opts || []).find(x => x.exportValue === v);
+    const opts = fld.getOptions();
+    fld.select(o && opts.includes(o.displayValue) ? o.displayValue : v);
+  }
 }
 
 // ── PER-PROJECT TOOLBOX TALK LOG (stored on the project, synced) ──
@@ -7396,10 +7859,10 @@ function _tbSignRender() {
       <div class="tbsign-x" onclick="tbSignClose()" title="Close">✕</div>
     </div>
     <div class="tbsign-body"><div class="tbsign-inner">
-      <button class="tbsign-read" onclick="window.open('${_docHref(talk.file)}','_blank','noopener')">
+      <button class="tbsign-read" onclick="docViewOpen(${_dvArg(talk.file)})">
         <span style="font-size:20px">📖</span>
         <span style="flex:1;min-width:0">Read the talk first<small>Opens the Week ${talk.week} PDF — review it with the crew, then sign below.</small></span>
-        <span>↗</span>
+        <span>›</span>
       </button>
       <div class="tbsign-card">
         <div class="tbsign-sec">Talk details</div>
@@ -7638,7 +8101,8 @@ async function tbSignSend() {
 }
 // Same ready-sheet pattern as the audit PDF export: navigator.share needs a
 // FRESH user gesture, so the share happens from this overlay's buttons.
-function _tbSignDeliver(blob, filename, onSent) {
+function _tbSignDeliver(blob, filename, onSent, opts) {
+  const o = Object.assign({ icon: '🦺', title: 'Signed PDF ready', noun: 'Signed PDF' }, opts);
   const pdfFile = new File([blob], filename, { type: 'application/pdf' });
   const canShare = !!(navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] }));
   const isMobile = /iphone|ipad|ipod|android/i.test(navigator.userAgent);
@@ -7649,15 +8113,15 @@ function _tbSignDeliver(blob, filename, onSent) {
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(blobURL), 1500);
     onSent();
-    showToast('✓ Signed PDF downloaded', 'green');
+    showToast('✓ ' + o.noun + ' downloaded', 'green');
     return;
   }
   const ov = document.createElement('div');
   ov.id = 'tbsend-ov';
   ov.style.cssText = 'position:fixed;inset:0;z-index:750;background:rgba(0,0,0,0.8);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px;';
   ov.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:340px;width:100%;text-align:center;">
-    <div style="font-size:36px;margin-bottom:12px">🦺</div>
-    <div style="font-size:15px;font-weight:600;margin-bottom:6px;color:var(--text)">Signed PDF ready</div>
+    <div style="font-size:36px;margin-bottom:12px">${o.icon}</div>
+    <div style="font-size:15px;font-weight:600;margin-bottom:6px;color:var(--text)">${_esc(o.title)}</div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:18px;line-height:1.6;word-break:break-word">${_esc(filename)}<br>${canShare ? 'Share it by email, AirDrop, or save to Files.' : 'Download or open the PDF.'}</div>
     <div style="display:flex;flex-direction:column;gap:10px;">
       ${canShare ? `<button id="tbsend-share" style="background:var(--green);color:#fff;border:none;border-radius:10px;padding:13px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;">📤 Share / Send PDF</button>` : ''}
@@ -7671,7 +8135,7 @@ function _tbSignDeliver(blob, filename, onSent) {
     try {
       await navigator.share({ files: [pdfFile], title: filename });
       cleanup(); onSent();
-      showToast('✓ Signed PDF sent', 'green');
+      showToast('✓ ' + o.noun + ' sent', 'green');
     } catch (e) {
       if (e && e.name === 'AbortError') return;   // sheet dismissed — keep ours open
       // Fallback tab. Share already consumed the user activation, so popup
@@ -7683,7 +8147,7 @@ function _tbSignDeliver(blob, filename, onSent) {
         ov.remove();
         setTimeout(() => URL.revokeObjectURL(blobURL), 1500);
         onSent();
-        showToast('✓ Signed PDF opened in a new tab', 'green');
+        showToast('✓ ' + o.noun + ' opened in a new tab', 'green');
       } else {
         showToast('Could not share — use ⬇ Download instead', 'red');
       }
@@ -7695,7 +8159,7 @@ function _tbSignDeliver(blob, filename, onSent) {
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(cleanup, 500);
     onSent();
-    showToast('✓ Signed PDF downloaded', 'green');
+    showToast('✓ ' + o.noun + ' downloaded', 'green');
   });
   ov.querySelector('#tbsend-cancel').addEventListener('click', cleanup);
 }

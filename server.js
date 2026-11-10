@@ -135,7 +135,12 @@ const server = http.createServer((req, res) => {
   // ── Static file serving ────────────────────────────────────────────────────
   if (urlPath === '/') urlPath = '/index.html';
 
-  const filePath = path.join(__dirname, urlPath);
+  // Decode %20 etc. (resource files have spaces in their names) and stay
+  // inside the project folder.
+  let decoded = urlPath;
+  try { decoded = decodeURIComponent(urlPath); } catch (e) {}
+  const filePath = path.join(__dirname, path.normalize(decoded));
+  if (!filePath.startsWith(__dirname)) { res.writeHead(403); res.end('Forbidden'); return; }
 
   fs.access(filePath, fs.constants.F_OK, (err) => {
     if (err) {
