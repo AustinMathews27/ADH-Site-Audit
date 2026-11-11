@@ -5,8 +5,9 @@
 - **Branch:** `feature/company-profiles` (no PR yet)
 - **Date:** 2026-11-11
 - **Summary:** Added the weekly photo audit's 3 read-only secrets (Austin ran
-  the commands); a manual run read Azure directly. The audit still fails on
-  14 dead photo tiles (see Pending) — none from after the v8.68 release.
+  the commands); the audit now reads Azure directly and passes after Austin
+  removed 14 dead photo tiles (none from after the v8.68 release); issue #5
+  closed.
   Previous session (2026-11-10): v8.68 bug-list fixes shipped to production
   (main `5b07ca5`) and main merged back into this branch (`bdddd86`).
 
@@ -21,15 +22,15 @@
       `api/innergy/index.js`.
 - [ ] **Upload retry check needs storage CORS to allow HEAD** — otherwise a
       retried upload whose first try landed fails as before (no data loss).
-- [ ] **Photo audit fails on 13 dead photo tiles (issue #5)** — all in one
-      project: photos deleted on purpose in September came back on
-      2026-11-11 10:42 UTC when a crew device pushed an old copy (files are
-      gone). Dead Photos only scans the device's local copies, and a running
-      app only re-pulls the project that is OPEN — so open that project
-      first (or reload the app), then Admin → Dead Photos → Remove; rerun the
-      audit and close issue #5. Also check its statuses / notes weren't set
-      back by the same push. Names: `node scripts/photo-audit.mjs` locally
-      (never in CI — public repo). The test-project tile is cleared.
+- [ ] **Check one project wasn't set back by an old-copy push** — on
+      2026-11-11 10:42 UTC a crew device pushed a July copy of a project
+      (its re-added dead photos are now removed); its SIs have no field
+      stamps, so statuses / notes may have reverted too. Name: run
+      `node scripts/photo-audit.mjs` locally or ask Claude (never in CI).
+- [ ] **Confirm the 2026-11-11 storage cleanup** — it also deleted 9 of the
+      17 "may be lost" pictures (14 files); 8 remain. OK if chosen on purpose.
+- Tip: Dead Photos only scans the device's own copies, and a running app
+  only re-pulls the project that is OPEN — open the project (or reload) first.
 - [ ] **Renew the audit's storage access rule before 2027-11-11** —
       `az storage container policy update --account-name adhauditphotos
       --container-name site-photos --name weekly-audit --expiry <date>
@@ -101,6 +102,8 @@
 - [ ] **Stale PR #3 "task 1"** (`hardening/deps-offline`, July) — close or rebase.
 
 ## Done (recent)
+- 2026-11-11 photo audit passes again (0 live pictures missing); 14 dead
+  tiles removed via Admin → Dead Photos; issue #5 closed.
 - 2026-11-11 weekly photo audit secrets added (`AUDIT_COSMOS_CONNECTION_STRING`
   = read-only key, `AUDIT_STORAGE_ACCOUNT`, `AUDIT_STORAGE_SAS` = read + list
   via the `weekly-audit` access rule); manual run used the direct read.
