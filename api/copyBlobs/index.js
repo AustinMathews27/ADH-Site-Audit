@@ -10,7 +10,8 @@
 //
 // The browser never gets a copy/read-all token — the source is authorised with
 // a 10-minute read SAS minted here, per blob, and the destination is written
-// with the account key. Per-blob failures are reported, not fatal.
+// with the account key — only as a new blob, never over an existing one.
+// Per-blob failures are reported, not fatal.
 
 const {
   BlobServiceClient,
@@ -22,7 +23,10 @@ const {
 
 const MAX_COPIES  = 200;
 const CONCURRENCY = 8;
-const NAME_RE     = /^[a-zA-Z0-9_\-./]+$/;
+// Destination names follow the upload naming (index.html duplicateProject:
+// <newProjectId>/<siId>/<13-digit ms timestamp>-<random a-z0-9>.jpg). Keep in
+// sync with UPLOAD_NAME_RE in api/getBlobSasUrl/index.js.
+const NAME_RE     = /^(?!\.\.?\/)[^\/\\?#%\x00-\x1f]{1,128}\/(?!\.\.?\/)[^\/\\?#%\x00-\x1f]{1,128}\/\d{13}-[a-z0-9]{1,8}\.jpg$/;
 
 module.exports = async function (context, req) {
   if (req.method === 'OPTIONS') {
@@ -54,7 +58,7 @@ module.exports = async function (context, req) {
   const base         = `https://${expectedHost}/${container}/`;
 
   // Validate every entry up front — same rules as deleteBlob (source must be
-  // OUR account + container) and getBlobSasUrl (destination name charset).
+  // OUR account + container) and getBlobSasUrl (destination name pattern).
   const jobs = copies.map(c => {
     const job = { from: String((c && c.from) || ''), to: String((c && c.to) || ''), ok: false, url: null, error: null };
     let parsed;
@@ -64,7 +68,7 @@ module.exports = async function (context, req) {
     if (parts[1] !== container) { job.error = 'from: container mismatch'; return job; }
     job.srcName = decodeURIComponent(parts.slice(2).join('/'));
     if (!job.srcName) { job.error = 'from: no blob name'; return job; }
-    if (!job.to || job.to.length > 512 || !NAME_RE.test(job.to) || job.to.includes('..')) { job.error = 'to: invalid blob name'; return job; }
+    if (!job.to || !NAME_RE.test(job.to)) { job.error = 'to: invalid blob name'; return job; }
     if (job.to === job.srcName) { job.error = 'to: same as source'; return job; }
     return job;
   });
@@ -89,7 +93,11 @@ module.exports = async function (context, req) {
             startsOn     : new Date(now.getTime() - 5 * 60 * 1000),
             expiresOn    : new Date(now.getTime() + 10 * 60 * 1000),
           }, cred).toString();
-          await cc.getBlobClient(job.to).syncCopyFromURL(`${base}${encodeURI(job.srcName)}?${sas}`);
+          // If-None-Match: * — the copy only ever creates a new blob; an
+          // existing destination is left untouched (409 BlobAlreadyExists).
+          await cc.getBlobClient(job.to).syncCopyFromURL(`${base}${encodeURI(job.srcName)}?${sas}`, {
+            conditions: { ifNoneMatch: '*' },
+          });
           job.ok  = true;
           job.url = base + job.to;
         } catch (err) {

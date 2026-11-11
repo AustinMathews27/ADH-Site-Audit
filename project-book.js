@@ -144,19 +144,26 @@ html.is-phone .pb-head h2{font-size:17px}
     return !at || Date.now() - at > AUTO_SYNC_HOURS * 36e5;
   }
 
+  // A reply replaces the book on screen only if it is at least as new: the
+  // background sync can finish AFTER an assignment made while it ran, and its
+  // older reply must not hide that assignment (the server keeps both).
+  function take(data) {
+    if (!book || !data || !data.updatedAt || !book.updatedAt || data.updatedAt >= book.updatedAt) book = data;
+  }
+
   // Background refresh: the cached book stays on screen meanwhile, and a
   // failure is quiet (the sync-error banner reports it if Innergy failed).
   async function autoSync() {
     if (syncing) return;
     syncing = true; paint();
-    try { book = await api('sync', { trigger: 'auto' }); }
+    try { take(await api('sync', { trigger: 'auto' })); }
     catch (e) { /* 429 = someone else just synced; anything else shows next open */ }
     syncing = false; paint();
   }
 
   async function act(action, body, okMsg) {
     try {
-      book = await api(action, body || { trigger: 'manual' });
+      take(await api(action, body || { trigger: 'manual' }));
       if (okMsg) toast(okMsg, 'green');
       paint();
     } catch (e) { toast(e.message, 'red'); }

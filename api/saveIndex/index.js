@@ -26,6 +26,57 @@ const TOMBSTONE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 // is missing (see step 5b).
 const MAX_DOC_CHECKS = 40;
 
+// The six MAIN company folders (SEED in index.html) can never be deleted.
+const SEED_FOLDER_IDS = ['fld_ast', 'fld_ami', 'fld_acd', 'fld_acs', 'fld_adh', 'fld_acm'];
+
+// A body with `devices` and none of these is a presence heartbeat (every
+// install posts one every 3 minutes). Writing it into the index changed the
+// index's _etag each time, so every device's 15 s poll downloaded the whole
+// index instead of getting "not modified". Heartbeats go to a small side
+// document, adh-presence-{userId}; getIndex folds it back into `devices`.
+const INDEX_KEYS = ['folders', 'contacts', 'settings', 'projectIds', 'projectTombstones',
+                    'folderTombstones', 'notifications'];
+
+async function savePresence(context, userId, incomingDevices) {
+  const PRES_ID = userId ? `adh-presence-${userId}` : 'adh-presence-v1';
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      let current = null;
+      try { current = (await container.item(PRES_ID, PRES_ID).read()).resource || null; }
+      catch (e) { if (e.code !== 404) throw e; }
+      // Per-device newest lastSeen wins; devices silent for 90 days are GC'd.
+      const devices = Object.assign({}, (current && current.devices) || {});
+      Object.entries(incomingDevices || {}).forEach(([id, d]) => {
+        const cur = devices[id];
+        if (d && (!cur || (d.lastSeen || 0) >= (cur.lastSeen || 0))) devices[id] = d;
+      });
+      const cutoff = Date.now() - TOMBSTONE_TTL_MS;
+      Object.keys(devices).forEach(id => { if ((devices[id].lastSeen || 0) < cutoff) delete devices[id]; });
+      const doc = {
+        docType: 'presence',
+        label:   `PRESENCE · shared workspace · ${Object.keys(devices).length} devices`,
+        id:      PRES_ID,
+        userId:  userId,
+        devices: devices
+      };
+      const opts = current ? { accessCondition: { type: "IfMatch", condition: current._etag } } : {};
+      const { resource: saved } = await container.items.upsert(doc, opts);
+      context.res.status = 200;
+      context.res.body   = { ok: true, presence: true, _ts: saved._ts };
+      return;
+    } catch (err) {
+      if (err.code === 412 && attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, 80 * attempt));
+        continue;
+      }
+      context.log.error("[saveIndex] Presence error:", err.message);
+      context.res.status = err.code === 412 ? 409 : 500;
+      context.res.body   = { ok: false, error: err.message };
+      return;
+    }
+  }
+}
+
 module.exports = async function (context, req) {
   context.res = { headers: { "Content-Type": "application/json" } };
 
@@ -44,6 +95,11 @@ module.exports = async function (context, req) {
   const userId   = (incoming.userId || '').trim();
   const INDEX_ID = userId ? `adh-index-${userId}` : 'adh-index-v1';
 
+  if (incoming.devices && !INDEX_KEYS.some(k => incoming[k] !== undefined)) {
+    await savePresence(context, userId, incoming.devices);
+    return;
+  }
+
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       // ── 1. Read current index + ETag ──────────────────────────────────────
@@ -57,18 +113,21 @@ module.exports = async function (context, req) {
         else throw e;
       }
 
-      // ── 2a. Merge folder tombstones (newest timestamp wins), then GC ──────
+      // ── 2a. Merge folder tombstones (newest timestamp wins) ───────────────
       // Folders are merged as a map on both sides, so — exactly like
       // projectIds — a tombstone is the ONLY way a folder ever leaves the
       // cloud index. Without this, deleting a folder can never propagate.
+      // Folder tombstones are kept (not GC'd): a deleted folder never appears
+      // in the stored index, so once its tombstone expired, any device that
+      // was offline that long pushed the folder straight back. They are a few
+      // dozen bytes each and folder deletes are rare.
       const folderTombstones = Object.assign({}, current.folderTombstones || {});
       Object.entries(incoming.folderTombstones || {}).forEach(([id, ts]) => {
         if (!folderTombstones[id] || ts > folderTombstones[id]) folderTombstones[id] = ts;
       });
-      const gcCutoff = Date.now() - TOMBSTONE_TTL_MS;
-      Object.keys(folderTombstones).forEach(id => {
-        if (folderTombstones[id] < gcCutoff) delete folderTombstones[id];
-      });
+      // A tombstone for a MAIN company folder is always bogus — dropping it
+      // keeps that folder (and its project list) from being erased.
+      SEED_FOLDER_IDS.forEach(id => { delete folderTombstones[id]; });
 
       // ── 2b. Merge folders by ID — per-folder newest-wins via _modified ────
       // (legacy folders without a stamp keep the old incoming-wins behavior),
@@ -128,8 +187,12 @@ module.exports = async function (context, req) {
       // union. Reads are bounded per save; normally there are 0–1 such ids
       // (a project just created on another device). A 404 is left alone —
       // the client's orphan self-heal owns that case.
+      // A save that carries no projectIds at all (a partial save) says nothing
+      // about which ids are live — skip the check instead of treating every
+      // id as a suspect (up to 40 doc reads per save).
       const incomingIds = new Set(incoming.projectIds || []);
-      const suspects = [...allProjectIds].filter(id => !incomingIds.has(id) && !tombstones[id]);
+      const suspects = Array.isArray(incoming.projectIds)
+        ? [...allProjectIds].filter(id => !incomingIds.has(id) && !tombstones[id]) : [];
       if (suspects.length) {
         const start = Math.floor(Math.random() * suspects.length);   // rotate so repeated saves cover all
         const batch = suspects.slice(start).concat(suspects.slice(0, start)).slice(0, MAX_DOC_CHECKS);
@@ -165,7 +228,12 @@ module.exports = async function (context, req) {
       });
 
       // ── 6c. Merge notifications by id — read state is monotonic ───────────
-      // notifications: [{ id, to, toName, msg, from, createdAt, readAt, readBy }]
+      // notifications: [{ id, to, toName, msg, from, fromDeviceId, createdAt,
+      //                   readAt, readBy, readByDevices }]
+      // Direct messages have one readAt; broadcasts ('*') carry per-device
+      // receipts in readByDevices { deviceId: ts } — the union of both sides
+      // (earliest receipt per device), so one device's ack never hides the
+      // message from the rest.
       // GC: read >7 days ago, or unread but >30 days old.
       const NOTIF_READ_TTL   = 7  * 24 * 60 * 60 * 1000;
       const NOTIF_UNREAD_TTL = 30 * 24 * 60 * 60 * 1000;
@@ -174,9 +242,13 @@ module.exports = async function (context, req) {
         const cur = notifMap.get(n.id);
         if (!cur) { notifMap.set(n.id, n); return; }
         // Once read, stays read (keep the earliest read receipt)
-        if (cur.readAt && !n.readAt) return;
-        if (n.readAt && !cur.readAt) { notifMap.set(n.id, n); return; }
-        notifMap.set(n.id, n);
+        let next = (cur.readAt && !n.readAt) ? cur : n;
+        if (cur.readByDevices || n.readByDevices) {
+          const rb = Object.assign({}, cur.readByDevices || {});
+          Object.entries(n.readByDevices || {}).forEach(([dev, ts]) => { if (!rb[dev] || ts < rb[dev]) rb[dev] = ts; });
+          next = Object.assign({}, next, { readByDevices: rb });
+        }
+        notifMap.set(n.id, next);
       });
       const notifNow = Date.now();
       const notifications = [...notifMap.values()].filter(n =>

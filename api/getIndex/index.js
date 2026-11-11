@@ -11,6 +11,25 @@ const client    = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
 const database  = client.database("Auditdata");
 const container = database.container("Audits");
 
+// Presence heartbeats are stored beside the index, in adh-presence-{userId}
+// (see saveIndex), so they don't rewrite the index every few minutes. Fold
+// them back into `devices` whenever the full index is returned: per device,
+// the newest lastSeen wins and fields only the older copy has (v, host) stay.
+async function withPresence(resource, userId) {
+  const presId = userId ? `adh-presence-${userId}` : 'adh-presence-v1';
+  let pres = null;
+  try { pres = (await container.item(presId, presId).read()).resource; }
+  catch (e) { /* none yet, or transient — the index's own devices still go out */ }
+  if (!pres || !pres.devices) return resource;
+  const devices = Object.assign({}, resource.devices || {});
+  Object.entries(pres.devices).forEach(([id, d]) => {
+    const cur = devices[id];
+    devices[id] = !cur ? d
+      : ((d.lastSeen || 0) >= (cur.lastSeen || 0) ? Object.assign({}, cur, d) : Object.assign({}, d, cur));
+  });
+  return Object.assign({}, resource, { devices });
+}
+
 module.exports = async function (context, req) {
   const userId  = (req.query.userId || '').trim();
   const indexId = userId ? `adh-index-${userId}` : 'adh-index-v1';
@@ -53,11 +72,14 @@ module.exports = async function (context, req) {
       return;
     }
 
-    // Conditional fetch: ?ifTs=<last merged _ts> lets the 15s poll skip
-    // re-downloading an unchanged index (only when the user doc exists —
-    // the 404/legacy-migration branches above are untouched).
+    // Conditional fetch: ?ifEtag=<_etag of the last merged copy> (or the older
+    // ?ifTs=<last merged _ts>) lets the 15s poll skip re-downloading an
+    // unchanged index (only when the user doc exists — the 404/legacy-migration
+    // branches above are untouched). _etag catches two saves in one second.
+    const ifEtag = req.query.ifEtag;
     const ifTs = Number(req.query.ifTs);
-    if (Number.isFinite(ifTs) && ifTs > 0 && (resource._ts || 0) <= ifTs) {
+    if (ifEtag ? resource._etag === ifEtag
+               : (Number.isFinite(ifTs) && ifTs > 0 && (resource._ts || 0) <= ifTs)) {
       context.res = {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -69,7 +91,7 @@ module.exports = async function (context, req) {
     context.res = {
       status: 200,
       headers: { "Content-Type": "application/json" },
-      body: resource
+      body: await withPresence(resource, userId)
     };
 
   } catch (error) {

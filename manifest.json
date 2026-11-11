@@ -21,7 +21,7 @@
       "purpose": "any"
     },
     {
-      "src": "icon-192.png",
+      "src": "icon-maskable-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
@@ -33,7 +33,7 @@
       "purpose": "any"
     },
     {
-      "src": "icon-512.png",
+      "src": "icon-maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
@@ -46,13 +46,6 @@
       "type": "image/jpeg",
       "form_factor": "wide",
       "label": "ADH Field Audit Tool — Folder Dashboard"
-    },
-    {
-      "src": "screenshots/pwa-narrow.jpg",
-      "sizes": "1280x720",
-      "type": "image/jpeg",
-      "form_factor": "narrow",
-      "label": "ADH Field Audit Tool — Mobile View"
     }
   ],
   "shortcuts": [

@@ -16,8 +16,8 @@
 //   POST ?action=settings      {settings?, roster?}
 //   POST ?action=restoreBackup              roll the book back one write
 //
-// Storage (Cosmos "Auditdata"/"Audits", id = partition key, same as the rest
-// of the app):
+// Storage (Cosmos COSMOS_DB_DATABASE, default "Auditdata", container "Audits",
+// id = partition key, same as the rest of the app):
 //   adh-pbook-state             the book (jobs, roster, settings, log, lastSync)
 //   adh-pbook-state-backup      previous state, written before every change
 //   adh-pbook-snap-YYYY-MM-DD   one snapshot per sync day (history for variance)
@@ -33,7 +33,8 @@ const innergy = require('./innergy');
 const M = require('./milestones');
 
 const client    = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
-const container = client.database('Auditdata').container('Audits');
+// COSMOS_DB_DATABASE lets a staging environment point at its own database (Auditdata-dev)
+const container = client.database(process.env.COSMOS_DB_DATABASE || 'Auditdata').container('Audits');
 
 const STATE_ID  = 'adh-pbook-state';
 const BACKUP_ID = 'adh-pbook-state-backup';
@@ -45,6 +46,9 @@ const UI_SYNC_THROTTLE_MS = 5 * 60 * 1000;
 // and are listed in lastSync.errors (the next sync picks them up).
 const SYNC_TIME_BUDGET_MS = 25 * 1000;
 const SYNC_SECRET = process.env.PROJECT_BOOK_SYNC_SECRET || '';
+// Writes are ETag-guarded; a write that lost the race is redone on top of the
+// newer book at most this many times.
+const MAX_WRITE_ATTEMPTS = 4;
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -98,9 +102,53 @@ async function saveState(state, context) {
     await container.items.upsert(backup);
   }
   state.updatedAt = new Date().toISOString();
-  const { resource } = await container.items.upsert(state);
+  // ETag guard: a book read before someone else's save fails with 412 here
+  // instead of silently replacing that save (callers redo or merge).
+  const opts = state._etag ? { accessCondition: { type: 'IfMatch', condition: state._etag } } : {};
+  const { resource } = await container.items.upsert(state, opts);
   if (context) context.log(`[projectBook] state saved (${JSON.stringify(state).length} bytes)`);
   return resource;
+}
+
+// A sync reads the book, then spends up to ~25 s on Innergy. Anything people
+// saved in that window (superintendent, baseline, acknowledge, archive /
+// restore, roster, settings, log lines) is carried onto the synced book
+// rather than overwritten by it. `base` = the book as the sync read it,
+// `latest` = the book as saved now.
+const USER_JOB_KEYS = ['acknowledged', 'baseline', 'archived', 'archivedAt', 'archiveReason', 'archiveCandidate'];
+function carryUserEdits(synced, base, latest) {
+  const same = (a, b) => JSON.stringify(a == null ? null : a) === JSON.stringify(b == null ? null : b);
+  if (!same(latest.roster, base.roster)) synced.roster = latest.roster;
+  if (!same(latest.settings, base.settings)) synced.settings = latest.settings;
+  for (const [id, lj] of Object.entries(latest.jobs || {})) {
+    const sj = synced.jobs[id], bj = (base.jobs || {})[id];
+    if (!sj || !bj) continue;
+    const lm = lj.super && lj.super.manual, bm = bj.super && bj.super.manual;
+    if (!same(lm, bm)) sj.super = Object.assign({}, sj.super, { manual: lm || [] });
+    USER_JOB_KEYS.forEach(k => { if (!same(lj[k], bj[k])) sj[k] = lj[k]; });
+  }
+  const seen = new Set((base.log || []).map(l => l.at + '|' + l.msg));
+  const extra = (latest.log || []).filter(l => !seen.has(l.at + '|' + l.msg));
+  if (extra.length) {
+    synced.log = extra.concat(synced.log)
+      .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0)).slice(0, LOG_CAP);
+  }
+  for (const j of Object.values(synced.jobs)) if (j.current) j.variance = M.classifyVariance(j.current, j.baseline, synced.settings);
+  synced._etag = latest._etag;
+}
+
+async function saveSyncedState(state, base, context) {
+  for (let attempt = 1; ; attempt++) {
+    try { return await saveState(state, context); }
+    catch (e) {
+      if (e.code !== 412 || attempt >= MAX_WRITE_ATTEMPTS) throw e;
+      const latest = await readDoc(STATE_ID);
+      if (!latest || !latest.jobs) throw e;
+      context.log(`[projectBook] book changed during sync — carrying edits over (attempt ${attempt})`);
+      carryUserEdits(state, base, latest);
+      base = latest;
+    }
+  }
 }
 
 function logLine(state, kind, msg, jobId) {
@@ -373,7 +421,8 @@ function parseBody(req) {
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
-module.exports = async function (context, req) {
+module.exports = async function projectBook(context, req) {
+
   if (req.method === 'OPTIONS') { context.res = { status: 204, headers: CORS, body: '' }; return; }
 
   const action = String(req.query.action || (req.method === 'GET' ? 'state' : '')).trim();
@@ -458,8 +507,9 @@ module.exports = async function (context, req) {
         return respond(context, 429, { error: 'Synced less than 5 minutes ago', lastSync: state.lastSync });
       }
       if (!innergy.hasKey()) return respond(context, 503, { error: 'INNERGY_API_KEY not set — add it in Azure → Configuration → Application settings' });
+      const base = JSON.parse(JSON.stringify(state));   // the book as read, for saveSyncedState
       await runSync(state, context, trigger);
-      await saveState(state, context);
+      await saveSyncedState(state, base, context);
       return respond(context, 200, publicState(state));
     }
 
@@ -537,7 +587,14 @@ module.exports = async function (context, req) {
       return respond(context, 400, { error: 'Unknown action: ' + action });
     }
 
-    await saveState(state, context);
+    try { await saveState(state, context); }
+    catch (e) {
+      // 412: the book was saved after we read it (e.g. a background sync
+      // finished) — run this request again on top of the newer book.
+      req._pbAttempt = (req._pbAttempt || 1) + 1;
+      if (e.code === 412 && req._pbAttempt <= MAX_WRITE_ATTEMPTS) return projectBook(context, req);
+      throw e;
+    }
     return respond(context, 200, publicState(state));
 
   } catch (e) {

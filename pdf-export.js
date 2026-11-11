@@ -61,6 +61,45 @@
     return (s || 'pending').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   }
 
+  // ── Text the standard PDF fonts can draw ─────────────────────────────────
+  // jsPDF's and pdf-lib's built-in Helvetica encode WinAnsi only (Latin-1 plus
+  // a few typographic marks). One character outside it turns a jsPDF line into
+  // mojibake and makes pdf-lib throw. Common symbols are spelled in ASCII,
+  // accented letters outside Latin-1 lose the accent, the rest (emoji, CJK…)
+  // is dropped. Newlines are kept.
+  const PDF_TEXT_MAP = {
+    '≥': '>=', '≤': '<=', '≠': '!=', '≈': '~', '−': '-',
+    '→': '->', '←': '<-', '↔': '<->', '⇒': '=>',
+    '✓': 'v', '✔': 'v', '✅': 'v', '☑': '[v]', '☐': '[ ]', '☒': '[x]',
+    '✗': 'x', '✘': 'x', '❌': 'x',
+    '‐': '-', '‑': '-', '‒': '-', '―': '-', '′': "'", '″': '"', '⁄': '/',
+    'Ł': 'L', 'ł': 'l', 'Đ': 'D', 'đ': 'd', 'ı': 'i',
+  };
+  const PDF_TEXT_OK = /^[\n\x20-\x7E\xA0-\xFFŒœŠšŸŽžƒˆ˜–—‘-‚“-„†-•…‰‹›€™]*$/;
+  const PDF_TEXT_BAD = /[^\n\x20-\x7E\xA0-\xFFŒœŠšŸŽžƒˆ˜–—‘-‚“-„†-•…‰‹›€™]/gu;
+  function pdfSafeText(s) {
+    if (s == null) return '';
+    s = String(s);
+    if (PDF_TEXT_OK.test(s)) return s;
+    return s.normalize('NFC').replace(/\r\n?/g, '\n').replace(/\t/g, ' ')
+      .replace(/[ -   　]/g, ' ')
+      .replace(PDF_TEXT_BAD, ch => {
+        if (PDF_TEXT_MAP[ch] != null) return PDF_TEXT_MAP[ch];
+        const base = ch.normalize('NFD').replace(/[̀-ͯ]/g, '');
+        return base && base !== ch && PDF_TEXT_OK.test(base) ? base : '';
+      });
+  }
+  window.pdfSafeText = pdfSafeText;
+
+  // SIs a report prints: never deleted ones, and the All / Complete / Incomplete filter.
+  function reportItems(items, filterKey) {
+    return (items || []).filter(i => !i._deleted).filter(i => {
+      if (filterKey === 'complete')   return i.status === 'completed' || i.status === 'punch-ongoing';
+      if (filterKey === 'incomplete') return i.status !== 'completed' && i.status !== 'punch-ongoing';
+      return true;
+    });
+  }
+
   // ── HTML LIVE PREVIEW (layout-accurate: mirrors the exported PDF) ────────────
   // Renders both layout variants (Branded Grid / Clean Flow) combined with 5 color themes.
   // Employs a pure CSS scale wrapper so 560px layouts responsively fit any Mobile or iPad screen.
@@ -78,7 +117,12 @@
 
     const FCB = { FC:{bg:'#dcfce7',fg:'#166534'}, UFC:{bg:'#fef3c7',fg:'#92400e'}, NFC:{bg:'#fee2e2',fg:'#991b1b'}, HT:{bg:'#dbeafe',fg:'#1e40af'} };
     const siLbl = n => String(n||'').replace(/^SI\s+/i,'SI-');
-    const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    // Every user / data string goes through esc — text and attribute values alike
+    const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    // A URL inside CSS url('…') in a style attribute: quotes, brackets,
+    // backslashes and whitespace are percent-encoded, then HTML-escaped.
+    const cssUrl = s => esc(String(s==null?'':s).replace(/[\\'"()\s]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')));
     const capOf = ph => (ph && (ph.caption||ph.note||ph.label||'')) || '';
     // Local blob first — it's the current version when a markup re-upload is
     // still pending (ph.url can point at the pre-markup cloud copy).
@@ -129,7 +173,7 @@
       const tone  = branding.logoTone || 'dual';
       const plate = (onDark && tone === 'dark') ? '#ffffff' : (!onDark && tone === 'light') ? P.ink : '';
       const wrap  = plate ? `background:${plate};padding:${Math.round(h*0.2)}px ${Math.round(h*0.32)}px;border-radius:5px;` : '';
-      return `<div style="display:inline-block;${wrap}"><img src="${branding.logo}" style="height:${h}px;max-width:170px;object-fit:contain;display:block"></div>`;
+      return `<div style="display:inline-block;${wrap}"><img src="${esc(branding.logo)}" style="height:${h}px;max-width:170px;object-fit:contain;display:block"></div>`;
     };
 
     // ── Stats strip (shared) ──────────────────────────────────────────────────
@@ -161,7 +205,7 @@
     let coverPage = '';
     if (inclCover && !heroCover) {
       const coverPhoto = proj.coverPhoto
-        ? `<div style="flex:0 0 165px"><img src="${proj.coverPhoto}" style="width:165px;height:218px;object-fit:cover;border:1px solid ${P.border};border-radius:3px;display:block"></div>` : '';
+        ? `<div style="flex:0 0 165px"><img src="${esc(proj.coverPhoto)}" style="width:165px;height:218px;object-fit:cover;border:1px solid ${P.border};border-radius:3px;display:block"></div>` : '';
       coverPage = `
         <div class="page-container">
         <div class="page-scaler" style="padding:34px 37px">
@@ -185,7 +229,7 @@
         </div></div>`;
     } else if (inclCover && heroCover) {
       const bg = proj.coverPhoto
-        ? `background-image:url('${proj.coverPhoto}');background-size:cover;background-position:center`
+        ? `background-image:url('${cssUrl(proj.coverPhoto)}');background-size:cover;background-position:center`
         : `background:${P.ink}`;
       coverPage = `
         <div class="page-container">
@@ -214,7 +258,7 @@
       const isDone = item.status === 'completed';
       const statusLine = isDone
         ? `<span style="color:${P.red};font-weight:700;font-size:11px">Completed: Yes</span>`
-        : `<span style="color:${statusColor(item.status)};font-weight:700;font-size:11px">Status: ${statusLabel(item.status)}</span>`;
+        : `<span style="color:${statusColor(item.status)};font-weight:700;font-size:11px">Status: ${esc(statusLabel(item.status))}</span>`;
 
       let fc = '';
       if (item.statusCode) {
@@ -282,7 +326,7 @@
           const src = srcOf(p);
           return `<div style="flex:0 0 calc(25% - 5px);max-width:calc(25% - 5px)">
               <div style="aspect-ratio:4/3;background:${P.row};border:1px solid ${P.border};border-radius:3px;overflow:hidden">
-                ${src?`<img src="${src}" loading="lazy" style="width:100%;height:100%;object-fit:cover;${imgFilter}" onerror="this.style.opacity=0">`:''}
+                ${src?`<img src="${esc(src)}" loading="lazy" style="width:100%;height:100%;object-fit:cover;${imgFilter}" onerror="this.style.opacity=0">`:''}
               </div>
               <div style="font-size:7px;color:${P.sub};margin-top:1px">Room ${esc(r.number)}${r.type?' — '+esc(r.type):''}</div>
             </div>`; })).join('') : '';
@@ -304,14 +348,14 @@
         let tot = 0;
         const lrows = es.map(e=>{
           const mh = e.total != null ? +e.total : (+e.workers||0)*(+e.hours||0); tot += +mh||0;
-          return `<tr style="border-bottom:1px solid ${P.border}"><td style="padding:2px 6px 2px 0;white-space:nowrap">${esc(e.date||'')}</td><td style="padding:2px 6px;text-align:right">${e.workers??''}</td><td style="padding:2px 6px;text-align:right">${e.hours??''}</td><td style="padding:2px 6px;text-align:right;font-weight:700">${mh}</td><td style="padding:2px 0 2px 6px;color:${P.sub}">${esc(e.note||'')}</td></tr>`; }).join('');
+          return `<tr style="border-bottom:1px solid ${P.border}"><td style="padding:2px 6px 2px 0;white-space:nowrap">${esc(e.date||'')}</td><td style="padding:2px 6px;text-align:right">${esc(e.workers??'')}</td><td style="padding:2px 6px;text-align:right">${esc(e.hours??'')}</td><td style="padding:2px 6px;text-align:right;font-weight:700">${mh}</td><td style="padding:2px 0 2px 6px;color:${P.sub}">${esc(e.note||'')}</td></tr>`; }).join('');
         labor = `<div style="margin-top:8px;padding-top:6px;border-top:1px dashed ${P.border}">
             <div style="font-size:8px;font-weight:800;color:${P.ink};letter-spacing:0.3px">LABOR LOG</div>
             <table style="width:100%;border-collapse:collapse;font-size:7.5px;color:${P.text};margin-top:3px">
               <tr style="color:${P.sub}"><th style="text-align:left;padding:2px 6px 2px 0;font-size:7px">DATE</th><th style="text-align:right;padding:2px 6px;font-size:7px">WORKERS</th><th style="text-align:right;padding:2px 6px;font-size:7px">HRS/WORKER</th><th style="text-align:right;padding:2px 6px;font-size:7px">MAN-HRS</th><th style="text-align:left;padding:2px 0 2px 6px;font-size:7px">NOTE</th></tr>
               ${lrows}
             </table>
-            <div style="font-size:8px;font-weight:800;color:${P.ink};margin-top:3px">Total: ${tot} man-hours${item.laborHours?` <span style="font-weight:400;color:${P.sub}">(${item.laborHours}h budgeted — ${Math.max(0,item.laborHours-tot)}h remaining)</span>`:''}</div>
+            <div style="font-size:8px;font-weight:800;color:${P.ink};margin-top:3px">Total: ${tot} man-hours${item.laborHours?` <span style="font-weight:400;color:${P.sub}">(${esc(item.laborHours)}h budgeted${item._laborToDate!=null?` — ${esc(item._laborToDate)}h logged to date`:''} — ${Math.max(0,item.laborHours-(item._laborToDate!=null?item._laborToDate:tot))}h remaining)</span>`:''}</div>
           </div>`;
       }
       const extras = tower + labor;
@@ -328,7 +372,7 @@
       const cell = (ph, idx) => {
         const src = srcOf(ph), cap = capOf(ph);
         return `<div style="position:relative;width:100%;aspect-ratio:${square?'1/1':'4/3'};background:${P.row};border:1px solid ${P.border};border-radius:4px;overflow:hidden">
-            ${src?`<img src="${src}" loading="lazy" style="width:100%;height:100%;object-fit:cover;${imgFilter}" onerror="this.style.opacity=0">`:`<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:16px;color:${P.sub}">📷</div>`}
+            ${src?`<img src="${esc(src)}" loading="lazy" style="width:100%;height:100%;object-fit:cover;${imgFilter}" onerror="this.style.opacity=0">`:`<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:16px;color:${P.sub}">📷</div>`}
             <div style="position:absolute;top:4px;right:4px;width:16px;height:16px;border-radius:50%;background:#1f2937;color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">${idx}</div>
           </div>${cap?`<div style="font-size:8px;color:${P.sub};margin-top:2px;line-height:1.3">${esc(cap)}</div>`:''}`;
       };
@@ -338,7 +382,7 @@
         const thumb = photos.length ? `
           <div style="flex:0 0 62px">
             <div style="position:relative;width:62px;aspect-ratio:${square?'1/1':'4/3'};background:${P.row};border:1px solid ${P.border};border-radius:3px;overflow:hidden">
-              ${srcOf(photos[0])?`<img src="${srcOf(photos[0])}" loading="lazy" style="width:100%;height:100%;object-fit:cover;${imgFilter}" onerror="this.style.opacity=0">`:''}
+              ${srcOf(photos[0])?`<img src="${esc(srcOf(photos[0]))}" loading="lazy" style="width:100%;height:100%;object-fit:cover;${imgFilter}" onerror="this.style.opacity=0">`:''}
             </div>
             ${photos.length>1?`<div style="font-size:7px;color:${P.sub};text-align:center;margin-top:1px">+${photos.length-1} more</div>`:''}
           </div>` : '';
@@ -366,7 +410,7 @@
                 <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${statusColor(item.status)};margin-right:4px"></span>${esc(siLbl(item.num))}&nbsp; ${esc(item.title||'')}
               </div>
               <div style="font-size:8px;margin-top:2px">
-                <span style="color:${statusColor(item.status)};font-weight:700">${statusLabel(item.status)}</span>
+                <span style="color:${statusColor(item.status)};font-weight:700">${esc(statusLabel(item.status))}</span>
                 ${bits.length?`<span style="color:${P.sub}"> &nbsp;·&nbsp; ${bits.join(' &nbsp;·&nbsp; ')}</span>`:''}
               </div>
               ${noteTxt}${tagLine}
@@ -423,7 +467,7 @@
       const fpins = [...(proj.floorPlan.pins || [])].sort((a, b) =>
         String(a.siNum || '').localeCompare(String(b.siNum || ''), undefined, { numeric: true }));
       const pinDots = fpins.map((p, i) => `
-        <div style="position:absolute;left:${p.xPct}%;top:${p.yPct}%;transform:translate(-50%,-50%);
+        <div style="position:absolute;left:${parseFloat(p.xPct) || 0}%;top:${parseFloat(p.yPct) || 0}%;transform:translate(-50%,-50%);
           width:16px;height:16px;border-radius:50%;background:${P.accent};border:2px solid #fff;
           color:#fff;font-size:8px;font-weight:800;display:flex;align-items:center;justify-content:center;
           box-shadow:0 1px 3px rgba(0,0,0,0.35)">${i+1}</div>`).join('');
@@ -444,7 +488,7 @@
           ${sectionHeader('Floor Plan', fpins.length).replace(/(\d+) item(s?)/, '$1 pin$2')}
           <div style="padding:10px 18px;flex:1">
             <div style="position:relative;border:1px solid ${P.border};border-radius:3px;overflow:hidden;background:#fff">
-              <img src="${proj.floorPlan.imageData}" style="width:100%;display:block">
+              <img src="${esc(proj.floorPlan.imageData)}" style="width:100%;display:block">
               ${pinDots}
             </div>
             ${legend}
@@ -565,7 +609,7 @@
           <div style="margin-top:10px">
             <div style="font-size:8px;font-weight:700;color:${P.sub};text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Screenshots (${shots.length})</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-              ${shots.map((s,i)=>s&&s.data?`<div style="border:1px solid ${P.border};border-radius:4px;overflow:hidden;background:${P.row}"><img src="${s.data}" style="width:100%;display:block;max-height:120px;object-fit:cover"><div style="font-size:7px;color:${P.sub};padding:3px 5px">${esc(s.label||('Screenshot '+(i+1)))}</div></div>`:'').join('')}
+              ${shots.map((s,i)=>s&&s.data?`<div style="border:1px solid ${P.border};border-radius:4px;overflow:hidden;background:${P.row}"><img src="${esc(s.data)}" style="width:100%;display:block;max-height:120px;object-fit:cover"><div style="font-size:7px;color:${P.sub};padding:3px 5px">${esc(s.label||('Screenshot '+(i+1)))}</div></div>`:'').join('')}
             </div>
           </div>` : '';
         const banner = viol.length ? `
@@ -578,8 +622,8 @@
             ${sectionHeader('Environmental Conditions', sensors.length)}
             <div style="padding:10px 18px 10px;flex:1">
               <div style="display:flex;gap:8px;margin-bottom:10px">
-                <div style="flex:1;padding:8px 10px;background:${P.row};border:1px solid ${P.border};border-radius:4px"><div style="font-size:7px;font-weight:700;color:${P.sub};text-transform:uppercase;letter-spacing:0.4px">Acceptable Temp</div><div style="font-size:10px;font-weight:800;color:${P.ink};margin-top:2px">${thr.minTemp}\u2013${thr.maxTemp} \u00b0F</div></div>
-                <div style="flex:1;padding:8px 10px;background:${P.row};border:1px solid ${P.border};border-radius:4px"><div style="font-size:7px;font-weight:700;color:${P.sub};text-transform:uppercase;letter-spacing:0.4px">Acceptable Humidity</div><div style="font-size:10px;font-weight:800;color:${P.ink};margin-top:2px">${thr.minHum}\u2013${thr.maxHum} %</div></div>
+                <div style="flex:1;padding:8px 10px;background:${P.row};border:1px solid ${P.border};border-radius:4px"><div style="font-size:7px;font-weight:700;color:${P.sub};text-transform:uppercase;letter-spacing:0.4px">Acceptable Temp</div><div style="font-size:10px;font-weight:800;color:${P.ink};margin-top:2px">${esc(thr.minTemp)}\u2013${esc(thr.maxTemp)} \u00b0F</div></div>
+                <div style="flex:1;padding:8px 10px;background:${P.row};border:1px solid ${P.border};border-radius:4px"><div style="font-size:7px;font-weight:700;color:${P.sub};text-transform:uppercase;letter-spacing:0.4px">Acceptable Humidity</div><div style="font-size:10px;font-weight:800;color:${P.ink};margin-top:2px">${esc(thr.minHum)}\u2013${esc(thr.maxHum)} %</div></div>
               </div>
               ${banner}${sensorRows}${shotThumbs}
               <div style="margin-top:10px;font-size:7px;color:${P.sub};font-style:italic">Full time-series charts are rendered in the exported PDF.</div>
@@ -600,7 +644,7 @@
         <div style="padding:18px;flex:1">
           <div>
             <div style="font-size:8px;font-weight:700;color:${P.sub};margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Auditor / Inspector</div>
-            <img src="${audSig}" style="height:44px;max-width:140px;object-fit:contain;display:block;margin-bottom:6px">
+            <img src="${esc(audSig)}" style="height:44px;max-width:140px;object-fit:contain;display:block;margin-bottom:6px">
             <div style="font-size:8px;color:${P.sub}">Signature &nbsp;&nbsp; Date: ___________</div>
           </div>
         </div>
@@ -651,7 +695,8 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
   };
 
   // ── PROGRESS OVERLAY ──────────────────────────────────────────────────────────
-  window.showPDFProgress = function (msg, pct) {
+  // onCancel (optional): shows a Cancel button that calls it.
+  window.showPDFProgress = function (msg, pct, onCancel) {
     document.getElementById('pdf-progress-overlay')?.remove();
     const el = document.createElement('div');
     el.className = 'pdf-progress-overlay'; el.id = 'pdf-progress-overlay';
@@ -665,8 +710,14 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
         </div>
         <div style="font-size:11px;color:var(--text3,#94a3b8);margin-top:8px;font-family:monospace"
           id="pdf-prog-pct">${pct}%</div>
+        ${onCancel ? `<button id="pdf-prog-cancel" style="margin-top:14px;background:none;border:1px solid var(--border,#334155);border-radius:8px;color:var(--text2,#94a3b8);padding:8px 18px;font:inherit;font-size:12px;cursor:pointer">Cancel</button>` : ''}
       </div>`;
     document.body.appendChild(el);
+    const cb = el.querySelector('#pdf-prog-cancel');
+    if (cb) cb.addEventListener('click', () => {
+      cb.disabled = true; cb.textContent = 'Cancelling…';
+      onCancel();
+    });
   };
   window.updatePDFProgress = function (msg, pct) {
     const s = document.getElementById('pdf-prog-sub');
@@ -735,12 +786,14 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
     // must have Field Check, Field Notes, and at least one Photo. Instead of a terse
     // toast, surface EXACTLY what's missing per item (highlighted in red) so the
     // superintendent can fix it before exporting.
+    // Only the SIs this report prints are checked (day view + filter).
+    const _printed = reportItems(proj.items, (window._pdfExportSettings || {}).filter || 'all');
     let _missingReq = [];
     if (typeof window.checkRequiredBeforeExport === 'function') {
-      _missingReq = window.checkRequiredBeforeExport(proj);
+      _missingReq = window.checkRequiredBeforeExport(Object.assign({}, proj, { items: _printed }));
     } else {
       // Fallback (older index.html without the validator) — terse list.
-      _missingReq = (proj.items || []).filter(it => {
+      _missingReq = _printed.filter(it => {
         if (it._deleted) return false;
         if (it.status === 'completed' || it.status === 'punch-ongoing') return false;
         return !it.statusCode || !(it.notes && it.notes.trim()) || !(it.photos && it.photos.length > 0);
@@ -801,14 +854,27 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
     const IMG = IMG_SIZES[imgSize] || IMG_SIZES.regular;
     const photoAspect = square ? 1 : IMG.aspect;
 
+    // Cancel: pending image loads resolve empty at once, and the next
+    // checkCancel() throws out of the build.
+    let cancelled = false;
+    const imgWaits = new Set();
+    function checkCancel() {
+      if (cancelled) { const e = new Error('cancelled'); e.name = 'PDFExportCancelled'; throw e; }
+    }
+    let skippedPhotos = 0;   // photos that failed or timed out and print as blank boxes
+
     document.getElementById('rg-overlay')?.remove();
     if (typeof closeModal === 'function') closeModal();
-    window.showPDFProgress('Loading PDF engine…', 0);
+    window.showPDFProgress('Loading PDF engine…', 0, () => {
+      cancelled = true;
+      imgWaits.forEach(finish => finish(null));
+    });
 
     let attempts = 0;
-    while (typeof window.jspdf === 'undefined' && attempts < 32) {
+    while (typeof window.jspdf === 'undefined' && attempts < 32 && !cancelled) {
       await new Promise(r => setTimeout(r, 250)); attempts++;
     }
+    checkCancel();
     if (typeof window.jspdf === 'undefined') {
       window.hidePDFProgress();
       if (typeof showToast === 'function') showToast('PDF library not loaded — check your connection');
@@ -826,19 +892,50 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
     const setStroke = c => doc.setDrawColor(...hex2rgb(c));
     const setText   = c => doc.setTextColor(...hex2rgb(c));
 
+    // All text goes through pdfSafeText (measuring too, so wraps match what is drawn).
+    const _docText = doc.text.bind(doc), _docSplit = doc.splitTextToSize.bind(doc), _docWidth = doc.getTextWidth.bind(doc);
+    const safeText = t => Array.isArray(t) ? t.map(safeText) : (typeof t === 'string' ? pdfSafeText(t) : t);
+    doc.text = (t, ...a) => _docText(safeText(t), ...a);
+    doc.splitTextToSize = (t, ...a) => _docSplit(safeText(t), ...a);
+    doc.getTextWidth = t => _docWidth(safeText(t));
+
     let pageNum = 0;
     function newPage() { if (pageNum > 0) doc.addPage(); pageNum++; setFill(P.bg); doc.rect(0,0,PW,PH,'F'); }
 
-    async function compressImage(dataUrl, q, addTS) {
+    const IMG_TIMEOUT_MS = 20000;      // per photo: a stalled download is skipped, not waited on
+    const PX_PER_MM = 250 / 25.4;      // photo resolution at its printed size
+    // frame (optional): {w, h} in mm. The photo is centre-cropped to that
+    // aspect (jsPDF stretches whatever it gets into the box) and encoded at a
+    // size that suits the printed box. Resolves null on error, timeout or cancel.
+    async function compressImage(dataUrl, q, addTS, frame) {
+      if (cancelled) return null;
       return new Promise(res => {
         const img = new Image();
+        let timer = 0;
+        const finish = out => {
+          if (!imgWaits.delete(finish)) return;
+          clearTimeout(timer);
+          img.onload = img.onerror = null;
+          try { img.removeAttribute('src'); } catch (e) {}   // drop the decoded bitmap
+          res(out);
+        };
+        imgWaits.add(finish);
+        timer = setTimeout(() => finish(null), IMG_TIMEOUT_MS);
         if (dataUrl && dataUrl.startsWith('https://')) img.crossOrigin = 'anonymous';
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX = 900; let w = img.width, h = img.height;
-          if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+          const MAX = 900; let w = img.width, h = img.height, sx = 0, sy = 0, sw = img.width, sh = img.height;
+          if (frame && frame.w > 0 && frame.h > 0 && sw > 0 && sh > 0) {
+            const aspect = frame.w / frame.h;
+            if (sw / sh > aspect) sw = Math.round(sh * aspect); else sh = Math.round(sw / aspect);
+            sx = Math.round((img.width - sw) / 2); sy = Math.round((img.height - sh) / 2);
+            w = Math.min(sw, Math.max(240, Math.round(frame.w * PX_PER_MM)));
+            h = Math.round(w / aspect);
+            if (Math.max(w, h) > MAX) { const k = MAX / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k); }
+            w = Math.max(1, w); h = Math.max(1, h);
+          } else if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
           canvas.width = w; canvas.height = h;
-          const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
+          const ctx = canvas.getContext('2d'); ctx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
           if (addTS) {
             const ts = addTS || '', fsize = Math.max(11, Math.round(w * 0.032));
             ctx.font = `bold ${fsize}px monospace`;
@@ -854,13 +951,12 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
             ctx.quadraticCurveTo(bx,by,bx+r2,by); ctx.closePath(); ctx.fill();
             ctx.fillStyle = '#ffffff'; ctx.fillText(ts, bx+pad, by+fsize+pad*0.6);
           }
-          try {
-            const out = canvas.toDataURL('image/jpeg', q);
-            canvas.width = canvas.height = 0; // free Safari's canvas pool immediately
-            res(out);
-          } catch (e) { res(null); }
+          let out = null;
+          try { out = canvas.toDataURL('image/jpeg', q); } catch (e) {}
+          canvas.width = canvas.height = 0; // free Safari's canvas pool immediately
+          finish(out);
         };
-        img.onerror = () => res(null); img.src = dataUrl;
+        img.onerror = () => finish(null); img.src = dataUrl;
       });
     }
 
@@ -880,11 +976,10 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
           const canvas = document.createElement('canvas');
           canvas.width = w; canvas.height = h;
           canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
-          try {
-            const out = canvas.toDataURL('image/jpeg', q);
-            canvas.width = canvas.height = 0; // free Safari's canvas pool immediately
-            res(out);
-          } catch (e) { res(dataUrl); }
+          let out = dataUrl;
+          try { out = canvas.toDataURL('image/jpeg', q); } catch (e) {}
+          canvas.width = canvas.height = 0; // free Safari's canvas pool immediately
+          res(out);
         };
         img.onerror = () => res(dataUrl); img.src = dataUrl;
       });
@@ -945,17 +1040,22 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       const titleLines = doc.splitTextToSize(proj.name || 'Untitled Project', CW);
       doc.text(titleLines, MX, 44);
       let ty = 44 + titleLines.length*11;
+      const ruleY = ty;
       setFill(P.rule); doc.rect(MX, ty, CW, 1.8, 'F'); ty += 11;
       doc.setFont(P.font,'bold'); doc.setFontSize(12); setText(P.text);
       doc.text(proj.date || new Date().toLocaleDateString(), MX, ty); ty += 15;
       const meta = [['Project #',proj.projectNumber],['Type',proj.projectType],
                     ['Client',proj.client],['Company',proj.company],['Auditor',proj.auditor]];
-      meta.forEach(([k,v]) => { if (!v) return;
+      // Wrapped values advance by their real height; stop above the stats strip.
+      meta.forEach(([k,v]) => { if (!v || ty + 6 > 222) return;
         doc.setFontSize(7.5); doc.setFont(P.font,'bold'); setText(P.sub); doc.text(k.toUpperCase(),MX,ty);
-        doc.setFontSize(11); doc.setFont(P.font,'normal'); setText(P.text); doc.text(String(v),MX,ty+6,{maxWidth:CW-78}); ty += 15;
+        doc.setFontSize(11); doc.setFont(P.font,'normal'); setText(P.text);
+        const vl = doc.splitTextToSize(String(v), CW-78).slice(0, 2);
+        doc.text(vl,MX,ty+6); ty += 10.5 + vl.length*4.5;
       });
       if (coverImg) { try {
-        const iw=70, ih=92, ix=PW-MX-iw, iy=72;
+        // Below the title rule when a long title pushes it down
+        const iw=70, ih=92, ix=PW-MX-iw, iy=Math.min(132, Math.max(72, ruleY + 6));
         setStroke(P.border); doc.setLineWidth(0.3); doc.roundedRect(ix,iy,iw,ih,2,2,'D');
         doc.addImage(coverImg,'JPEG',ix,iy,iw,ih,'','FAST');
       } catch(e){} }
@@ -1186,6 +1286,10 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
         item.tags.forEach(tag => {
           const tw = doc.getTextWidth(tag) + 4;
           if (tx + tw > x + width) { tx = x; ty2 += 6; }
+          if (draw && brkName && ty2 + 2 > PH - BOT) {   // tag row would cross the page bottom
+            newPage(); ty2 = contHeader(brkName) + 4; tx = x;
+            doc.setFont(P.font,'normal'); doc.setFontSize(6.5);
+          }
           if (draw) { setFill(P.row); setStroke(P.border); doc.setLineWidth(0.2); doc.roundedRect(tx, ty2-3, tw, 5, 1.2, 1.2, 'FD'); setText(P.sub); doc.text(tag, tx+2, ty2+0.6); }
           tx += tw + 2;
         });
@@ -1219,18 +1323,21 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       const rowH = cellH + (hasCap ? 6 : 0) + 3;
       let gy = y;
       for (let i = 0; i < photos.length; i++) {
+        checkCancel();
         const col = i % cols;
         if (col === 0 && i > 0) gy += rowH;
-        if (col === 0 && gy + cellH > PH - BOT) { newPage(); gy = contHeader(contName); }
+        // the caption under the row must clear the footer too
+        if (col === 0 && gy + cellH + (hasCap ? 6 : 0) > PH - BOT) { newPage(); gy = contHeader(contName); }
         const px = x + col*(cellW + gap);
         const ph = photos[i];
         try {
           const ts = inclTS ? (ph.takenAt || null) : null;
           const src = (typeof getPhotoSrcForDisplay === 'function') ? getPhotoSrcForDisplay(ph) : (ph?.url || ph?._blobUrl || ph?.data || null);
-          const comp = src ? await compressImage(src, quality, ts) : null;
+          const comp = src ? await compressImage(src, quality, ts, { w: cellW, h: cellH }) : null;
+          checkCancel();
           if (comp) doc.addImage(comp, 'JPEG', px, gy, cellW, cellH, '', 'FAST');
-          else { setFill(P.row); setStroke(P.border); doc.setLineWidth(0.3); doc.roundedRect(px, gy, cellW, cellH, 1, 1, 'FD'); }
-        } catch(e) { setFill(P.row); doc.rect(px, gy, cellW, cellH, 'F'); }
+          else { skippedPhotos++; setFill(P.row); setStroke(P.border); doc.setLineWidth(0.3); doc.roundedRect(px, gy, cellW, cellH, 1, 1, 'FD'); }
+        } catch(e) { if (e && e.name === 'PDFExportCancelled') throw e; skippedPhotos++; setFill(P.row); doc.rect(px, gy, cellW, cellH, 'F'); }
         const br = 3.2, bx = px + cellW - br - 1.6, byy = gy + br + 1.6;
         setFill('#1f2937'); doc.circle(bx, byy, br, 'F');
         doc.setFont(P.font,'bold'); doc.setFontSize(7); setText('#ffffff'); doc.text(String(i+1), bx, byy+2.3, {align:'center'});
@@ -1247,7 +1354,10 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       const single = inclPhotos && (item.photos?.length === 1);
       if (single) {
         const tw = CW - singleW - 6;
-        return Math.max(singleH, itemTextBlock(item, MX+singleW+6, 0, tw, false)) + 6;
+        const cap = photoCaption(item.photos[0]);
+        let capH = 0;
+        if (cap) { doc.setFont(P.font,'normal'); doc.setFontSize(6.5); capH = 3 + doc.splitTextToSize(cap, singleW).slice(0,3).length*3; }
+        return Math.max(singleH + capH, itemTextBlock(item, MX+singleW+6, 0, tw, false)) + 6;
       }
       const th = itemTextBlock(item, MX, 0, CW, false);
       let ph = 0;
@@ -1261,13 +1371,15 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       return th + ph + 6;
     }
     async function itemThumb(ph, x, y, w, h, badge) {
+      checkCancel();
       try {
         const ts = inclTS ? (ph.takenAt || null) : null;
         const src = (typeof getPhotoSrcForDisplay === 'function') ? getPhotoSrcForDisplay(ph) : (ph?.url || ph?._blobUrl || ph?.data || null);
-        const comp = src ? await compressImage(src, quality, ts) : null;
+        const comp = src ? await compressImage(src, quality, ts, { w, h }) : null;
+        checkCancel();
         if (comp) doc.addImage(comp, 'JPEG', x, y, w, h, '', 'FAST');
-        else { setFill(P.row); setStroke(P.border); doc.setLineWidth(0.3); doc.roundedRect(x, y, w, h, 1, 1, 'FD'); }
-      } catch(e) { setFill(P.row); doc.rect(x, y, w, h, 'F'); }
+        else { skippedPhotos++; setFill(P.row); setStroke(P.border); doc.setLineWidth(0.3); doc.roundedRect(x, y, w, h, 1, 1, 'FD'); }
+      } catch(e) { if (e && e.name === 'PDFExportCancelled') throw e; skippedPhotos++; setFill(P.row); doc.rect(x, y, w, h, 'F'); }
       if (badge) {
         const br = 3.2, bx = x + w - br - 1.6, byy = y + br + 1.6;
         setFill('#1f2937'); doc.circle(bx, byy, br, 'F');
@@ -1360,7 +1472,12 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       });
       doc.setFont(P.font,'bold'); doc.setFontSize(7.5); setText(P.ink);
       let totalStr = 'Total: ' + totalMH + ' man-hours';
-      if (item.laborHours) totalStr += '   (' + item.laborHours + 'h budgeted — ' + Math.max(0, item.laborHours - totalMH) + 'h remaining)';
+      // Day / range reports list only their days' entries; _laborToDate covers
+      // everything logged through the report's last day
+      const toDate = item._laborToDate != null ? item._laborToDate : totalMH;
+      if (item.laborHours) totalStr += '   (' + item.laborHours + 'h budgeted'
+        + (item._laborToDate != null ? ' — ' + toDate + 'h logged to date' : '')
+        + ' — ' + Math.max(0, item.laborHours - toDate) + 'h remaining)';
       doc.text(totalStr, MX, cy+3.5);
       cy += 7;
     }
@@ -1371,13 +1488,15 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       if (inclLabor) drawLaborBlock(item, contName);
     }
 
-    async function drawItem(item, contName) {
+    // first: the section's first SI. Sections start on a fresh page, so it is
+    // never pushed to the next one — that would leave the title alone above it.
+    async function drawItem(item, contName, first) {
       if (styleKey === 'compact') return drawItemCompact(item, contName);
       if (styleKey === 'photo')   return drawItemPhoto(item, contName);
 
       const single = inclPhotos && (item.photos?.length === 1);
       const estH = estimateItemHeight(item);
-      if (cy > PAGE_TOP && cy + Math.min(estH, PH - PAGE_TOP - BOT) > PH - BOT) { newPage(); cy = contHeader(contName); }
+      if (!first && cy > PAGE_TOP && cy + Math.min(estH, PH - PAGE_TOP - BOT) > PH - BOT) { newPage(); cy = contHeader(contName); }
 
       if (single) {
         const tx = MX + singleW + 6, tw = CW - singleW - 6;
@@ -1386,8 +1505,11 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
         let belowPhoto = cy + singleH;
         const cap = photoCaption(ph);
         if (cap) { doc.setFont(P.font,'normal'); doc.setFontSize(6.5); setText(P.sub); const cl = doc.splitTextToSize(cap, singleW).slice(0,3); doc.text(cl, MX, belowPhoto+3); belowPhoto += 3 + cl.length*3; }
+        const pg0 = pageNum;
         const th = itemTextBlock(item, tx, cy, tw, true, contName);
-        cy = Math.max(belowPhoto, cy + th) + 6;
+        // Notes that broke onto a new page end at cy + th there; the photo
+        // bottom belongs to the previous page and must not push cy down.
+        cy = (pageNum === pg0 ? Math.max(belowPhoto, cy + th) : cy + th) + 6;
       } else {
         const th = itemTextBlock(item, MX, cy, CW, true, contName);
         cy += th + 2;
@@ -1528,7 +1650,7 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
         for (let i = 0; i < photos.length; i++) {
           const col = i % cols;
           if (col === 0 && i > 0) cy += cellH + (hasCap ? 7 : 0) + 4;
-          if (col === 0 && cy + cellH > PH - BOT) { newPage(); cy = contHeader(contName); }
+          if (col === 0 && cy + cellH + (hasCap ? 7 : 0) > PH - BOT) { newPage(); cy = contHeader(contName); }
           const px = MX + col*(cellW + gap);
           await itemThumb(photos[i], px, cy, cellW, cellH, String(i+1));
           const cap = photoCaption(photos[i]);
@@ -1541,11 +1663,7 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
 
     // Honor the All / Complete / Incomplete filter (and never print deleted SIs).
     // Computed BEFORE the cover so the stats strip counts what the pages show.
-    const allItems = (proj.items || []).filter(i => !i._deleted).filter(i => {
-      if (filterKey === 'complete')   return i.status === 'completed' || i.status === 'punch-ongoing';
-      if (filterKey === 'incomplete') return i.status !== 'completed' && i.status !== 'punch-ongoing';
-      return true;
-    });
+    const allItems = reportItems(proj.items, filterKey);
     const totalCount = allItems.length || 1;
     let done = 0;
     const sections = proj.sections || [];
@@ -1665,8 +1783,9 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       newPage();
       _compactRowIdx = 0;
       cy = sectionHeader(sec.name, secItems.length, 12);
-      for (const item of secItems) {
-        await drawItem(item, sec.name);
+      for (const [n, item] of secItems.entries()) {
+        checkCancel();
+        await drawItem(item, sec.name, n === 0);
         done++; window.updatePDFProgress('Rendering items…', Math.round((done/totalCount)*78) + 10);
         await new Promise(r => requestAnimationFrame(r));
       }
@@ -1677,8 +1796,9 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       newPage();
       _compactRowIdx = 0;
       cy = sectionHeader('Other Items', orphans.length, 12);
-      for (const item of orphans) {
-        await drawItem(item, 'Other Items');
+      for (const [n, item] of orphans.entries()) {
+        checkCancel();
+        await drawItem(item, 'Other Items', n === 0);
         done++; window.updatePDFProgress('Rendering items…', Math.round((done/totalCount)*78) + 10);
         await new Promise(r => requestAnimationFrame(r));
       }
@@ -1801,7 +1921,14 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       doc.setFontSize(11); doc.setFont(P.font,'bold'); setText(P.ink); doc.text('Auditor / Inspector',15,sy);
       // Uploaded signature files can be formats jsPDF can't decode (SVG,
       // HEIC…) — never let a bad signature kill the whole export.
-      try { doc.addImage(window._pdfBranding.auditorSig,'PNG',15,sy+5,60,20); }
+      // Fitted inside the 60 x 20 mm box at its own aspect, sitting on the line.
+      try {
+        const sig = window._pdfBranding.auditorSig;
+        const sp = doc.getImageProperties(sig);
+        const k = (sp && sp.width > 0 && sp.height > 0) ? Math.min(60 / sp.width, 20 / sp.height) : 0;
+        const sw = k ? sp.width * k : 60, sh = k ? sp.height * k : 20;
+        doc.addImage(sig,'PNG',15,sy+25-sh,sw,sh);
+      }
       catch (e) { console.warn('[PDF] Auditor signature could not be drawn:', e.message); }
       doc.setFontSize(9); doc.setFont(P.font,'normal'); setText(P.sub);
       doc.line(15,sy+26,85,sy+26); doc.text('Signature',15,sy+30); doc.text('Date: '+new Date().toLocaleDateString(),60,sy+30);
@@ -1822,6 +1949,10 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
 
     window.updatePDFProgress('Saving PDF…', 97);
     await new Promise(r => setTimeout(r, 100));
+    checkCancel();
+    const skippedNote = skippedPhotos
+      ? skippedPhotos + ' photo' + (skippedPhotos > 1 ? 's' : '') + ' could not be loaded and print as blank boxes'
+      : '';
 
     const styleName = tpl.name;
     const filename = (proj.name || 'report').replace(/[^a-z0-9]/gi,'_')
@@ -1835,7 +1966,9 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       window._dayMarkFinished(pid, _dayMode.day, 'report');
     }
     const pdfFile = new File([blob], filename, { type: 'application/pdf' });
-    const isMobile = /iphone|ipad|ipod|android/i.test(navigator.userAgent);
+    // iPadOS reports a Mac user agent: a Mac with a touch screen is an iPad.
+    const isMobile = /iphone|ipad|ipod|android/i.test(navigator.userAgent)
+      || (/Macintosh|MacIntel/.test(navigator.userAgent + ' ' + (navigator.platform || '')) && navigator.maxTouchPoints > 1);
     const canShare = !!(navigator.share && navigator.canShare &&
                         navigator.canShare({ files: [pdfFile] }));
     window.hidePDFProgress();
@@ -1850,7 +1983,7 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       ov.innerHTML = `<div style="background:var(--surface,#1e293b);border:1px solid var(--border,#334155);border-radius:16px;padding:24px;max-width:340px;width:100%;text-align:center;">
         <div style="font-size:36px;margin-bottom:12px">\u{1F4C4}</div>
         <div style="font-size:15px;font-weight:600;margin-bottom:8px">PDF Ready — ${styleName}</div>
-        <div style="font-size:12px;color:var(--text2,#94a3b8);margin-bottom:20px;line-height:1.6">${canShare ? 'Share, AirDrop, or save it to Files.' : 'Download or open the report.'}</div>
+        <div style="font-size:12px;color:var(--text2,#94a3b8);margin-bottom:20px;line-height:1.6">${canShare ? 'Share, AirDrop, or save it to Files.' : 'Download or open the report.'}${skippedNote ? `<br><span style="color:var(--orange,#f59e0b)">${skippedNote}.</span>` : ''}</div>
         <div style="display:flex;flex-direction:column;gap:10px;">
           ${canShare ? `<button id="pdf-share-btn"
             style="background:var(--accent,#3db8f5);color:#000;border:none;border-radius:10px;padding:13px;font-family:monospace;font-size:13px;font-weight:700;cursor:pointer;">\u2B06 Share / Save PDF</button>` : ''}
@@ -1868,7 +2001,11 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
           if (typeof showToast === 'function') showToast('\u2713 PDF shared', 'green');
         } catch(e) {
           if (e && e.name === 'AbortError') return; // user closed the sheet — keep ours open
-          window.open(blobURL, '_blank'); cleanup(); // share failed → open the blob
+          // Share failed → open the blob in a tab. Revoke later so the tab can
+          // load it; keep this sheet for Download if the tab was blocked.
+          const win = window.open(blobURL, '_blank');
+          if (win) { ov.remove(); setTimeout(() => URL.revokeObjectURL(blobURL), 60000); }
+          else if (typeof showToast === 'function') showToast('Could not share — use ⬇ Download instead', 'red');
         }
       });
       ov.querySelector('#pdf-download-btn')?.addEventListener('click', () => {
@@ -1881,10 +2018,14 @@ ${total===0?`<div class="page-container"><div class="page-scaler" style="align-i
       ov.querySelector('#pdf-cancel-btn')?.addEventListener('click', cleanup);
     } else {
       doc.save(filename);
-      if (typeof showToast === 'function') showToast('✓ PDF Downloaded — ' + styleName, 'green');
+      if (typeof showToast === 'function') showToast(skippedNote ? '✓ PDF Downloaded — ' + skippedNote : '✓ PDF Downloaded — ' + styleName, skippedNote ? 'red' : 'green');
     }
 
     } catch (err) {
+      if (err && err.name === 'PDFExportCancelled') {
+        if (typeof showToast === 'function') showToast('PDF export cancelled');
+        return;
+      }
       console.error('[PDF] Export failed:', err);
       if (typeof showToast === 'function') showToast('PDF export failed — ' + (err && err.message || 'unknown error'), 'red');
     } finally {

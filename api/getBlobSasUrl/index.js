@@ -17,6 +17,14 @@ const {
   SASProtocol,
 } = require('@azure/storage-blob');
 
+// Upload names the app generates (index.html _uploadPhotoToAzureBlob):
+//   <projectId>/<siId | "cover">/<13-digit ms timestamp>-<random a-z0-9>.jpg
+// Tokens are only issued for names of exactly this shape. The two folder parts
+// are app ids (imported SI ids can carry the sheet's SI number, e.g. "12.1"),
+// so they allow anything but path separators, URL delimiters and "."/"..".
+// Keep in sync with NAME_RE in api/copyBlobs/index.js.
+const UPLOAD_NAME_RE = /^(?!\.\.?\/)[^\/\\?#%\x00-\x1f]{1,128}\/(?!\.\.?\/)[^\/\\?#%\x00-\x1f]{1,128}\/\d{13}-[a-z0-9]{1,8}\.jpg$/;
+
 module.exports = async function (context, req) {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -38,11 +46,11 @@ module.exports = async function (context, req) {
     return;
   }
 
-  // Per-blob scoping: ?blob=<name> narrows the token to create/write on that
-  // single blob path. A container-wide write token would let any holder
-  // overwrite ANY photo in the container for an hour.
+  // Per-blob scoping: ?blob=<name> narrows the token to CREATING that single
+  // blob path. Create-only: the token cannot replace a blob that already
+  // exists, so every upload lands under a new, unique name.
   const blobName = (req.query && req.query.blob || '').trim();
-  if (blobName && (!/^[a-zA-Z0-9_\-./]+$/.test(blobName) || blobName.includes('..'))) {
+  if (blobName && !UPLOAD_NAME_RE.test(blobName)) {
     context.res = {
       status: 400,
       headers: _corsHeaders(),
@@ -61,7 +69,7 @@ module.exports = async function (context, req) {
         ? {
             containerName: container,
             blobName,
-            permissions  : BlobSASPermissions.parse('cw'), // create/write THIS blob only
+            permissions  : BlobSASPermissions.parse('c'), // create THIS blob only — never overwrite
             protocol     : SASProtocol.Https,
             startsOn     : new Date(now.getTime() - 5 * 60 * 1000),
             expiresOn,
