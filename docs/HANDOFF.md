@@ -3,15 +3,12 @@
 ## Last session
 - **Device:** Windows desktop app (Claude Code)
 - **Branch:** `feature/company-profiles` (no PR yet)
-- **Date:** 2026-11-10
-- **Summary:** Fixed every item on the 2026-11-10 bug list (local-only file
-  `docs/BUG-REVIEW-2026-11-10.md`, Windows desktop) as **v8.68** on this
-  branch (`94813e5`, pushed with Austin's OK; not on main yet): 22 node test
-  suites pass against the merged code; C1, C2, H1, H14,
-  H15, M9, M10, M14, M16, M28, M32, L8, L30 re-checked in the local preview.
-  Then shipped it to production: main fast-forwarded to `release/v8.68`
-  (`5b07ca5`) with Austin's OK.
-  Earlier the same day: PDF viewer v8.66 and signature fields v8.67 shipped to main.
+- **Date:** 2026-11-11
+- **Summary:** Added the weekly photo audit's 3 read-only secrets (Austin ran
+  the commands); a manual run read Azure directly. The audit still fails on
+  14 dead photo tiles (see Pending) — none from after the v8.68 release.
+  Previous session (2026-11-10): v8.68 bug-list fixes shipped to production
+  (main `5b07ca5`) and main merged back into this branch (`bdddd86`).
 
 ## Pending
 - [ ] **Device tests for v8.68** — iPad report share sheet; push notification
@@ -24,10 +21,17 @@
       `api/innergy/index.js`.
 - [ ] **Upload retry check needs storage CORS to allow HEAD** — otherwise a
       retried upload whose first try landed fails as before (no data loss).
-- [ ] **Weekly photo audit: add 3 read-only repo secrets** before the branch's
-      sign-in reaches production: `AUDIT_COSMOS_CONNECTION_STRING`,
-      `AUDIT_STORAGE_ACCOUNT`, `AUDIT_STORAGE_SAS` (Read + List on
-      `site-photos`; SAS expires). See README / workflow header.
+- [ ] **Photo audit fails on 14 dead photo tiles (issue #5)** — 13 in one
+      project: photos deleted on purpose in September came back on
+      2026-11-11 10:42 UTC when a crew device pushed an old copy (files are
+      gone); 1 in the test project since 2026-10-24. Remove them in Admin →
+      Dead Photos, then close issue #5. Also check that project's statuses /
+      notes weren't set back by the same push. Names: run
+      `node scripts/photo-audit.mjs` locally (never in CI — public repo).
+- [ ] **Renew the audit's storage access rule before 2027-11-11** —
+      `az storage container policy update --account-name adhauditphotos
+      --container-name site-photos --name weekly-audit --expiry <date>
+      --auth-mode key`; the `AUDIT_STORAGE_SAS` secret stays the same.
 - [ ] **Report notes spacing (found, not fixed)** — notes reserve 4.6 mm per
       line but print 3.65 mm apart, leaving ~20% blank space under long notes.
 - [ ] **Check v8.67 on an iPhone** — Resources → open a fillable form
@@ -95,6 +99,9 @@
 - [ ] **Stale PR #3 "task 1"** (`hardening/deps-offline`, July) — close or rebase.
 
 ## Done (recent)
+- 2026-11-11 weekly photo audit secrets added (`AUDIT_COSMOS_CONNECTION_STRING`
+  = read-only key, `AUDIT_STORAGE_ACCOUNT`, `AUDIT_STORAGE_SAS` = read + list
+  via the `weekly-audit` access rule); manual run used the direct read.
 - `bdddd86` main merged back into the branch (history only; tree unchanged —
   conflicts were main's left-out branch-only parts, kept the branch side).
 - `5b07ca5` → main: v8.68 shipped to PRODUCTION (fast-forward from
@@ -111,16 +118,10 @@
 - `2bf96ef` In-app PDF viewer for Resources + Toolbox Talks (fillable forms,
   drafts in IndexedDB `docfill_<file>`, Save / Share via pdf-lib); `server.js`
   decodes `%20` so local preview serves resource files.
-- `f1ca094` main merged into the branch (Project Book, AFQC report, per-day SI
-  history, v8.65). `0bfdd60` → main as `c929e20`, bump `1bc70c9` (v8.65).
-- `0bfdd60` PDF export: logos classified dark/light/dual (`_logoTone`), contrast
-  plate drawn by `drawLogo()` / `logoImg()` only when tone matches the background;
-  `COMPANY_DEFAULT_LOGO` loads each company's bundled file on selection (ACD →
-  `acd-light.png`, ACM → `acm-light.png`); picked file stored per company
-  (`logoFiles`); cleared logo = `null` (no re-default); `_shrinkLogo` caps stored
-  logos at 1000 px and migrates old ones; `addImage(..., 'FAST')`.
 
 ## Decisions
+- 2026-11-11 — Audit SAS is tied to a stored access rule (`weekly-audit`), so it
+  can be renewed or revoked in Azure without changing the GitHub secret.
 - 2026-11-10 — Austin: ship the v8.68 fixes straight to production (main
   fast-forwarded to `release/v8.68`, no PR — a PR preview would run on
   production settings).
