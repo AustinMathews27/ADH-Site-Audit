@@ -4,12 +4,19 @@
 - **Device:** Windows desktop app (Claude Code)
 - **Branch:** `feature/company-profiles` (no PR yet)
 - **Date:** 2026-11-10
-- **Summary:** In-app PDF viewer for Resources + Toolbox Talks shipped as
-  v8.66 (`679058b` + `a3273f0`); signature boxes (were inert) fixed and shipped
-  as v8.67 (`6aa2773` + `e613d2f` on main). Main merged back into the branch
-  (`475ec61`). Verified in the local preview only; check on an iPhone.
+- **Summary:** Full-app bug review (read-only, no code changed): 4 Critical,
+  16 High, 45 Medium, 30 Low. The list is NOT in git (see Decisions); it is
+  only on the Windows desktop. Earlier the same day: PDF viewer v8.66 and
+  signature fields v8.67 shipped to main.
 
 ## Pending
+- [ ] **Austin: review the bug list** — Windows desktop only, at
+      `docs/BUG-REVIEW-2026-11-10.md` (ignored via `.git/info/exclude`; other
+      devices don't have it). Tick the items to fix. Top non-security picks:
+      C1 (autosave writes the next SI into the previous one), H1 (Look Ahead
+      one week off in US time zones), H13 (Innergy statuses). It also has
+      security items; keep their details out of the repo. Nothing fixed yet;
+      the next session works from the ticks, on that machine.
 - [ ] **Check v8.67 on an iPhone** — Resources → open a fillable form
       (e.g. QA QC Appendix D): ✕ Close works, tapping a box zooms in, ✍ Sign
       box opens the pad, draft survives closing, Save / Share sends a filled
@@ -75,6 +82,8 @@
 - [ ] **Stale PR #3 "task 1"** (`hardening/deps-offline`, July) — close or rebase.
 
 ## Done (recent)
+- Bug review list written (local only, no commit); local preview checks
+  reproduced C1, C2, H1.
 - `7517304` PDF viewer: /Sig fields get a signature pad; image stamped into the
   field's boxes on Save / Share. Shipped as v8.67 (`6aa2773` + `e613d2f`).
 - `679058b` + `a3273f0` → main: PDF viewer shipped as v8.66; `5a28750` main merged
@@ -90,26 +99,11 @@
   `acd-light.png`, ACM → `acm-light.png`); picked file stored per company
   (`logoFiles`); cleared logo = `null` (no re-default); `_shrinkLogo` caps stored
   logos at 1000 px and migrates old ones; `addImage(..., 'FAST')`.
-- `77382f8` Phone SI editor: only the camera FAB at the bottom; Prev/Next/Duplicate/
-  Delete in the ⋯ sheet, Delete in the row menu; banners below the top bar.
-  Shipped to main as v8.60 (cda9ada). `e12f87e` merged main v8.59 into the branch.
-- Back button climbs one folder level at a time (`_folderChain`): nested
-  folder → company folder → home, instead of jumping straight home
-- `8416300` Phone layout v2: SI list is the project screen, one ⋯ menu
-  (`showPhoneMenu`), `navToOverview` screen, iOS-style back, status bar fix,
-  bottom nav/drawer removed, duplicate "updated by" badge fixed
-- `260eaad` iOS shell runs in the simulator with Entra sign-in completing in-app
-  (fixes: allowNavigation segment-count wildcards; WKAppBoundDomains must name
-  each SWA host in full because azurestaticapps.net is a public suffix)
-- `9dbc2a6` Capacitor iOS shell (`ios-app/`), Info.plist permissions + app-bound
-  domains, icon/splash, `_isNativeShell()` gating in `index.html`
-- `ece9678` Entra ID sign-in with offline-first identity (staging)
-- `73c54b8` AML temporary SVG wordmark
-- `96dfe2b` Rename company ADH → AML (legacy id `adh` kept)
-- `dc2064a` Company profiles slice 1 (per-company import buttons, companyId stamp)
-- `ff0f28c` Staging: configurable Cosmos DB name + seed script
 
 ## Decisions
+- 2026-11-10 — Bug review list stays OFF git for now (the repo is public and the
+  list describes exploitable holes). Alternatives were making the repo private
+  or pushing a copy without the security items.
 - 2026-11-10 — PDF signature-field fix shipped straight to production as v8.67.
 - 2026-11-10 — In-app PDF viewer shipped straight to production as v8.66
   (cherry-pick + version bump).
