@@ -55,10 +55,15 @@ module.exports = async function (context, req) {
       return;
     }
 
-    // Conditional fetch: ?ifTs=<last merged _ts> lets the 15s poll skip
-    // re-downloading an unchanged doc (50-500KB saved per poll over LTE).
+    // Conditional fetch: ?ifEtag=<_etag of the last merged copy> lets the 15s
+    // poll skip re-downloading an unchanged doc (50-500KB saved per poll over
+    // LTE). _etag changes on every write; _ts is whole seconds, so with the
+    // older ?ifTs=<last merged _ts> (still honoured when no ifEtag is sent) a
+    // second save within the same second looked unchanged and was never fetched.
+    const ifEtag = req.query.ifEtag;
     const ifTs = Number(req.query.ifTs);
-    if (Number.isFinite(ifTs) && ifTs > 0 && (resource._ts || 0) <= ifTs) {
+    if (ifEtag ? resource._etag === ifEtag
+               : (Number.isFinite(ifTs) && ifTs > 0 && (resource._ts || 0) <= ifTs)) {
       context.res = {
         status: 200,
         headers: { "Content-Type": "application/json" },

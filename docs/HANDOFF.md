@@ -4,19 +4,36 @@
 - **Device:** Windows desktop app (Claude Code)
 - **Branch:** `feature/company-profiles` (no PR yet)
 - **Date:** 2026-11-10
-- **Summary:** Full-app bug review (read-only, no code changed): 4 Critical,
-  16 High, 45 Medium, 30 Low. The list is NOT in git (see Decisions); it is
-  only on the Windows desktop. Earlier the same day: PDF viewer v8.66 and
-  signature fields v8.67 shipped to main.
+- **Summary:** Fixed every item on the 2026-11-10 bug list (local-only file
+  `docs/BUG-REVIEW-2026-11-10.md`, Windows desktop) as **v8.68** on this
+  branch: 22 node test suites pass against the merged code; C1, C2, H1, H14,
+  H15, M9, M10, M14, M16, M28, M32, L8, L30 re-checked in the local preview.
+  Earlier the same day: PDF viewer v8.66 and signature fields v8.67 shipped to main.
 
 ## Pending
-- [ ] **Austin: review the bug list** — Windows desktop only, at
-      `docs/BUG-REVIEW-2026-11-10.md` (ignored via `.git/info/exclude`; other
-      devices don't have it). Tick the items to fix. Top non-security picks:
-      C1 (autosave writes the next SI into the previous one), H1 (Look Ahead
-      one week off in US time zones), H13 (Innergy statuses). It also has
-      security items; keep their details out of the repo. Nothing fixed yet;
-      the next session works from the ticks, on that machine.
+- [ ] **v8.68 fix set: commit + push only after Austin's OK** — the
+      branch is pushed to staging automatically, so the push makes the fixes
+      public before production has them; plan the push with the production
+      release (next item).
+- [ ] **Ship the fixes to production** — they are on this branch only; `main`
+      (production) still has every bug. Decide: cherry-pick to main (like the
+      phone-layout releases) or wait for the branch merge.
+- [ ] **Device tests for v8.68** — iPad report share sheet; push notification
+      re-subscribe + tap opens its link; app start on one bar of signal (3 s
+      cache fallback); offline PDFs still there after the next update; Admin →
+      Force refresh then offline pdf.js; a very large report (800+ photos) on
+      iOS; Android system Back steps back inside the app.
+- [ ] **Innergy import after v8.68** — the proxy now accepts only GUID-style
+      project ids; if an import says "not found", widen `INNERGY_ID` in
+      `api/innergy/index.js`.
+- [ ] **Upload retry check needs storage CORS to allow HEAD** — otherwise a
+      retried upload whose first try landed fails as before (no data loss).
+- [ ] **Weekly photo audit: add 3 read-only repo secrets** before the branch's
+      sign-in reaches production: `AUDIT_COSMOS_CONNECTION_STRING`,
+      `AUDIT_STORAGE_ACCOUNT`, `AUDIT_STORAGE_SAS` (Read + List on
+      `site-photos`; SAS expires). See README / workflow header.
+- [ ] **Report notes spacing (found, not fixed)** — notes reserve 4.6 mm per
+      line but print 3.65 mm apart, leaving ~20% blank space under long notes.
 - [ ] **Check v8.67 on an iPhone** — Resources → open a fillable form
       (e.g. QA QC Appendix D): ✕ Close works, tapping a box zooms in, ✍ Sign
       box opens the pad, draft survives closing, Save / Share sends a filled
@@ -101,6 +118,13 @@
   logos at 1000 px and migrates old ones; `addImage(..., 'FAST')`.
 
 ## Decisions
+- 2026-11-10 — Austin: fix every item on the bug list; check it works; ask
+  before commit + push.
+- 2026-11-10 — Defaults chosen for the fixes (Claude, not yet confirmed by
+  Austin): cancelled Innergy WOs are skipped (old `na` → `on-hold`, `complete`
+  → `completed`, repaired once); "Everyone" messages get per-device read
+  receipts; an SI's labor estimate is spread evenly over its scheduled Look
+  Ahead weeks; report photos are cropped to their cell (not squashed).
 - 2026-11-10 — Bug review list stays OFF git for now (the repo is public and the
   list describes exploitable holes). Alternatives were making the repo private
   or pushing a copy without the security items.

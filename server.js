@@ -35,9 +35,6 @@ function proxyInnergy(req, res, innergyPath) {
   }
 
   const targetUrl = new URL(innergyPath, INNERGY_BASE);
-  // Forward any query string from the original request
-  const origQuery = req.url.split('?')[1];
-  if (origQuery) targetUrl.search = '?' + origQuery;
 
   const options = {
     hostname: targetUrl.hostname,
@@ -104,6 +101,13 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type, Accept',
 };
 
+// Only these Innergy endpoints are proxied, GET only, no query string —
+// same list as api/innergy/index.js.
+const INNERGY_ALLOWED_PATHS = [
+  /^\/api\/projects$/,
+  /^\/api\/projects\/[A-Za-z0-9-]{1,64}\/workOrders$/,
+];
+
 const server = http.createServer((req, res) => {
   let urlPath = req.url.split('?')[0];
 
@@ -120,7 +124,17 @@ const server = http.createServer((req, res) => {
       return;
     }
     const innergyPath = urlPath.replace(/^\/api\/innergy/, '');
-    proxyInnergy(req, res, innergyPath || '/');
+    if (req.method !== 'GET') {
+      res.writeHead(405, { 'Content-Type': 'application/json', 'Allow': 'GET' });
+      res.end(JSON.stringify({ error: 'Method not allowed' }));
+      return;
+    }
+    if (!INNERGY_ALLOWED_PATHS.some(re => re.test(innergyPath))) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Not found' }));
+      return;
+    }
+    proxyInnergy(req, res, innergyPath);
     return;
   }
 

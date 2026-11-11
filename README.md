@@ -33,6 +33,14 @@ SELECT c.id, c.label, c.docType, c._savedAt FROM c ORDER BY c.label
 
 **Scripts** (`scripts/*.mjs`) call the API anonymously and therefore stop working once sign-in is on for that environment; run them with a browser session cookie or against an environment without auth.
 
+**Weekly photo audit.** `scripts/photo-audit.mjs` (run every Monday by `.github/workflows/weekly-photo-audit.yml`) reads Cosmos DB and Blob Storage directly when `COSMOS_DB_CONNECTION_STRING`, `AZURE_STORAGE_ACCOUNT` and `AZURE_STORAGE_SAS` (or `AZURE_STORAGE_KEY`) are set, and otherwise uses the API (which then answers with the sign-in page, and the script says so). The workflow passes them from three repository secrets — use read-only credentials:
+
+| Secret | Value |
+|---|---|
+| `AUDIT_COSMOS_CONNECTION_STRING` | Cosmos account → Keys → **Read-only Keys** → primary connection string |
+| `AUDIT_STORAGE_ACCOUNT` | Storage account name (same as the `AZURE_STORAGE_ACCOUNT` app setting) |
+| `AUDIT_STORAGE_SAS` | SAS token for the `site-photos` container with **Read + List** only (renew before it expires) |
+
 ### Staging / feature branches
 
 Never point unfinished work at the production database. The API reads `COSMOS_DB_DATABASE` (default `Auditdata`) and `AZURE_BLOB_CONTAINER`, so a staging environment gets its own data by setting:
@@ -78,7 +86,7 @@ Pushes to `main` deploy via the GitHub Action (Azure Static Web Apps, `app_locat
 
 ## Versioning
 
-The app version is the service-worker cache string (`adh-audit-v8.xx`). Current: **v8.65**.
+The app version is the service-worker cache string (`adh-audit-v8.xx`). The current version is `CACHE_VERSION` in `sw.js` (the same number is in `index.html`).
 
 ## People's names (Microsoft Graph)
 

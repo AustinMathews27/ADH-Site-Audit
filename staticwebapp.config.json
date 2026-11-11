@@ -10,6 +10,7 @@
     { "route": "/logo.png", "allowedRoles": ["anonymous"] },
     { "route": "/logo-white.png", "allowedRoles": ["anonymous"] },
     { "route": "/logos/*", "allowedRoles": ["anonymous"] },
+    { "route": "/screenshots/*", "allowedRoles": ["anonymous"] },
     { "route": "/api/*", "allowedRoles": ["authenticated"] },
     { "route": "/*", "allowedRoles": ["authenticated"] }
   ],
@@ -21,7 +22,7 @@
   },
   "navigationFallback": {
     "rewrite": "/index.html",
-    "exclude": ["/api/*", "/*.png", "/*.ico", "/*.json", "/*.js", "/logos/*"]
+    "exclude": ["/api/*", "/*.png", "/*.ico", "/*.json", "/*.js", "/logos/*", "/screenshots/*"]
   },
   "globalHeaders": {
     "Cache-Control": "no-store",

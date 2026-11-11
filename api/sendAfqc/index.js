@@ -11,8 +11,10 @@
 // through Microsoft Graph, as the company mailbox in AFQC_SENDER.
 //
 // The recipient is FIXED server-side (AFQC_TO, default the AFQC inbox) — the
-// endpoint is anonymous like the rest of /api, so it must never accept a
-// "to" address from the client or it becomes an open relay.
+// endpoint may be called without sign-in, so it must never accept a "to"
+// address from the client or it becomes an open relay.
+// "Reported by" is the signed-in account when there is one; the client's
+// `by` name is only used when the request carries no sign-in.
 //
 // App settings (Azure Static Web Apps → Configuration):
 //   AFQC_TENANT_ID, AFQC_CLIENT_ID, AFQC_CLIENT_SECRET — Entra app registration
@@ -24,6 +26,8 @@
 // Without them it answers 503 { error: "not_configured" } and the app falls
 // back to opening the email in the device's Mail app.
 
+const { requireUser } = require('../_shared/auth');
+const graph = require('../_shared/graph');
 const https = require('https');
 
 const TO_DEFAULT  = 'afqc@alleghenymillwork.com';
@@ -62,6 +66,10 @@ async function graphToken(tenant, clientId, secret) {
 }
 
 module.exports = async function (context, req) {
+  // Sign-in is enforced at the edge; this parses the caller and applies the
+  // optional ALLOWED_EMAIL_DOMAINS allow-list (see api/_shared/auth.js).
+  if (!requireUser(context, req)) return;
+
   context.res = { headers: { 'Content-Type': 'application/json' } };
   const env = process.env;
   if (!env.AFQC_TENANT_ID || !env.AFQC_CLIENT_ID || !env.AFQC_CLIENT_SECRET || !env.AFQC_SENDER) {
@@ -82,6 +90,17 @@ module.exports = async function (context, req) {
     context.res.body = { ok: false, error: 'project and description required' };
     return;
   }
+  // Reporter: the signed-in account (directory name when Graph is set up),
+  // falling back to the device-supplied name only without sign-in.
+  const signedInEmail = str(context.user && context.user.userDetails, 120);
+  let reporterName = str(b.by, 60);
+  if (signedInEmail) {
+    const g = await graph.lookupUser(context, signedInEmail);
+    reporterName = str(g && g.displayName, 60);
+  }
+  const reportedBy = signedInEmail
+    ? (reporterName ? `${reporterName} (${signedInEmail})` : signedInEmail)
+    : reporterName;
   const subject = [priority === 'Urgent' ? 'URGENT' : '', 'AFQC', category,
     [str(proj.number, 30), str(proj.name, 80)].filter(Boolean).join(' '),
     si.num ? [str(si.num, 20), str(si.title, 80)].filter(Boolean).join(' ') : ''].filter(Boolean).join(' – ');
@@ -96,7 +115,7 @@ module.exports = async function (context, req) {
       ${row('SI status', [str(si.status, 30), str(si.fieldCheck, 60)].filter(Boolean).join(' · '))}
       ${row('Category', category)}
       ${row('Priority', priority)}
-      ${row('Reported by', str(b.by, 60))}
+      ${row('Reported by', reportedBy)}
       ${row('Reported', new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }) + ' ET')}
     </table>
     <div style="font-weight:700;margin-bottom:4px">Issue</div>
@@ -126,8 +145,9 @@ module.exports = async function (context, req) {
     attachments,
   };
   const replyEmail = str(b.replyEmail, 120);
-  if (replyEmail && EMAIL_RE.test(replyEmail)) {
-    message.replyTo = [{ emailAddress: { address: replyEmail, name: str(b.by, 80) } }];
+  const replyTo = EMAIL_RE.test(replyEmail) ? replyEmail : (EMAIL_RE.test(signedInEmail) ? signedInEmail : '');
+  if (replyTo) {
+    message.replyTo = [{ emailAddress: { address: replyTo, name: reporterName || signedInEmail } }];
   }
 
   try {

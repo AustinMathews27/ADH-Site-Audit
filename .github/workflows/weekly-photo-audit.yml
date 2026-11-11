@@ -2,7 +2,18 @@ name: Weekly photo storage audit
 
 # Read-only health check of photo storage (scripts/photo-audit.mjs): every photo
 # the projects reference must exist in Blob Storage, and no new duplicate uploads
-# may appear after the v8.56 single-upload fix. Uses the public API — no secrets.
+# may appear after the v8.56 single-upload fix.
+#
+# The site requires sign-in for /api/* (staticwebapp.config.json), so the script
+# reads Cosmos DB and Blob Storage directly. Add these repository secrets (Settings → Secrets and
+# variables → Actions); use read-only credentials:
+#   AUDIT_COSMOS_CONNECTION_STRING  Cosmos account → Keys → Read-only Keys →
+#                                   PRIMARY CONNECTION STRING
+#   AUDIT_STORAGE_ACCOUNT           storage account name (the AZURE_STORAGE_ACCOUNT app setting)
+#   AUDIT_STORAGE_SAS               SAS token for the site-photos container with
+#                                   Read + List only, and an expiry you track
+# Without them the script falls back to the API and fails with a "sign-in page"
+# message.
 #
 # THIS REPO IS PUBLIC, so this workflow's logs and the issue it opens are too.
 # Always run the script with --ci (counts only: no project names, no photo URLs)
@@ -33,10 +44,18 @@ jobs:
         with:
           node-version: 22
 
+      # Azure SDKs for the direct read (not committed; no lockfile written)
+      - name: Install Azure SDKs
+        run: npm install --no-save --no-package-lock --no-audit --no-fund @azure/cosmos@4 @azure/storage-blob@12
+
       - name: Run audit
+        env:
+          COSMOS_DB_CONNECTION_STRING: ${{ secrets.AUDIT_COSMOS_CONNECTION_STRING }}
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AUDIT_STORAGE_ACCOUNT }}
+          AZURE_STORAGE_SAS: ${{ secrets.AUDIT_STORAGE_SAS }}
         run: |
           set -o pipefail
-          node scripts/photo-audit.mjs --check --ci | tee audit.txt
+          node scripts/photo-audit.mjs --check --ci 2>&1 | tee audit.txt
 
       - name: Job summary
         if: always()
