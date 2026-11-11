@@ -27,8 +27,6 @@
       (its re-added dead photos are now removed); its SIs have no field
       stamps, so statuses / notes may have reverted too. Name: run
       `node scripts/photo-audit.mjs` locally or ask Claude (never in CI).
-- [ ] **Confirm the 2026-11-11 storage cleanup** — it also deleted 9 of the
-      17 "may be lost" pictures (14 files); 8 remain. OK if chosen on purpose.
 - Tip: Dead Photos only scans the device's own copies, and a running app
   only re-pulls the project that is OPEN — open the project (or reload) first.
 - [ ] **Renew the audit's storage access rule before 2027-11-11** —
@@ -125,6 +123,8 @@
   decodes `%20` so local preview serves resource files.
 
 ## Decisions
+- 2026-11-11 — The 9 "may be lost" pictures removed in the storage cleanup
+  were deleted by Austin on purpose; 8 remain in that group.
 - 2026-11-11 — Audit SAS is tied to a stored access rule (`weekly-audit`), so it
   can be renewed or revoked in Azure without changing the GitHub secret.
 - 2026-11-10 — Austin: ship the v8.68 fixes straight to production (main
