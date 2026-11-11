@@ -6,18 +6,16 @@
 - **Date:** 2026-11-10
 - **Summary:** Fixed every item on the 2026-11-10 bug list (local-only file
   `docs/BUG-REVIEW-2026-11-10.md`, Windows desktop) as **v8.68** on this
-  branch: 22 node test suites pass against the merged code; C1, C2, H1, H14,
+  branch (`94813e5`, pushed with Austin's OK; not on main yet): 22 node test
+  suites pass against the merged code; C1, C2, H1, H14,
   H15, M9, M10, M14, M16, M28, M32, L8, L30 re-checked in the local preview.
   Earlier the same day: PDF viewer v8.66 and signature fields v8.67 shipped to main.
 
 ## Pending
-- [ ] **v8.68 fix set: commit + push only after Austin's OK** — the
-      branch is pushed to staging automatically, so the push makes the fixes
-      public before production has them; plan the push with the production
-      release (next item).
-- [ ] **Ship the fixes to production** — they are on this branch only; `main`
-      (production) still has every bug. Decide: cherry-pick to main (like the
-      phone-layout releases) or wait for the branch merge.
+- [ ] **Ship the v8.68 fixes to production soon** — pushed to this branch
+      (`94813e5`, deploys to staging) but `main` (production) still has every
+      bug, including the security items, and the fixes are now public. Decide:
+      cherry-pick to main (like the phone-layout releases) or merge the branch.
 - [ ] **Device tests for v8.68** — iPad report share sheet; push notification
       re-subscribe + tap opens its link; app start on one bar of signal (3 s
       cache fallback); offline PDFs still there after the next update; Admin →
@@ -99,6 +97,8 @@
 - [ ] **Stale PR #3 "task 1"** (`hardening/deps-offline`, July) — close or rebase.
 
 ## Done (recent)
+- `94813e5` v8.68: every item on the 2026-11-10 bug list fixed (local-only
+  list); 22 node suites + local-preview checks pass. Not yet on main.
 - Bug review list written (local only, no commit); local preview checks
   reproduced C1, C2, H1.
 - `7517304` PDF viewer: /Sig fields get a signature pad; image stamped into the
