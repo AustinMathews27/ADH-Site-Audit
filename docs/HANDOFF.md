@@ -9,13 +9,18 @@
   branch (`94813e5`, pushed with Austin's OK; not on main yet): 22 node test
   suites pass against the merged code; C1, C2, H1, H14,
   H15, M9, M10, M14, M16, M28, M32, L8, L30 re-checked in the local preview.
+  Then prepared the production version: `release/v8.68` (`5b07ca5`).
   Earlier the same day: PDF viewer v8.66 and signature fields v8.67 shipped to main.
 
 ## Pending
-- [ ] **Ship the v8.68 fixes to production soon** — pushed to this branch
-      (`94813e5`, deploys to staging) but `main` (production) still has every
-      bug, including the security items, and the fixes are now public. Decide:
-      cherry-pick to main (like the phone-layout releases) or merge the branch.
+- [ ] **Push `release/v8.68` to main (production) — needs Austin's OK** —
+      `5b07ca5` sits directly on main's `e613d2f` (fast-forward). It is the
+      branch fix set minus branch-only parts (sign-in checks, "account not
+      allowed" screen, signed-in AFQC reporter, company move stamp, Account
+      device line); main's anonymous routing and `sendAfqc` are unchanged.
+      21 node suites + local-preview checks pass on it. Until it ships, main
+      still has every bug (fixes are public on GitHub). Afterwards, merge main
+      back into this branch (expect conflicts only in the adapted spots).
 - [ ] **Device tests for v8.68** — iPad report share sheet; push notification
       re-subscribe + tap opens its link; app start on one bar of signal (3 s
       cache fallback); offline PDFs still there after the next update; Admin →
