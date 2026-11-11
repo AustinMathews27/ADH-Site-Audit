@@ -14,10 +14,6 @@
   Earlier the same day: PDF viewer v8.66 and signature fields v8.67 shipped to main.
 
 ## Pending
-- [ ] **Merge main back into this branch** — main has `5b07ca5` (the
-      production-adapted v8.68). Conflicts only where it left out branch-only
-      parts (sign-in checks, "account not allowed" screen, signed-in AFQC
-      reporter, company move stamp, Account device line): keep the branch side.
 - [ ] **Device tests for v8.68** — iPad report share sheet; push notification
       re-subscribe + tap opens its link; app start on one bar of signal (3 s
       cache fallback); offline PDFs still there after the next update; Admin →
@@ -99,6 +95,8 @@
 - [ ] **Stale PR #3 "task 1"** (`hardening/deps-offline`, July) — close or rebase.
 
 ## Done (recent)
+- `bdddd86` main merged back into the branch (history only; tree unchanged —
+  conflicts were main's left-out branch-only parts, kept the branch side).
 - `5b07ca5` → main: v8.68 shipped to PRODUCTION (fast-forward from
   `release/v8.68`; branch-only parts left out). 21 node suites + local
   preview of main's build passed first.
