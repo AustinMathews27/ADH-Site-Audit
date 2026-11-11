@@ -9,18 +9,15 @@
   branch (`94813e5`, pushed with Austin's OK; not on main yet): 22 node test
   suites pass against the merged code; C1, C2, H1, H14,
   H15, M9, M10, M14, M16, M28, M32, L8, L30 re-checked in the local preview.
-  Then prepared the production version: `release/v8.68` (`5b07ca5`).
+  Then shipped it to production: main fast-forwarded to `release/v8.68`
+  (`5b07ca5`) with Austin's OK.
   Earlier the same day: PDF viewer v8.66 and signature fields v8.67 shipped to main.
 
 ## Pending
-- [ ] **Push `release/v8.68` to main (production) — needs Austin's OK** —
-      `5b07ca5` sits directly on main's `e613d2f` (fast-forward). It is the
-      branch fix set minus branch-only parts (sign-in checks, "account not
-      allowed" screen, signed-in AFQC reporter, company move stamp, Account
-      device line); main's anonymous routing and `sendAfqc` are unchanged.
-      21 node suites + local-preview checks pass on it. Until it ships, main
-      still has every bug (fixes are public on GitHub). Afterwards, merge main
-      back into this branch (expect conflicts only in the adapted spots).
+- [ ] **Merge main back into this branch** — main has `5b07ca5` (the
+      production-adapted v8.68). Conflicts only where it left out branch-only
+      parts (sign-in checks, "account not allowed" screen, signed-in AFQC
+      reporter, company move stamp, Account device line): keep the branch side.
 - [ ] **Device tests for v8.68** — iPad report share sheet; push notification
       re-subscribe + tap opens its link; app start on one bar of signal (3 s
       cache fallback); offline PDFs still there after the next update; Admin →
@@ -102,6 +99,9 @@
 - [ ] **Stale PR #3 "task 1"** (`hardening/deps-offline`, July) — close or rebase.
 
 ## Done (recent)
+- `5b07ca5` → main: v8.68 shipped to PRODUCTION (fast-forward from
+  `release/v8.68`; branch-only parts left out). 21 node suites + local
+  preview of main's build passed first.
 - `94813e5` v8.68: every item on the 2026-11-10 bug list fixed (local-only
   list); 22 node suites + local-preview checks pass. Not yet on main.
 - Bug review list written (local only, no commit); local preview checks
@@ -123,6 +123,9 @@
   logos at 1000 px and migrates old ones; `addImage(..., 'FAST')`.
 
 ## Decisions
+- 2026-11-10 — Austin: ship the v8.68 fixes straight to production (main
+  fast-forwarded to `release/v8.68`, no PR — a PR preview would run on
+  production settings).
 - 2026-11-10 — Austin: fix every item on the bug list; check it works; ask
   before commit + push.
 - 2026-11-10 — Defaults chosen for the fixes (Claude, not yet confirmed by
