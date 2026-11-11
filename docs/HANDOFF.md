@@ -21,13 +21,15 @@
       `api/innergy/index.js`.
 - [ ] **Upload retry check needs storage CORS to allow HEAD** — otherwise a
       retried upload whose first try landed fails as before (no data loss).
-- [ ] **Photo audit fails on 14 dead photo tiles (issue #5)** — 13 in one
+- [ ] **Photo audit fails on 13 dead photo tiles (issue #5)** — all in one
       project: photos deleted on purpose in September came back on
       2026-11-11 10:42 UTC when a crew device pushed an old copy (files are
-      gone); 1 in the test project since 2026-10-24. Remove them in Admin →
-      Dead Photos, then close issue #5. Also check that project's statuses /
-      notes weren't set back by the same push. Names: run
-      `node scripts/photo-audit.mjs` locally (never in CI — public repo).
+      gone). Dead Photos only scans the device's local copies, and a running
+      app only re-pulls the project that is OPEN — so open that project
+      first (or reload the app), then Admin → Dead Photos → Remove; rerun the
+      audit and close issue #5. Also check its statuses / notes weren't set
+      back by the same push. Names: `node scripts/photo-audit.mjs` locally
+      (never in CI — public repo). The test-project tile is cleared.
 - [ ] **Renew the audit's storage access rule before 2027-11-11** —
       `az storage container policy update --account-name adhauditphotos
       --container-name site-photos --name weekly-audit --expiry <date>
