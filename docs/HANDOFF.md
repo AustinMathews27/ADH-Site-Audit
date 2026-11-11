@@ -22,11 +22,6 @@
       `api/innergy/index.js`.
 - [ ] **Upload retry check needs storage CORS to allow HEAD** — otherwise a
       retried upload whose first try landed fails as before (no data loss).
-- [ ] **Check one project wasn't set back by an old-copy push** — on
-      2026-11-11 10:42 UTC a crew device pushed a July copy of a project
-      (its re-added dead photos are now removed); its SIs have no field
-      stamps, so statuses / notes may have reverted too. Name: run
-      `node scripts/photo-audit.mjs` locally or ask Claude (never in CI).
 - Tip: Dead Photos only scans the device's own copies, and a running app
   only re-pulls the project that is OPEN — open the project (or reload) first.
 - [ ] **Renew the audit's storage access rule before 2027-11-11** —
@@ -123,6 +118,10 @@
   decodes `%20` so local preview serves resource files.
 
 ## Decisions
+- 2026-11-11 — Austin deleted the project a crew device pushed back from an
+  old copy (never audited; deleted 18:44 UTC, tombstoned). Re-import it from
+  Innergy when its audit starts; Admin → Trash on the deleting device can
+  restore it (new id) for ~90 days.
 - 2026-11-11 — The 9 "may be lost" pictures removed in the storage cleanup
   were deleted by Austin on purpose; 8 remain in that group.
 - 2026-11-11 — Audit SAS is tied to a stored access rule (`weekly-audit`), so it
